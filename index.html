@@ -1,67 +1,35 @@
+<!-- index.html -->
+
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <title>CCM Simulation</title>
   <style>
-    /* Basic styling for layout */
-    #cy {
-      width: 800px;
-      height: 600px;
-      margin-top: 1em;
-      border: 1px solid #ccc;
-    }
-    #output {
-      white-space: pre-wrap;
-      margin-top: 1em;
-      font-family: monospace;
-    }
-    #round-display {
-      margin-top: 1em;
-      font-size: 16px;
-      font-weight: bold;
-      font-family: Arial, sans-serif;
-    }
-    #controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 1em;
-    }
-    #controls label {
-      margin-right: 10px;
-    }
-    #controls input {
-      width: 60px;
-    }
+    #controls { display: flex; gap: 1em; margin-bottom: 1em; }
+    #controls label { display: flex; flex-direction: column; font-size: 0.9em; }
+    input { width: 4em; }
+    #cy { width: 800px; height: 600px; border: 1px solid #ccc; }
+    #round-display { font-weight: bold; margin-top: 1em; }
+    #output { white-space: pre-wrap; font-family: monospace; margin-top: 1em; }
   </style>
 </head>
 <body>
   <h1>CCM Simulation in Pyodide</h1>
   <div id="controls">
-    <label for="nodeCountInput">Number of Nodes:
-      <input type="number" id="nodeCountInput" min="1" value="10">
-    </label>
-    <label for="maxDegreeInput">Max Degree:
-      <input type="number" id="maxDegreeInput" min="1" value="4">
-    </label>
-    <label for="agentCountInput">Number of Agents:
-      <input type="number" id="agentCountInput" min="1" value="3">
-    </label>
-    <label for="roundCountInput">Number of Rounds:
-      <input type="number" id="roundCountInput" min="1" value="10">
-    </label>
+    <label>Nodes<input type="number" id="nodeCountInput" min="1" value="10"></label>
+    <label>Max Deg<input type="number" id="maxDegreeInput" min="1" value="4"></label>
+    <label>Agents<input type="number" id="agentCountInput" min="1" value="3"></label>
+    <label>Rounds<input type="number" id="roundCountInput" min="1" value="10"></label>
+    <button id="runBtn">Run</button>
   </div>
-  <button id="runBtn">Run Simulation</button>
-  <div id="output">Click "Run Simulation" to start.</div>
-  <div id="round-display">Round: 0</div>
+
+  <div id="output">Click “Run” to start.</div>
+  <div id="round-display">Round: 0</div>
   <div id="cy"></div>
 
-  <!-- Load Libraries -->
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
   <script src="https://unpkg.com/cytoscape@3.24.0/dist/cytoscape.min.js"></script>
-
-  <!-- Load Modules -->
   <script type="module" src="main.js"></script>
 </body>
 </html>

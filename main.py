@@ -1,28 +1,40 @@
-import sys
-from graph_utils import create_port_labeled_graph, randomize_ports, assign_weights
-import networkx as nx
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
+# main.py
+import random
 from collections import defaultdict
-from agent import Agent
-from simulation import run_simulation
-from visualization import visualize_graph
+import networkx as nx
+import graph_utils
+import agent
 
-# Main execution
+
+# ------------------------------------------------------------------
+def run_simulation(G, agents, rounds):
+    for r in rounds:
+        for a in agents:
+            a.compute_dfs_rooted()
+
+
+def main():
+    # ─── demo topology ───
+    nodes  = 5
+    edges  = [(0, 1), (0, 2), (1, 2), (1, 3), (2, 4), (3, 4)]
+    rounds = 8
+    agent_count = 4
+
+    G = graph_utils.create_port_labeled_graph(nodes, edges)
+    # randomize_ports(G)                       # random port labels
+    graph_utils.assign_weights(G, 1.0, 10.0)             # purely cosmetic
+
+    # start each agent at node 0
+    agents = [agent.Agent(i, 0) for i in range(agent_count)]
+
+    # ─── run ───
+    run_simulation(G, agents, rounds)
+
+    print("\nAgent final states:")
+    for a in agents:
+        state = "SETTLED" if a.status == Agent.SETTLED else "UNSETTLED"
+        print(f"  A{a.id} @ node {a.currentnode:>2}  →  {state}")
+
+
 if __name__ == "__main__":
-    # Create graph with 5 nodes and some edges
-    nodes = 5
-    edges = [(0, 1), (0, 2), (1, 2), (1, 3), (2, 4), (3, 4)]
-    G = create_port_labeled_graph(nodes, edges)
-    
-    # Randomize ports
-    randomize_ports(G)
-    
-    # Assign weights to edges
-    assign_weights(G, min_weight=1.0, max_weight=10.0)
-    
-    # Create agents
-    agents = [Agent(i, i % nodes) for i in range(10)]  # 6 agents, distributed across nodes
-    
-    # Run simulation
-    run_simulation(G, agents, 3)
+    main()
