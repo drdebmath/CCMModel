@@ -3,14 +3,12 @@
 import networkx as nx
 import random
 
-def create_port_labeled_graph(nodes, edges):
+def create_port_labeled_graph(nodes, max_degree, seed):
     """
     Build an undirected graph where each node u has ports 0..deg(u)-1 
     mapped to its neighbors in arbitrary order.
     """
-    G = nx.Graph()
-    G.add_nodes_from(range(nodes))
-    G.add_edges_from(edges)
+    G = nx.random_regular_graph(max_degree, nodes, seed = seed)
 
     for u in G.nodes():
         neighs = list(G.neighbors(u))
@@ -20,8 +18,9 @@ def create_port_labeled_graph(nodes, edges):
             G[u][v][f'port_{u}'] = p
     return G
 
-def randomize_ports(G):
+def randomize_ports(G, seed):
     """Shuffle each node’s ports, updating both edge data and node.port_map."""
+    random.seed(seed)
     for u in G.nodes():
         neighs = list(G.neighbors(u))
         if not neighs:

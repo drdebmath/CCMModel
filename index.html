@@ -18,18 +18,20 @@
   <h1>CCM Simulation in Pyodide</h1>
   <div id="controls">
     <label>Nodes<input type="number" id="nodeCountInput" min="1" value="10"></label>
-    <label>Max Deg<input type="number" id="maxDegreeInput" min="1" value="4"></label>
-    <label>Agents<input type="number" id="agentCountInput" min="1" value="3"></label>
-    <label>Rounds<input type="number" id="roundCountInput" min="1" value="3"></label>
+    <label>Max Deg<input type="number" id="maxDegreeInput" min="1" value="4"></label>
+    <label>Agents<input type="number" id="agentCountInput" min="1" value="8"></label>
+    <label>Rounds<input type="number" id="roundCountInput" min="1" value="20"></label>
+    <label>Anim Duration (ms)<input type="number" id="animationDurationInput" min="100" value="300"  step="100"></label>
+    <label>Seed<input type="number" id="seedInput" value="42"></label>
     <button id="runBtn">Run</button>
   </div>
 
   <div id="output">Click “Run” to start.</div>
-  <div id="round-display">Round: 0</div>
+  <div id="round-display">Round: 0</div>
   <div id="cy"></div>
 
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
   <script src="https://unpkg.com/cytoscape@3.24.0/dist/cytoscape.min.js"></script>
-  <script type="module" src="main.js"></script>
+  <script type="module" src="main.js" defer></script>
 </body>
 </html>

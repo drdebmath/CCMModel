@@ -5,6 +5,7 @@ import networkx as nx
 from collections import defaultdict
 from graph_utils import create_port_labeled_graph, randomize_ports
 from agent import Agent
+import random
 
 def get_agent_positions_and_statuses(G, agents):
     positions = [a.currentnode for a in agents]
@@ -31,11 +32,11 @@ def run_simulation(G, agents, rounds):
         all_statuses.append(statuses)
     return all_positions, all_statuses
 
-# "nodes", "edges", "agent_count", and "rounds" are provided by the runner
+# "nodes", "max degree", "agent_count", and "rounds" are provided by the runner
 
-# Build and label graph ports
-G = create_port_labeled_graph(nodes, edges)
-randomize_ports(G)
+G = create_port_labeled_graph(nodes, max_degree, seed)
+print(f'Graph created with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges')
+randomize_ports(G, seed)
 for node in G.nodes():
     G.nodes[node]['agents'] = set()
     G.nodes[node]['settled_agent'] = None
@@ -49,7 +50,7 @@ if agents and rounds > 0 and G.number_of_nodes() > 0:
     print(f'Simulation finished')
 
 # Compute layout once via spring
-pos = nx.spring_layout(G, scale=300)
+pos = nx.spring_layout(G, scale=300, seed= seed)
 
 # Prepare JSON output
 nodes_data = [

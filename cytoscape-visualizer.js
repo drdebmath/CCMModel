@@ -85,7 +85,8 @@ export function drawCytoscape(containerId, data) {
     cy.ready(() => {
         addAgents(data.positions[0], data.statuses[0]);
         updateNodeStyles(data.positions[0], data.statuses[0]);
-        animateAgents(data.positions, data.statuses);
+        const animDuration = parseInt(document.getElementById('animationDurationInput').value, 10) || 200;
+        animateAgents(data.positions, data.statuses, animDuration);
     });
 }
 
@@ -121,11 +122,11 @@ function updateNodeStyles(positionsRound, statusesRound) {
     });
 }
 
-function animateAgents(positions, statuses) {
+function animateAgents(positions, statuses, animDuration) {
     let round = 1;
     const total = positions.length;
-    const duration = 800;
-    const pause = 1000;
+    const duration = animDuration || 200;
+    const pause = animDuration || 200;
 
     function step() {
         if (round >= total) {
@@ -151,5 +152,9 @@ function animateAgents(positions, statuses) {
         round++;
         animationTimeout = setTimeout(step, duration + pause);
     }
-    animationTimeout = setTimeout(step, 500);
+    animationTimeout = setTimeout(step, 100);
 }
+
+// Find where animateAgents is called and pass the animation duration from the input
+// Example: animateAgents(positions, statuses, parseInt(document.getElementById('animationDurationInput').value, 10) || 200);
+// If this is called elsewhere, update those calls accordingly.

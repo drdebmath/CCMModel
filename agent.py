@@ -213,7 +213,7 @@ class Agent:
             self.assign_scout_port(G, new_leader, scout_pool)
         elif len(leaders) == 0:
             print(f'Electing leader for the first time. Round No {self.round_number}')
-        else:
+        else: # only one leader
             # the leader checks for next port to visit if exists otherwise backtrack; the helpers return to their home base.
             leader = leaders[0]
             scout_pool = [a for a in colocated_agents if a.state['status'] == AgentStatus["UNSETTLED"]]
@@ -228,12 +228,43 @@ class Agent:
                 else:
                     # go to the empty node with all unsettled followers
                     unsettled_followers = [a for a in scout_pool if a.state['status'] == AgentStatus["UNSETTLED"]]
-                    next_port = scout_returns[0].scout_port
-                    for a in unsettled_followers:
-                        a.next_port = next_port
-                        a.computed = True 
-                    leader.next_port = next_port
-                    leader.computed = True
+                    # find empty node
+                    empty_port = None
+                    empty_ports = [a.scout_port for a in scout_returns if a.scouted_result == NodeStatus["EMPTY"]]
+                    empty_port = min(empty_ports) if empty_ports else None
+                    if empty_port is not None:
+                        # if empty node is found, go to the empty node with all unsettled followers
+                        for a in unsettled_followers:
+                            a.next_port = empty_port
+                            a.state['phase'] = AgentPhase['EXPLORE']
+                            a.computed = True 
+                            a.scout_port = None
+                        leader.next_port = empty_port
+                        leader.state['phase'] = AgentPhase['EXPLORE']
+                        leader.computed = True
+                        leader.scout_port = None
+                    else: # no empty node found
+                        if leader.checked_port < G.degree(leader.currentnode):
+                            self.assign_scout_port(G, leader, scout_pool)
+                        else: # no more ports to check
+                            # go back to parent port at settled robot
+                            # find settled agent 
+                            settled_agent = [a for a in colocated_agents if a.state['status'] == AgentStatus["SETTLED"]][0]
+                            leader.next_port = settled_agent.parent_port
+                            leader.computed = True
+                            leader.scout_port = None
+                            for a in scout_pool:
+                                a.state['phase'] = AgentPhase['EXPLORE']
+                                a.next_port = settled_agent.parent_port
+                                a.computed = True
+                                a.scout_port = None
+            else: # no scout returns
+                if leader.state['phase'] == AgentPhase['EXPLORE']:
+                    settled_agent = self.settle_heo(G, leader)
+                    settled_agent.state['phase']= AgentPhase['WAIT_SCOUT']
+                    # leader will start scout()
+                    scout_pool = [a for a in colocated_agents if a != settled_agent]
+                    self.assign_scout_port(G, leader, scout_pool)
 
 
     def assign_scout_port(self, G, leader, scout_pool):
