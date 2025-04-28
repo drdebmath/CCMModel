@@ -1,28 +1,39 @@
-class AgentStatus:
+def get_dict_key(d, value):
+    for k, v in d.items():
+        if v == value:
+            return k
+    return str(value)
+
+AgentStatus = {
     # status of the agent
-    SETTLED = 0
-    UNSETTLED = 1
+    "SETTLED": 0,
+    "UNSETTLED": 1
+}
 
-class AgentRole:
+AgentRole = {
     # role of the agent
-    LEADER = 0
-    FOLLOWER = 1
+    "LEADER": 0,
+    "FOLLOWER": 1
+}
 
-class AgentPhase:
+AgentPhase = {
     # phase of the agent
-    EXPLORE = 0
-    IDLE = 1
-    SCOUT_FORWARD = 2
-    SCOUT_RETURN = 3
-    JOIN_SCOUT = 4
-    RETURN_SCOUT = 5
-    CHASE_LEADER = 6
-    WAIT_LEADER = 7
+    "EXPLORE": 0,
+    "IDLE": 1,
+    "SCOUT_FORWARD": 2,
+    "SCOUT_RETURN": 3,
+    "JOIN_SCOUT": 4,
+    "RETURN_SCOUT": 5,
+    "CHASE_LEADER": 6,
+    "WAIT_LEADER": 7,
+    "WAIT_SCOUT": 8
+}
 
-class NodeStatus:
+NodeStatus = {
     # a node can be empty or occupied by a settled agent
-    EMPTY = 0
-    OCCUPIED = 1
+    "EMPTY": 0,
+    "OCCUPIED": 1
+}
 
 class Agent:
     """Class of agents. Contains the functions and variables stored at each agent."""
@@ -31,11 +42,11 @@ class Agent:
         self.currentnode = initial_node
         self.round_number = 0
         self.state = {
-            "status": AgentStatus.UNSETTLED,
-            "role": AgentRole.LEADER,
-            "phase": AgentPhase.EXPLORE,
+            "status": AgentStatus["UNSETTLED"],
+            "role": AgentRole["LEADER"],
+            "phase": AgentPhase["EXPLORE"],
             "level": 0,
-            "leader": self.id,
+            "leader": self,
             "home": None # assigned a node when agent settles.
         }
         # The ports are numbered 1 to degree of the node. 
@@ -63,11 +74,11 @@ class Agent:
         # if there is no settled agent among the colocated agents, settle the highest ID agent
         colocated_agents = self.get_colocated_agents(G)
         for a in colocated_agents:
-            if a.state['status'] == AgentStatus.SETTLED:
+            if a.state['status'] == AgentStatus["SETTLED"]:
                 return
         # no settled agent, then settle the highest
         highest_id_agent = max(colocated_agents, key=lambda a: a.id)
-        highest_id_agent.state['status'] = AgentStatus.SETTLED
+        highest_id_agent.state['status'] = AgentStatus["SETTLED"]
         highest_id_agent.parent_port = highest_id_agent.arrival_port
         highest_id_agent.recent_port = highest_id_agent.arrival_port
         G.nodes[self.currentnode]['settled_agent'] = highest_id_agent
@@ -76,7 +87,7 @@ class Agent:
 
     def move_dfs_rooted(self, G, round_number):
         self.round_number += 1
-        if self.next_port is None and self.state['status'] == AgentStatus.SETTLED:
+        if self.next_port is None and self.state['status'] == AgentStatus["SETTLED"]:
             if self.increment == True:
                 if self.recent_port == None:
                     self.recent_port = 0
@@ -124,43 +135,62 @@ class Agent:
                 self.next_port = self.arrival_port
                 return
 
-    def settle_heo(self, G):
+    def settle_heo(self, G, leader):
         # highest id follower agent settles if there are no settled agents
         settled_agent = G.nodes[self.currentnode]['settled_agent']
         if settled_agent is not None and settled_agent.currentnode == self.currentnode:
+            if settled_agent.state['leader'] == leader and settled_agent.state['level'] == leader.state['level']:
+                pass
+            else:
+                settled_agent.state['leader'] = leader
+                settled_agent.state['level'] = leader.state['level']
             return settled_agent
         colocated_agents = G.nodes[self.currentnode]['agents']
-        highest_id_agent = max(colocated_agents, key: lambda a: a.id)
-        highest_id_agent.state['status'] = AgentStatus.Settled
-        print(f'agent {highest_id_agent.id} settled at {self.currentnode}. Leader: {highest_id_agent.state['leader']}')
+        highest_id_agent = max(colocated_agents, key=lambda a: a.id)
+        highest_id_agent.state['status'] = AgentStatus["SETTLED"]
+        highest_id_agent.state['leader'] = leader
+        highest_id_agent.state['level'] = leader.state['level']
+        print(f'agent {highest_id_agent.id} settled at {self.currentnode}. Leader: {highest_id_agent.state['leader'].id} with level {highest_id_agent.state['level']}')
         settled_agent = highest_id_agent
-        return 
+        settled_agent.state['leader'] = leader
+        settled_agent.state['level'] = leader.state['level']
+        return settled_agent
 
     def compute_heo(self, G, agents):
+        print(f"Round {self.round_number}: Agent {self.id} is {get_dict_key(AgentStatus, self.state['status'])} located at {self.currentnode}. Role: {get_dict_key(AgentRole, self.state['role'])}. Phase: {get_dict_key(AgentPhase, self.state['phase'])}")
+        if self.computed == True:
+            return
         colocated_agents = G.nodes[self.currentnode]['agents']
         # check state scout
-        if self.state['phase'] == AgentPhase.SCOUT_FORWARD:
-            self.state['phase'] = AgentPhase.SCOUT_RETURN
+        if self.state['phase'] == AgentPhase["SCOUT_FORWARD"]:
+            self.state['phase'] = AgentPhase["SCOUT_RETURN"]
             self.next_port = self.arrival_port
+            print(f'Agent {self.id} computed next port to be {self.next_port}')
             # check for helpers in the current node
             if len(colocated_agents) == 1: # empty node
                 # return and report empty neighbor
-                self.scouted_result = NodeStatus.EMPTY
+                self.scouted_result = NodeStatus["EMPTY"]
             else:
                 for a in colocated_agents:
-                    if a.state['status'] == AgentStatus.SETTLED and a.state['phase'] == AgentPhase.IDLE: # the settled robot is not a scout
+                    if a.state['status'] == AgentStatus["SETTLED"] and a.state['phase'] == AgentPhase["IDLE"]: # the settled robot is not a scout
                     # check if the settled robot belongs to the same group, then take its help, otherwise report empty
                         if a.state['leader'] == self.state['leader'] and a.state['level'] == self.state['level']:
-                            self.scouted_result = NodeStatus.OCCUPIED
+                            self.scouted_result = NodeStatus["OCCUPIED"]
+                            a.scout_at_neighbor = self.arrival_port
+                            a.state['phase'] = AgentPhase["JOIN_SCOUT"]
+                            a.next_port = self.arrival_port
+                            a.computed = True
                             break
-                        self.scouted_result = NodeStatus.EMPTY
+                        self.scouted_result = NodeStatus["EMPTY"]
                         break
         # check state scout return
-        if self.state['phase'] == AgentPhase.SCOUT_RETURN:
+        elif self.state['phase'] == AgentPhase["SCOUT_RETURN"]:
             # leader must check for the status of the scout result
-            self.activate_leader(self, G, agents)
+            self.activate_leader(G, agents)
             
         # check state explore
+        elif self.state['phase'] == AgentPhase["EXPLORE"]:
+            self.activate_leader(G, agents)
         # check leader meeting other leader/follower
         # check 
 
@@ -169,26 +199,47 @@ class Agent:
 
     def activate_leader(self, G, agents):
         colocated_agents = G.nodes[self.currentnode]['agents']
-        leaders = [a for a in colocated_agents if a.state['role'] == AgentRole.LEADER]
+        leaders = [a for a in colocated_agents if a.state['role'] == AgentRole["LEADER"]]
         if len(leaders) > 1:
-            new_leader = self.make_new_leader(self, G, leaders)
+            new_leader = self.make_new_leader(G, leaders)
             for a in colocated_agents:
                 if a != new_leader:
-                    a.state['role'] = AgentRole.FOLLOWER
+                    a.state['role'] = AgentRole["FOLLOWER"]
                     a.state['level'] = new_leader.state['level']
-            # since new leader is elected, the algorithm begins new with probe
-            new_leader.checked_port = None
-            settled_agent = self.settle_heo(G)
+            settled_agent = self.settle_heo(G, new_leader)
+            settled_agent.state['phase']= AgentPhase['WAIT_SCOUT']
             # leader will start scout()
             scout_pool = [a for a in colocated_agents if a != settled_agent]
-            self.scout()
-        # leader continues scouting if no empty neighbor found
-        
+            self.assign_scout_port(G, new_leader, scout_pool)
+        elif len(leaders) == 0:
+            print(f'Electing leader for the first time. Round No {self.round_number}')
+        else:
+            # the leader checks for next port to visit if exists otherwise backtrack; the helpers return to their home base.
+            leader = leaders[0]
+            scout_pool = [a for a in colocated_agents if a.state['status'] == AgentStatus["UNSETTLED"]]
+            scout_returns = [a for a in colocated_agents if a.state['phase'] == AgentPhase["SCOUT_RETURN"]]
+            if len(scout_returns) > 0:
+                empty_node_found = False
+                for a in scout_returns:
+                    if a.scouted_result == NodeStatus["EMPTY"]:
+                        empty_node_found = True
+                if not empty_node_found and leader.checked_port < G.degree(leader.currentnode):
+                    self.assign_scout_port(G, leader, scout_pool)
+                else:
+                    # go to the empty node with all unsettled followers
+                    unsettled_followers = [a for a in scout_pool if a.state['status'] == AgentStatus["UNSETTLED"]]
+                    next_port = scout_returns[0].scout_port
+                    for a in unsettled_followers:
+                        a.next_port = next_port
+                        a.computed = True 
+                    leader.next_port = next_port
+                    leader.computed = True
 
-    def scout(self, G, leader, scout_pool):
+
+    def assign_scout_port(self, G, leader, scout_pool):
         sorted_pool = sorted(scout_pool, key=lambda a:a.id)
         # assign ports from checked_port to degree max
-        degree = G.degree[leader.currentnode]
+        degree = G.degree(leader.currentnode)
         if leader.checked_port is None:
             start_port = 0
         else:
@@ -199,9 +250,12 @@ class Agent:
                 agent.scout_port = port
                 agent.next_port = port
                 agent.computed = True
+                agent.state['phase'] = AgentPhase['SCOUT_FORWARD']
             else:
                 agent.scout_port = None
-                agent.computed = True  # or handle overflow as needed
+                agent.computed = True
+                agent.state['phase'] = AgentPhase['WAIT_SCOUT'] # extra scouts are idle and do not do any scouting
+        return
 
 
     def make_new_leader(self, G, leaders):
@@ -212,12 +266,13 @@ class Agent:
             # Now break ties by lowest id
             new_leader = min(top_level_agents, key=lambda a: a.id)
             new_leader.state['level'] += 1
+            new_leader.checked_port = None # changes only if the leader level changes.
         else:
             new_leader = top_level_agents[0]
         return new_leader
 
-    def move_heo(self, G, agents):
-        self.round_number += 1
+    def move_heo(self, G, r):
+        self.round_number = r
         if self.computed == True and self.next_port is not None:
             next_node = G.nodes[self.currentnode]['port_map'].get(self.next_port)
             if next_node is None:

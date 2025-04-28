@@ -21,13 +21,11 @@ def run_simulation(G, agents, rounds):
     for a in agents:
         G.nodes[a.currentnode]['agents'].add(a)
     for r in range(1, rounds+1):
-        print(f'round Number {r}')
+        print(f'round Number {r - 1}')
         for a in agents:
-            a.settle_dfs_rooted(G, agents)
+            a.compute_heo(G, agents)
         for a in agents:
-            a.compute_dfs_rooted(G, agents)
-        for a in agents:
-            a.move_dfs_rooted(G, r)
+            a.move_heo(G, r)
         positions, statuses = get_agent_positions_and_statuses(G, agents)
         all_positions.append(positions)
         all_statuses.append(statuses)
