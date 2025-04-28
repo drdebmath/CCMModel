@@ -66,4 +66,4 @@ htmlcov/
 .env.*
 
 # Custom
-llm.txt
+*.txt
