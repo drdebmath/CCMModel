@@ -6,6 +6,8 @@ from collections import defaultdict
 from graph_utils import create_port_labeled_graph, randomize_ports
 from agent import Agent
 import random
+from agent import get_dict_key
+from agent import AgentStatus, AgentRole, AgentPhase
 
 def get_agent_positions_and_statuses(G, agents):
     positions = [a.currentnode for a in agents]
@@ -23,6 +25,8 @@ def run_simulation(G, agents, rounds):
         G.nodes[a.currentnode]['agents'].add(a)
     for r in range(1, rounds+1):
         print(f'round Number {r - 1}')
+        for a in agents:
+            print(f"Round {r - 1}: Agent {a.id} is {get_dict_key(AgentStatus, a.state['status'])} located at {a.currentnode}. Role: {get_dict_key(AgentRole, a.state['role'])}. Phase: {get_dict_key(AgentPhase, a.state['phase'])}")
         for a in agents:
             a.compute_heo(G, agents)
         for a in agents:
