@@ -1,37 +1,114 @@
-<!-- index.html -->
-
 <!DOCTYPE html>
-<html>
+<html lang="en" class="dark">
 <head>
-  <meta charset="utf-8">
-  <title>CCM Simulation</title>
-  <style>
-    #controls { display: flex; gap: 1em; margin-bottom: 1em; }
-    #controls label { display: flex; flex-direction: column; font-size: 0.9em; }
-    input { width: 4em; }
-    #cy { width: 800px; height: 600px; border: 1px solid #ccc; }
-    #round-display { font-weight: bold; margin-top: 1em; }
-    #output { white-space: pre-wrap; font-family: monospace; margin-top: 1em; }
-  </style>
-</head>
-<body>
-  <h1>CCM Simulation in Pyodide</h1>
-  <div id="controls">
-    <label>Nodes<input type="number" id="nodeCountInput" min="1" value="10"></label>
-    <label>Max Deg<input type="number" id="maxDegreeInput" min="1" value="4"></label>
-    <label>Agents<input type="number" id="agentCountInput" min="1" value="8"></label>
-    <label>Rounds<input type="number" id="roundCountInput" min="1" value="20"></label>
-    <label>Anim Duration (ms)<input type="number" id="animationDurationInput" min="100" value="300"  step="100"></label>
-    <label>Seed<input type="number" id="seedInput" value="42"></label>
-    <button id="runBtn">Run</button>
-  </div>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulation of Agents in a Network</title>
 
-  <div id="output">Click “Run” to start.</div>
-  <div id="round-display">Round: 0</div>
-  <div id="cy"></div>
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: '#3b82f6', // blue-500
+            accent: '#f97316',  // orange-500
+            darkbg: '#1e293b',  // slate-800
+            darktext: '#e2e8f0', // slate-200
+          }
+        }
+      }
+    };
+  </script>
 
-  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
+  <!-- Google Fonts for nice typography -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+
+  <!-- Cytoscape -->
   <script src="https://unpkg.com/cytoscape@3.24.0/dist/cytoscape.min.js"></script>
-  <script type="module" src="main.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
+
+</head>
+
+<body class="bg-gray-50 text-gray-900 dark:bg-darkbg dark:text-darktext font-inter min-h-screen flex flex-col">
+
+  <!-- HEADER -->
+  <header class="p-4 flex justify-between items-center shadow-md">
+    <h1 class="text-2xl font-bold">Simulation of Agents in a Network</h1>
+    <a id="homeBtn" href="https://drdebmath.github.io" class="px-3 py-1 bg-primary text-white rounded-lg text-sm">Home</a>
+    <button id="darkModeToggle" class="px-3 py-1 bg-primary text-white rounded-lg text-sm">Toggle Dark Mode</button>
+  </header>
+
+  <!-- CONTROLS PANEL -->
+  <section class="p-4 flex flex-wrap gap-4 items-center bg-white dark:bg-gray-800 shadow-md">
+
+    <div class="flex flex-col">
+      <label class="text-sm">Nodes</label>
+      <input id="nodeCountInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="1" value="10">
+    </div>
+
+    <div class="flex flex-col">
+      <label class="text-sm">Max Degree</label>
+      <input id="maxDegreeInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="1" value="4">
+    </div>
+
+    <div class="flex flex-col">
+      <label class="text-sm">Agents</label>
+      <input id="agentCountInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="1" value="8">
+    </div>
+
+    <div class="flex flex-col">
+      <label class="text-sm">Rounds</label>
+      <input id="roundCountInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="1" value="20">
+    </div>
+
+    <div class="flex flex-col">
+      <label class="text-sm">Anim Duration (ms)</label>
+      <input id="animationDurationInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="100" step="100" value="300">
+    </div>
+
+    <div class="flex flex-col">
+      <label class="text-sm">Seed</label>
+      <input id="seedInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" value="42">
+    </div>
+
+    <button id="runBtn" class="bg-accent hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow">
+      ▶️ Run
+    </button>
+
+  </section>
+
+  <!-- SIMULATION OUTPUT -->
+  <section class="p-4 flex flex-col gap-4 flex-1">
+    <div id="output" class="text-sm italic">Click “Run” to start the simulation.</div>
+    <div id="round-display" class="text-lg font-semibold">Round: 0</div>
+    <div id="cy" class="border rounded-lg shadow bg-white dark:bg-gray-900" style="width: 100%; height: 600px;"></div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="p-4 text-center text-xs text-gray-500 dark:text-gray-400">
+    Developed by <a href="https://drdebmath.github.io" class="underline"> Debasish Pattanayak</a>  
+  </footer>
+
+  <!-- Scripts -->
+  <script type="module" src="./main.js"></script>
+  <script>
+    // Dark Mode Toggle
+    document.addEventListener("DOMContentLoaded", () => {
+      const toggle = document.getElementById('darkModeToggle');
+      const html = document.documentElement;
+      toggle.addEventListener('click', () => {
+        html.classList.toggle('dark');
+        localStorage.setItem('darkMode', html.classList.contains('dark'));
+      });
+
+      if (localStorage.getItem('darkMode') === 'true') {
+        html.classList.add('dark');
+      }
+    });
+  </script>
+
 </body>
 </html>

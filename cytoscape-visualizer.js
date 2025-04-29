@@ -16,6 +16,8 @@ export function drawCytoscape(containerId, data) {
     const roundDisplay = document.getElementById('round-display');
     if (!roundDisplay && DEBUG) console.warn('#round-display missing');
 
+    // Detect dark mode from <html> class
+    const isDark = document.documentElement.classList.contains('dark');
     cy = cytoscape({
         container,
         elements: data.nodes.concat(data.edges),
@@ -24,53 +26,52 @@ export function drawCytoscape(containerId, data) {
                 selector: 'node',
                 style: {
                     label: 'data(id)',
-                    'background-color': 'lightblue',
+                    'background-color': isDark ? '#334155' : 'lightblue', // slate-700 vs lightblue
                     width: 25, height: 25,
                     'text-valign': 'center',
                     'text-halign': 'center',
-                    'font-size': 10
+                    'font-size': 10,
+                    color: isDark ? '#e2e8f0' : '#222', // slate-200 vs dark text
                 }
             },
             {
                 selector: 'node.has-unsettled',
                 style: {
-                    'background-color': 'orange'
+                    'background-color': isDark ? '#f59e42' : 'orange' // amber-500 vs orange
                 }
             },
-            // cytoscape-visualizer.js  – stylesheet entry for edges
             {
                 selector: 'edge',
                 style: {
                     width: 2,
-                    'line-color': '#ccc',
-
-                    /* port labels at the two endpoints */
+                    'line-color': isDark ? '#64748b' : '#ccc', // slate-400 vs light
                     'source-label': 'data(srcPort)',
                     'target-label': 'data(dstPort)',
                     'source-text-offset': 20,
                     'target-text-offset': 20,
                     'font-size': 8,
-                    'text-background-color': '#fff',
-                    'text-background-opacity': 0.7
+                    'text-background-color': isDark ? '#1e293b' : '#fff', // darkbg vs white
+                    'text-background-opacity': 0.85,
+                    color: isDark ? '#e2e8f0' : '#222',
                 }
             },
             {
                 selector: '.agent',
                 style: {
                     shape: 'ellipse',
-                    'background-color': 'red',
+                    'background-color': isDark ? '#ef4444' : 'red', // red-500 vs red
                     width: 12, height: 12,
                     label: 'data(label)',
                     'font-size': 8,
                     'text-valign': 'center',
                     'text-halign': 'center',
-                    color: 'white',
+                    color: isDark ? '#f1f5f9' : 'white', // slate-100 vs white
                     'z-index': 10
                 }
             },
             {
                 selector: '.agent.settled',
-                style: { 'background-color': 'green' }
+                style: { 'background-color': isDark ? '#22c55e' : 'green' } // green-500 vs green
             }
         ],
         layout: {
