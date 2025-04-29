@@ -1,5 +1,3 @@
-// cytoscape-visualizer.js
-
 let cy = null;
 let animationTimeout = null;
 const DEBUG = false;
@@ -18,6 +16,7 @@ export function drawCytoscape(containerId, data) {
 
     // Detect dark mode from <html> class
     const isDark = document.documentElement.classList.contains('dark');
+
     cy = cytoscape({
         container,
         elements: data.nodes.concat(data.edges),
@@ -26,52 +25,60 @@ export function drawCytoscape(containerId, data) {
                 selector: 'node',
                 style: {
                     label: 'data(id)',
-                    'background-color': isDark ? '#334155' : 'lightblue', // slate-700 vs lightblue
-                    width: 25, height: 25,
+                    'background-color': isDark ? '#3b82f6' : '#93c5fd', // blue-500 vs blue-300
+                    width: 30,
+                    height: 30,
                     'text-valign': 'center',
                     'text-halign': 'center',
-                    'font-size': 10,
-                    color: isDark ? '#e2e8f0' : '#222', // slate-200 vs dark text
+                    'font-size': 12,
+                    'color': isDark ? '#f1f5f9' : '#1e293b', // no background behind text
+                    'font-weight': '600'
                 }
             },
             {
                 selector: 'node.has-unsettled',
                 style: {
-                    'background-color': isDark ? '#f59e42' : 'orange' // amber-500 vs orange
+                    'background-color': isDark ? '#facc15' : 'orange' // yellow-400 vs orange
                 }
             },
             {
                 selector: 'edge',
                 style: {
                     width: 2,
-                    'line-color': isDark ? '#64748b' : '#ccc', // slate-400 vs light
+                    'line-color': isDark ? '#94a3b8' : '#cbd5e1', // slate-400 vs light gray
+                    'target-arrow-color': isDark ? '#94a3b8' : '#cbd5e1',
                     'source-label': 'data(srcPort)',
                     'target-label': 'data(dstPort)',
-                    'source-text-offset': 20,
-                    'target-text-offset': 20,
-                    'font-size': 8,
-                    'text-background-color': isDark ? '#1e293b' : '#fff', // darkbg vs white
-                    'text-background-opacity': 0.85,
-                    color: isDark ? '#e2e8f0' : '#222',
+                    'source-text-offset': 25,
+                    'target-text-offset': 25,
+                    'font-size': 9,
+                    'text-background-color': isDark ? '#0f172a' : '#ffffff', // edge label backgrounds only
+                    'text-background-opacity': 0.9,
+                    'text-background-shape': 'roundrectangle',
+                    'color': isDark ? '#f1f5f9' : '#1e293b'
                 }
             },
             {
                 selector: '.agent',
                 style: {
                     shape: 'ellipse',
-                    'background-color': isDark ? '#ef4444' : 'red', // red-500 vs red
-                    width: 12, height: 12,
+                    'background-color': isDark ? '#f87171' : '#ef4444', // red-400 vs red-500
+                    width: 20,     // 👈 Larger agent circles
+                    height: 20,    // 👈 Larger agent circles
                     label: 'data(label)',
-                    'font-size': 8,
+                    'font-size': 10, // 👈 Larger text inside agent
                     'text-valign': 'center',
                     'text-halign': 'center',
-                    color: isDark ? '#f1f5f9' : 'white', // slate-100 vs white
+                    'color': isDark ? '#f9fafb' : '#ffffff', // white text
+                    'text-background-opacity': 0, // no background for agent text
                     'z-index': 10
                 }
             },
             {
                 selector: '.agent.settled',
-                style: { 'background-color': isDark ? '#22c55e' : 'green' } // green-500 vs green
+                style: {
+                    'background-color': isDark ? '#22d3ee' : '#10b981' // cyan-400 vs green-500
+                }
             }
         ],
         layout: {
@@ -111,9 +118,7 @@ function addAgents(initialPositions, initialStatuses) {
  * Color nodes with unsettled agents.
  */
 function updateNodeStyles(positionsRound, statusesRound) {
-    // Clear previous unsettled markers
     cy.nodes().removeClass('has-unsettled');
-    // Mark any node that hosts at least one unsettled agent
     statusesRound.forEach((status, i) => {
         if (status === 1) {
             const nodeId = positionsRound[i];
@@ -136,7 +141,6 @@ function animateAgents(positions, statuses, animDuration) {
         }
         document.getElementById('round-display').textContent = `Round: ${round}`;
 
-        // Update node colors for this round
         updateNodeStyles(positions[round], statuses[round]);
 
         positions[round].forEach((nodeId, i) => {
@@ -150,12 +154,10 @@ function animateAgents(positions, statuses, animDuration) {
             }
             agent.animate({ position: { x: target.x, y: target.y } }, { duration });
         });
+
         round++;
         animationTimeout = setTimeout(step, duration + pause);
     }
+
     animationTimeout = setTimeout(step, 100);
 }
-
-// Find where animateAgents is called and pass the animation duration from the input
-// Example: animateAgents(positions, statuses, parseInt(document.getElementById('animationDurationInput').value, 10) || 200);
-// If this is called elsewhere, update those calls accordingly.
