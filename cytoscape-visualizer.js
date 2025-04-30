@@ -63,14 +63,14 @@ export function drawCytoscape(containerId, data) {
                 style: {
                     shape: 'ellipse',
                     'background-color': isDark ? '#f87171' : '#ef4444', // red-400 vs red-500
-                    width: 20,     // 👈 Larger agent circles
-                    height: 20,    // 👈 Larger agent circles
+                    width: 20,     
+                    height: 20,    
                     label: 'data(label)',
-                    'font-size': 10, // 👈 Larger text inside agent
+                    'font-size': 10,
                     'text-valign': 'center',
                     'text-halign': 'center',
-                    'color': isDark ? '#f9fafb' : '#ffffff', // white text
-                    'text-background-opacity': 0, // no background for agent text
+                    'color': isDark ? '#f9fafb' : '#ffffff',
+                    'text-background-opacity': 0, 
                     'z-index': 10
                 }
             },
@@ -78,6 +78,12 @@ export function drawCytoscape(containerId, data) {
                 selector: '.agent.settled',
                 style: {
                     'background-color': isDark ? '#22d3ee' : '#10b981' // cyan-400 vs green-500
+                }
+            },
+            {
+                selector: '.agent.settled_wait',
+                style: {
+                    'background-color': isDark ? '#fbbf24' : '#f59e0b' // yellow-400 vs yellow-500
                 }
             }
         ],
@@ -110,6 +116,9 @@ function addAgents(initialPositions, initialStatuses) {
         });
         if (initialStatuses[i] === 1) {
             agent.addClass('settled');
+        }
+        if (initialStatuses[i] === 2) {
+            agent.addClass('settled_wait');
         }
     });
 }
@@ -151,6 +160,11 @@ function animateAgents(positions, statuses, animDuration) {
                 agent.addClass('settled');
             } else {
                 agent.removeClass('settled');
+            }
+            if (statuses[round][i] === 2) {
+                agent.addClass('settled_wait');
+            } else {
+                agent.removeClass('settled_wait');
             }
             agent.animate({ position: { x: target.x, y: target.y } }, { duration });
         });

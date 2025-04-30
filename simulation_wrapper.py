@@ -15,23 +15,33 @@ def get_agent_positions_and_statuses(G, agents):
     return positions, statuses
 
 
-def run_simulation(G, agents, rounds):
+def run_simulation(G, agents, max_degree, rounds):
     all_positions = []
     all_statuses = []
     positions, statuses = get_agent_positions_and_statuses(G, agents)
+    old_positions = positions
+    old_statuses = statuses
     all_positions.append(positions)
     all_statuses.append(statuses)
-    for a in agents:
-        G.nodes[a.currentnode]['agents'].add(a)
-    for r in range(1, rounds+1):
-        print(f'round Number {r - 1}')
+    round_number = 1
+    max_rounds = len(G.nodes())* max_degree
+    # check for unsettled agents in statuses
+    while any(s == AgentStatus['UNSETTLED'] for s in statuses) and round_number <= max_rounds:
         for a in agents:
-            print(f"Round {r - 1}: Agent {a.id} is {get_dict_key(AgentStatus, a.state['status'])} located at {a.currentnode}. Role: {get_dict_key(AgentRole, a.state['role'])}. Phase: {get_dict_key(AgentPhase, a.state['phase'])}")
+            G.nodes[a.currentnode]['agents'].add(a)
+        round_number += 1
+        print(f'round Number {round_number - 1}')
+        for a in agents:
+            print(f"Round {round_number - 1}: Agent {a.id} is {get_dict_key(AgentStatus, a.state['status'])} located at {a.currentnode}. Role: {get_dict_key(AgentRole, a.state['role'])}. Phase: {get_dict_key(AgentPhase, a.state['phase'])}. Leader: {a.state['leader'].id}")
         for a in agents:
             a.compute_heo(G, agents)
         for a in agents:
-            a.move_heo(G, r)
+            a.move_heo(G, round_number)
         positions, statuses = get_agent_positions_and_statuses(G, agents)
+        if positions == old_positions and statuses == old_statuses:
+            break
+        old_positions = positions
+        old_statuses = statuses
         all_positions.append(positions)
         all_statuses.append(statuses)
     return all_positions, all_statuses
@@ -46,11 +56,11 @@ for node in G.nodes():
     G.nodes[node]['settled_agent'] = None
 
 # Initialize agents at start node (0)
-agents = [Agent(i, 0) for i in range(agent_count)]
+agents = [Agent(i, random.randint(0, G.number_of_nodes() - 1)) for i in range(agent_count)]
 
 # Execute simulation rounds
 if agents and rounds > 0 and G.number_of_nodes() > 0:
-    all_positions, all_statuses = run_simulation(G, agents, rounds)
+    all_positions, all_statuses = run_simulation(G, agents, max_degree, rounds)
     print(f'Simulation finished')
 
 # Compute layout once via spring

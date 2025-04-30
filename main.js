@@ -59,11 +59,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const n = getVal(document.getElementById('nodeCountInput'), 10, 1);
             const d = Math.min(getVal(document.getElementById('maxDegreeInput'), 4, 1), n - 1);
             const a = getVal(document.getElementById('agentCountInput'), 3, 1);
-            const r = getVal(document.getElementById('roundCountInput'), 10, 1);
+            const r = n*d;
             const seed = parseInt(document.getElementById('seedInput').value, 10) || 42;
             console.log(`main.js: Parameters - n=${n}, d=${d}, a=${a}, r=${r}, seed=${seed}`);
-
+            if (a > n) {
+                const msg = `Number of agents (${a}) must be smaller than number of nodes (${n}).`;
+                console.error("main.js:", msg);
+                if (out) out.textContent = `Error: ${msg}`;
+                btn.disabled = false;
+                return;
+            }
+            
             if (out) out.textContent = `Gen graph: ${n} nodes, maxDeg ${d}, agents ${a}, rounds ${r}, seed ${seed}`;
+
             console.log("main.js: Calling runSimulation...");
             const data = await runSimulation(py, n, d, a, r, seed);
             console.log("main.js: runSimulation returned.");

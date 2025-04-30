@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -37,7 +38,8 @@
   <!-- HEADER -->
   <header class="p-4 flex justify-between items-center shadow-md">
     <h1 class="text-2xl font-bold">Simulation of Agents in a Network</h1>
-    <a id="homeBtn" href="https://drdebmath.github.io" class="px-3 py-1 bg-primary text-white rounded-lg text-sm">Home</a>
+    <a id="homeBtn" href="https://drdebmath.github.io"
+      class="px-3 py-1 bg-primary text-white rounded-lg text-sm">Home</a>
     <button id="darkModeToggle" class="px-3 py-1 bg-primary text-white rounded-lg text-sm">Toggle Dark Mode</button>
   </header>
 
@@ -46,35 +48,36 @@
 
     <div class="flex flex-col">
       <label class="text-sm">Nodes</label>
-      <input id="nodeCountInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="1" value="10">
+      <input id="nodeCountInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext"
+        min="1" value="26">
     </div>
 
     <div class="flex flex-col">
       <label class="text-sm">Max Degree</label>
-      <input id="maxDegreeInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="1" value="4">
+      <input id="maxDegreeInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext"
+        min="1" value="4">
     </div>
 
     <div class="flex flex-col">
       <label class="text-sm">Agents</label>
-      <input id="agentCountInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="1" value="8">
-    </div>
-
-    <div class="flex flex-col">
-      <label class="text-sm">Rounds</label>
-      <input id="roundCountInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="1" value="20">
+      <input id="agentCountInput" type="number"
+        class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="1" value="25">
     </div>
 
     <div class="flex flex-col">
       <label class="text-sm">Anim Duration (ms)</label>
-      <input id="animationDurationInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="100" step="100" value="300">
+      <input id="animationDurationInput" type="number"
+        class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="100" step="100" value="300">
     </div>
 
     <div class="flex flex-col">
       <label class="text-sm">Seed</label>
-      <input id="seedInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" value="42">
+      <input id="seedInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext"
+        value="42">
     </div>
 
-    <button id="runBtn" class="bg-accent hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow">
+    <button id="runBtn"
+      class="bg-accent hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow">
       ▶️ Run
     </button>
 
@@ -84,12 +87,28 @@
   <section class="p-4 flex flex-col gap-4 flex-1">
     <div id="output" class="text-sm italic">Click “Run” to start the simulation.</div>
     <div id="round-display" class="text-lg font-semibold">Round: 0</div>
+    <!-- LEGEND -->
+    <div class="flex flex-wrap gap-4 items-center mt-2 text-sm">
+      <div class="flex items-center gap-2">
+        <div class="w-4 h-4 rounded-full bg-green-500 dark:bg-cyan-400"></div>
+        <span>SETTLED</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="w-4 h-4 rounded-full bg-yellow-500 dark:bg-yellow-400"></div>
+        <span>SETTLED_WAIT</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <div class="w-4 h-4 rounded-full bg-red-500 dark:bg-red-400"></div>
+        <span>UNSETTLED</span>
+      </div>
+    </div>
+
     <div id="cy" class="border rounded-lg shadow bg-white dark:bg-gray-900" style="width: 100%; height: 600px;"></div>
   </section>
 
   <!-- Footer -->
   <footer class="p-4 text-center text-xs text-gray-500 dark:text-gray-400">
-    Developed by <a href="https://drdebmath.github.io" class="underline"> Debasish Pattanayak</a>  
+    Developed by <a href="https://drdebmath.github.io" class="underline"> Debasish Pattanayak</a>
   </footer>
 
   <!-- Scripts -->
@@ -111,4 +130,5 @@
   </script>
 
 </body>
+
 </html>
