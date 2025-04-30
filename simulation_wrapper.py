@@ -15,7 +15,7 @@ def get_agent_positions_and_statuses(G, agents):
     return positions, statuses
 
 
-def run_simulation(G, agents, max_degree, rounds):
+def run_simulation(G, agents, max_degree, rounds, starting_positions):
     all_positions = []
     all_statuses = []
     positions, statuses = get_agent_positions_and_statuses(G, agents)
@@ -56,11 +56,13 @@ for node in G.nodes():
     G.nodes[node]['settled_agent'] = None
 
 # Initialize agents at start node (0)
-agents = [Agent(i, random.randint(0, G.number_of_nodes() - 1)) for i in range(agent_count)]
+number_of_starting_positions = starting_positions
+starting_positions = random.sample(range(G.number_of_nodes()), number_of_starting_positions)
+agents = [Agent(i, random.choice(starting_positions)) for i in range(agent_count)]
 
 # Execute simulation rounds
 if agents and rounds > 0 and G.number_of_nodes() > 0:
-    all_positions, all_statuses = run_simulation(G, agents, max_degree, rounds)
+    all_positions, all_statuses = run_simulation(G, agents, max_degree, rounds, starting_positions)
     print(f'Simulation finished')
 
 # Compute layout once via spring

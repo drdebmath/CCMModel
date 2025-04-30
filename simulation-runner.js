@@ -7,7 +7,7 @@ async function loadPyFile(py, fname) {
     py.FS.writeFile(fname, text);
   }
   
-  export async function runSimulation(py, nodes, max_degree, agents, rounds, seed) {
+  export async function runSimulation(py, nodes, max_degree, agents, rounds, seed, starting_positions) {
     // Load all Python modules and helper script into Pyodide FS
     const pythonFiles = [
       'graph_utils.py',
@@ -20,7 +20,7 @@ async function loadPyFile(py, fname) {
     let script = py.FS.readFile('simulation_wrapper.py', { encoding: 'utf8' });
   
     // Inject runtime parameters at the top
-    const header = `nodes = ${nodes}\nagent_count = ${agents}\nrounds = ${rounds}\nseed = ${seed}\nmax_degree = ${max_degree}\n`;
+    const header = `nodes = ${nodes}\nagent_count = ${agents}\nrounds = ${rounds}\nseed = ${seed}\nmax_degree = ${max_degree}\nstarting_positions = ${starting_positions}\n`;
     script = header + script;
   
     // Execute the Python script and parse JSON output

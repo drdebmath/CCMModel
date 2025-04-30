@@ -253,6 +253,9 @@ class Agent:
         if len(leaders) > 1:
             leader = self.elect_leader(G)
             new_leader_elected = True
+        elif len(leaders) == 0:
+            leader = self.elect_leader(G)
+            new_leader_elected = True
         else:
             leader = leaders[0]
         return leader, new_leader_elected
@@ -309,7 +312,6 @@ class Agent:
             AgentPhase['SCOUT_RETURN']  : self.scout_return,
             AgentPhase['EXPLORE']       : self.explore,
             AgentPhase['CHASE_LEADER']  : self.chase_leader,
-            # NEW – minimal no-ops that just unblock the robot
             AgentPhase['WAIT_SCOUT']    : self.wait_scout,
             AgentPhase['CHECK_SCOUT']   : self.scout_return,
             AgentPhase['JOIN_SCOUT']    : lambda G: None,
