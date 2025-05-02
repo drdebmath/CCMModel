@@ -1,12 +1,11 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
-
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Simulation of Agents in a Network</title>
 
-  <!-- Tailwind CSS via CDN -->
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -14,127 +13,146 @@
       theme: {
         extend: {
           colors: {
-            primary: '#3b82f6', // blue-500
-            accent: '#f97316',  // orange-500
-            darkbg: '#1e293b',  // slate-800
-            darktext: '#e2e8f0', // slate-200
+            primary: '#3b82f6',
+            accent:  '#f97316',
+            darkbg:  '#0f172a',
+            darkcard:'#1e293b',
+            darktext:'#e2e8f0',
+          },
+          fontFamily: {
+            sans: ['Inter','ui-sans-serif','system-ui']
+          },
+          boxShadow: {
+            card: '0 4px 20px rgba(0,0,0,.08)'
           }
         }
       }
-    };
+    }
   </script>
 
-  <!-- Google Fonts for nice typography -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-
-  <!-- Cytoscape -->
   <script src="https://unpkg.com/cytoscape@3.24.0/dist/cytoscape.min.js"></script>
   <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
 
+  <style>
+    html{scroll-behavior:smooth}
+    button:disabled{opacity:.4;cursor:not-allowed}
+    body::before{content:"";position:fixed;inset:0;z-index:-1;background-image:radial-gradient(rgba(59,130,246,.05)1px,transparent 1px);background-size:20px 20px}
+    html.dark body::before{background-image:radial-gradient(rgba(255,255,255,.04)1px,transparent 1px)}
+  </style>
 </head>
-
-<body class="bg-gray-50 text-gray-900 dark:bg-darkbg dark:text-darktext font-inter min-h-screen flex flex-col">
-
+<body class="min-h-screen flex flex-col bg-gray-50 text-gray-900 dark:bg-darkbg dark:text-darktext font-sans">
   <!-- HEADER -->
-  <header class="p-4 flex justify-between items-center shadow-md">
-    <h1 class="text-2xl font-bold">Simulation of Agents in a Network</h1>
-    <a id="homeBtn" href="https://drdebmath.github.io"
-      class="px-3 py-1 bg-primary text-white rounded-lg text-sm">Home</a>
-    <button id="darkModeToggle" class="px-3 py-1 bg-primary text-white rounded-lg text-sm">Toggle Dark Mode</button>
+  <header class="bg-gradient-to-r from-primary to-accent text-white shadow-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+      <h1 class="text-lg sm:text-2xl font-semibold tracking-wide">Simulation of Agents in a Network</h1>
+      <div class="flex items-center gap-3">
+        <button id="togglePanelBtn" class="rounded-lg px-3 py-1.5 text-xs sm:text-sm bg-white/10 hover:bg-white/20 active:scale-95 transition">☰ Controls</button>
+        <a href="https://drdebmath.github.io" class="rounded-lg px-3 py-1.5 text-xs sm:text-sm hover:bg-white/10 active:scale-95 transition">Home</a>
+        <button id="darkModeToggle" class="rounded-lg px-3 py-1.5 text-xs sm:text-sm bg-white/10 hover:bg-white/20 active:scale-95 transition">🌙 Dark</button>
+      </div>
+    </div>
   </header>
 
-  <!-- CONTROLS PANEL -->
-  <section class="p-4 flex flex-wrap gap-4 items-center bg-white dark:bg-gray-800 shadow-md">
-
-    <div class="flex flex-col">
-      <label class="text-sm">Nodes</label>
-      <input id="nodeCountInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext"
-        min="1" value="26">
-    </div>
-
-    <div class="flex flex-col">
-      <label class="text-sm">Max Degree</label>
-      <input id="maxDegreeInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext"
-        min="1" value="4">
-    </div>
-
-    <div class="flex flex-col">
-      <label class="text-sm">Agents</label>
-      <input id="agentCountInput" type="number"
-        class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="1" value="25">
-    </div>
-
-    <div class="flex flex-col">
-      <label class="text-sm">Starting Positions</label>
-      <input id="startingPositionsInput" type="number"
-        class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="1" value="5">
-    </div>
-
-    <div class="flex flex-col">
-      <label class="text-sm">Anim Duration (ms)</label>
-      <input id="animationDurationInput" type="number"
-        class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext" min="100" step="100" value="300">
-    </div>
-
-    <div class="flex flex-col">
-      <label class="text-sm">Seed</label>
-      <input id="seedInput" type="number" class="rounded border px-2 py-1 w-24 dark:bg-darkbg dark:text-brighttext"
-        value="42">
-    </div>
-
-    <button id="runBtn"
-      class="bg-accent hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow">
-      ▶️ Run
-    </button>
-
-  </section>
-
-  <!-- SIMULATION OUTPUT -->
-  <section class="p-4 flex flex-col gap-4 flex-1">
-    <div id="output" class="text-sm italic">Click “Run” to start the simulation.</div>
-    <div id="round-display" class="text-lg font-semibold">Round: 0</div>
-    <!-- LEGEND -->
-    <div class="flex flex-wrap gap-4 items-center mt-2 text-sm">
-      <div class="flex items-center gap-2">
-        <div class="w-4 h-4 rounded-full bg-green-500 dark:bg-cyan-400"></div>
-        <span>SETTLED</span>
+  <!-- MAIN WRAPPER -->
+  <div class="flex flex-1 overflow-hidden relative">
+    <!-- SIDEBAR / CONTROL PANEL -->
+    <aside id="controlPanel" class="fixed sm:relative inset-y-0 left-0 z-50 w-64 sm:w-72 lg:w-80 bg-white dark:bg-darkcard border-r dark:border-darkcard/40 overflow-y-auto transform -translate-x-full sm:translate-x-0 transition-transform duration-300 ease-in-out">
+      <div class="p-4 flex flex-col gap-6 lg:gap-8">
+        <!-- PARAMETERS -->
+        <div class="flex flex-col gap-3 bg-white dark:bg-darkcard shadow-card rounded-xl p-4">
+          <h3 class="text-sm font-semibold border-b dark:border-gray-700 pb-1">Parameters</h3>
+          <div class="flex flex-col gap-2 text-sm">
+            <label class="flex justify-between items-center"><span>Nodes</span><input id="nodeCountInput" type="number" min="1" value="26" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
+            <label class="flex justify-between items-center"><span>Max Deg</span><input id="maxDegreeInput" type="number" min="1" value="4" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
+            <label class="flex justify-between items-center"><span>Agents</span><input id="agentCountInput" type="number" min="1" value="26" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
+            <label class="flex justify-between items-center"><span>Start Nodes</span><input id="startingPositionsInput" type="number" min="1" value="5" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
+            <label class="flex justify-between items-center"><span>Seed</span><input id="seedInput" type="number" value="42" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
+          </div>
+        </div>
+        <!-- ANIMATION -->
+        <div class="flex flex-col gap-3 bg-white dark:bg-darkcard shadow-card rounded-xl p-4">
+          <h3 class="text-sm font-semibold border-b dark:border-gray-700 pb-1">Animation</h3>
+          <label class="flex justify-between items-center text-sm"><span>Step Speed (ms)</span><input id="animationDurationInput" type="number" min="50" step="50" value="300" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
+          <div class="flex gap-3 mt-3">
+            <button id="playPauseBtn" class="w-24 px-4 py-1.5 bg-primary/90 hover:bg-primary text-white rounded-lg text-xs transition" disabled>▶️ Play</button>
+            <button id="nextStepBtn" class="w-24 px-4 py-1.5 bg-primary/90 hover:bg-primary text-white rounded-lg text-xs transition" disabled>Next ▶▶</button>
+          </div>
+          <div class="border-t pt-3 mt-2 dark:border-gray-700">
+            <h4 class="text-xs font-semibold mb-1">Display Options</h4>
+            <div class="flex flex-col gap-1 text-xs">
+              <label class="flex items-center gap-2"><input id="showAgentsCheck" type="checkbox" class="h-4 w-4 text-primary rounded focus:ring-primary" checked/><span>Show Agents</span></label>
+              <label class="flex items-center gap-2"><input id="showScoutCheck" type="checkbox" class="h-4 w-4 text-primary rounded focus:ring-primary" checked/><span>Show Scout</span></label>
+              <label class="flex items-center gap-2"><input id="showChaseCheck" type="checkbox" class="h-4 w-4 text-primary rounded focus:ring-primary" checked/><span>Show Chase</span></label>
+              <label class="flex items-center gap-2"><input id="showFollowCheck" type="checkbox" class="h-4 w-4 text-primary rounded focus:ring-primary" checked/><span>Show Follow</span></label>
+            </div>
+          </div>
+        </div>
+        <!-- RUN BUTTON -->
+        <div class="flex flex-col items-center gap-2 bg-white dark:bg-darkcard shadow-card rounded-xl p-4">
+          <button id="runBtn" class="bg-accent hover:bg-orange-600 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-lg transition">▶️ Run</button>
+          <div id="output" class="text-xs italic text-center max-w-[10rem]">Click "Run" to start.</div>
+        </div>
       </div>
-      <div class="flex items-center gap-2">
-        <div class="w-4 h-4 rounded-full bg-yellow-500 dark:bg-yellow-400"></div>
-        <span>SETTLED_WAIT</span>
-      </div>
-      <div class="flex items-center gap-2">
-        <div class="w-4 h-4 rounded-full bg-red-500 dark:bg-red-400"></div>
-        <span>UNSETTLED</span>
-      </div>
-    </div>
+    </aside>
 
-    <div id="cy" class="border rounded-lg shadow bg-white dark:bg-gray-900" style="width: 100%; height: 600px;"></div>
-  </section>
+    <!-- BACKDROP for mobile -->
+    <div id="backdrop" class="fixed inset-0 bg-black/40 z-40 opacity-0 pointer-events-none transition-opacity duration-300 sm:hidden"></div>
 
-  <!-- Footer -->
-  <footer class="p-4 text-center text-xs text-gray-500 dark:text-gray-400">
-    Developed by <a href="https://drdebmath.github.io" class="underline"> Debasish Pattanayak</a>
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <div id="round-display" class="text-base sm:text-lg font-semibold text-center bg-white dark:bg-darkcard shadow-card py-2">Status: Idle</div>
+      <!-- LEGEND -->
+      <div class="flex flex-wrap justify-center items-center gap-4 text-xs bg-white/60 dark:bg-darkcard/60 p-3 shadow-card">
+        <span class="font-semibold">Agent Status:</span>
+        <div class="flex items-center gap-1"><span class="w-3 h-3 rounded-full border-2 border-green-600 dark:border-green-400 bg-gray-400/30"></span><span>SETTLED</span></div>
+        <div class="flex items-center gap-1"><span class="w-3 h-3 rounded-full border-2 border-dashed border-amber-600 dark:border-amber-400 bg-gray-400/30"></span><span>SETTLED_WAIT</span></div>
+        <div class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-gray-400/50"></span><span>UNSETTLED</span></div>
+        <span class="font-semibold">Node:</span>
+        <div class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-blue-300 dark:bg-blue-600"></span><span>Idle</span></div>
+        <div class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-yellow-400 dark:bg-yellow-500"></span><span>Has Unsettled</span></div>
+        <span class="italic text-gray-500 dark:text-gray-400">(Agent hue ≈ Leader/Level)</span>
+      </div>
+      <!-- CANVAS -->
+      <div id="cy" class="flex-1 min-h-[300px] sm:min-h-[450px] bg-white dark:bg-darkcard"></div>
+      <div id="node-tooltip" class="hidden absolute z-50 p-2 bg-white dark:bg-darkcard border dark:border-gray-600 rounded-lg shadow-card text-xs pointer-events-none max-w-xs break-words"></div>
+    </main>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="bg-gray-100 dark:bg-darkcard py-6 text-center text-xs text-gray-600 dark:text-gray-400">
+    <p>Developed by <a href="https://drdebmath.github.io" class="underline hover:text-primary">Debasish Pattanayak</a> &middot; Powered by 
+      <a href="https://pyodide.org" class="underline hover:text-primary">Pyodide</a> and
+      <a href="https://cytoscape.org" class="underline hover:text-primary">Cytoscape.js</a> &middot;
+      With the help of
+      <a href="https://chatgpt.com/" class="underline hover:text-primary">ChatGPT</a>, 
+      <a href="https://aistudio.google.com" class="underline hover:text-primary">Gemini</a>, and 
+      <a href="https://code.visualstudio.com" class="underline hover:text-primary">VS Code</a> ✨
+    </p>
   </footer>
 
-  <!-- Scripts -->
+  <!-- SCRIPTS -->
   <script type="module" src="./main.js"></script>
   <script>
-    // Dark Mode Toggle
-    document.addEventListener("DOMContentLoaded", () => {
-      const toggle = document.getElementById('darkModeToggle');
-      const html = document.documentElement;
-      toggle.addEventListener('click', () => {
-        html.classList.toggle('dark');
-        localStorage.setItem('darkMode', html.classList.contains('dark'));
-      });
+    document.addEventListener('DOMContentLoaded',()=>{
+      const html=document.documentElement;
+      const darkBtn=document.getElementById('darkModeToggle');
+      const panelBtn=document.getElementById('togglePanelBtn');
+      const panel=document.getElementById('controlPanel');
+      const backdrop=document.getElementById('backdrop');
 
-      if (localStorage.getItem('darkMode') === 'true') {
-        html.classList.add('dark');
-      }
+      // DARK MODE
+      const applyDark=(d)=>{html.classList.toggle('dark',d);darkBtn.textContent=d?'☀️ Light':'🌙 Dark'};
+      const saved=localStorage.getItem('darkMode');
+      const prefers=window.matchMedia('(prefers-color-scheme:dark)').matches;
+      applyDark(saved==='true'||(saved===null&&prefers));
+      darkBtn.addEventListener('click',()=>{const d=!html.classList.contains('dark');localStorage.setItem('darkMode',d);applyDark(d)});
+
+      // PANEL TOGGLE
+      function togglePanel(){const open=panel.classList.toggle('-translate-x-full');backdrop.classList.toggle('opacity-0',!open);backdrop.classList.toggle('pointer-events-none',!open)}
+      panelBtn.addEventListener('click',togglePanel);
+      backdrop.addEventListener('click',togglePanel);
     });
   </script>
-
 </body>
-
 </html>
