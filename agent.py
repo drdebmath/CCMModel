@@ -138,6 +138,8 @@ def settle_an_agent(G, agent):
             agent.state['status'] = AgentStatus['SETTLED_WAIT']
             agent.parent_port = agent.pin
             G.nodes[agent.currentnode]['settled_agent'] = agent
+            agent.checked_port = None
+            agent.max_scouted_port = None
         else:
             non_leader_agents = [a for a in agents_at_node if a.state['role'] != AgentRole['LEADER']]
             max_id_agent = max(non_leader_agents, key=lambda x: x.id)
@@ -145,6 +147,8 @@ def settle_an_agent(G, agent):
             max_id_agent.parent_port = agent.pin
             G.nodes[agent.currentnode]['settled_agent'] = max_id_agent
             print(f"Leader {agent.id} settled {max_id_agent.id} at node {agent.currentnode}")
+            agent.checked_port = None
+            agent.max_scouted_port = None
     else:
         print(f"Settled agent {settled_agent.id} at node {agent.currentnode} is already settled")
         # check if the settled agent has the same leader
