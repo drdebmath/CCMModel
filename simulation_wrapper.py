@@ -7,46 +7,15 @@ from graph_utils import create_port_labeled_graph, randomize_ports
 from agent import Agent
 import random
 from agent import get_dict_key
-from agent import AgentStatus, AgentRole, AgentPhase
-
-def get_agent_positions_and_statuses(G, agents):
-    positions = [a.currentnode for a in agents]
-    statuses  = [a.state['status'] for a in agents]
-    return positions, statuses
-
-
-def run_simulation(G, agents, max_degree, rounds, starting_positions):
-    all_positions = []
-    all_statuses = []
-    positions, statuses = get_agent_positions_and_statuses(G, agents)
-    old_positions = positions
-    old_statuses = statuses
-    all_positions.append(positions)
-    all_statuses.append(statuses)
-    round_number = 1
-    max_rounds = len(G.nodes())* max_degree
-    # check for unsettled agents in statuses
-    while any(s == AgentStatus['UNSETTLED'] for s in statuses) and round_number <= max_rounds:
-        for a in agents:
-            G.nodes[a.currentnode]['agents'].add(a)
-        round_number += 1
-        print(f'round Number {round_number - 1}')
-        for a in agents:
-            print(f"Round {round_number - 1}: Agent {a.id} is {get_dict_key(AgentStatus, a.state['status'])} located at {a.currentnode}. Role: {get_dict_key(AgentRole, a.state['role'])}. Phase: {get_dict_key(AgentPhase, a.state['phase'])}. Leader: {a.state['leader'].id}")
-        for a in agents:
-            a.compute_heo(G, agents)
-        for a in agents:
-            a.move_heo(G, round_number)
-        positions, statuses = get_agent_positions_and_statuses(G, agents)
-        if positions == old_positions and statuses == old_statuses:
-            break
-        old_positions = positions
-        old_statuses = statuses
-        all_positions.append(positions)
-        all_statuses.append(statuses)
-    return all_positions, all_statuses
+from agent import run_simulation
 
 # "nodes", "max degree", "agent_count", and "rounds" are provided by the runner
+# nodes = 10
+# max_degree = 4
+# agent_count = 8
+# rounds = 8
+# starting_positions = 2
+# seed = 42
 
 G = create_port_labeled_graph(nodes, max_degree, seed)
 print(f'Graph created with {G.number_of_nodes()} nodes and {G.number_of_edges()} edges')
@@ -54,6 +23,7 @@ randomize_ports(G, seed)
 for node in G.nodes():
     G.nodes[node]['agents'] = set()
     G.nodes[node]['settled_agent'] = None
+    G.nodes[node]['leader'] = None
 
 # Initialize agents at start node (0)
 number_of_starting_positions = starting_positions
@@ -62,7 +32,8 @@ agents = [Agent(i, random.choice(starting_positions)) for i in range(agent_count
 
 # Execute simulation rounds
 if agents and rounds > 0 and G.number_of_nodes() > 0:
-    all_positions, all_statuses = run_simulation(G, agents, max_degree, rounds, starting_positions)
+    all_positions, all_statuses, all_leaders, all_levels = run_simulation(G, agents, max_degree, rounds, starting_positions)
+
     print(f'Simulation finished')
 
 # Compute layout once via spring
@@ -89,11 +60,14 @@ edges_data = [
 
 
 result = {
-    "nodes": nodes_data,
-    "edges": edges_data,
-    "positions": all_positions,
-    "statuses": all_statuses
+  "nodes":     nodes_data,
+  "edges":     edges_data,
+  "positions": all_positions,
+  "statuses":  all_statuses,
+  "leaders":   all_leaders,
+  "levels":    all_levels
 }
+
 
 # Return JSON string
 json.dumps(result)
