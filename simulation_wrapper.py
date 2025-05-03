@@ -151,5 +151,5 @@ if args.output_dir:
         sys.exit(1)
 elif __name__ == "__main__":
     # print(resultJson) # Use json.dumps for getting the string
-
+    pass
 resultJson
