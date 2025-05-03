@@ -131,6 +131,7 @@ def increase_level(G, agents, leader):
                 a.state['leader'] = leader
                 if a != leader:
                     a.reset(leader, max_level + 1, AgentRole['FOLLOWER'], AgentStatus['UNSETTLED'])
+                    print(f"Changed leader of {a.id} to {leader.id, max_level + 1} and role to FOLLOWER {a.state['role']}")
             G.nodes[leader.currentnode]['settled_agent'] = None
             print(f"Leader {leader.id} is not unique max level agent, increasing level of all agents to {max_level + 1}")
         else:
@@ -153,25 +154,21 @@ def settle_an_agent(G, agent):
         agents_at_node = G.nodes[agent.currentnode]['agents']
         if len(agents_at_node) == 1:
             print(f"Leader {agent.id} is alone at node {agent.currentnode}, becomes settled_wait")
-            agent.state['status'] = AgentStatus['SETTLED_WAIT']
+            agent.reset(agent.state['leader'], agent.state['level'], AgentRole['LEADER'], AgentStatus['SETTLED_WAIT'])
             agent.parent_port = agent.pin
             G.nodes[agent.currentnode]['settled_agent'] = agent
-            agent.checked_port = None
-            agent.max_scouted_port = None
         else:
             non_leader_agents = [a for a in agents_at_node if a.state['role'] != AgentRole['LEADER']]
             max_id_agent = max(non_leader_agents, key=lambda x: x.id)
-            max_id_agent.state['status'] = AgentStatus['SETTLED']
+            max_id_agent.reset(agent.state['leader'], agent.state['level'], AgentRole['FOLLOWER'], AgentStatus['SETTLED'])
             max_id_agent.parent_port = agent.pin
             G.nodes[agent.currentnode]['settled_agent'] = max_id_agent
             print(f"Leader {agent.id, agent.state['level']} settled {max_id_agent.id} at node {agent.currentnode}")
-            agent.checked_port = None
-            agent.max_scouted_port = None
     else:
         print(f"Settled agent {settled_agent.id} at node {agent.currentnode} is already settled")
-        # check if the settled agent has the same leader
-        if settled_agent.state['leader'] != agent:
-            print(f"Settled agent {settled_agent.id} at node {agent.currentnode} has different leader {settled_agent.state['leader'].id}")
+        # check if the settled agent has the same leader and level
+        if settled_agent.state['leader'] != agent or agent.state['level'] != settled_agent.state['level']:
+            print(f"Settled agent {settled_agent.id} at node {agent.currentnode} has different leader {settled_agent.state['leader'].id} and level {settled_agent.state['level']} than agent {agent.id} with leader {agent.state['leader'].id} and level {agent.state['level']}")
             raise Exception("Settled agent has different leader")
     return settled_agent
 
@@ -256,8 +253,13 @@ def scout_forward(G, agent):
             settled_agent.max_scouted_port = -1
         unsettled_agents.sort(key=lambda x: x.id)
         for i, a in enumerate(unsettled_agents):
-            a.scout_port = (checked_port + i) + 1
-            if a.scout_port < G.degree[agent.currentnode]:
+            scout_port = checked_port + i + 1
+            if scout_port == settled_agent.parent_port:
+                print(f"Parent port {scout_port} is not assigned to agent {a.id} at node {agent.currentnode}")
+                scout_port += 1
+                checked_port += 1
+            if scout_port < G.degree[agent.currentnode]:
+                a.scout_port = scout_port
                 a.scout_forward = True
                 print(f"Unsettled agent {a.id} at node {agent.currentnode} assigned scout port {a.scout_port}")
                 if a.scout_port > settled_agent.max_scouted_port:
@@ -421,6 +423,7 @@ def run_simulation(G, agents, max_degree, rounds, starting_positions):
     all_node_settled_states = []
 
     round_number = 1
+    repeat_count = 0
 
     def snapshot(label):
         positions, statuses = get_agent_positions_and_statuses(G, agents)
