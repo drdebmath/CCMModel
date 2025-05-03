@@ -150,6 +150,6 @@ if args.output_dir:
         print(f"Error saving simulation results to {filepath}: {e}", file=sys.stderr)
         sys.exit(1)
 elif __name__ == "__main__":
-    print(resultJson) # Use json.dumps for getting the string
+    # print(resultJson) # Use json.dumps for getting the string
 
 resultJson
