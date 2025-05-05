@@ -23,13 +23,12 @@ from agent_election import (build_graph, randomize_ports,
                             scatter_one_agent_per_node, run_leader_election)
 
 # —— Defaults ————————————————————————————————————————————————————————
-DEFAULT_GRAPH_TYPES        = ["hypercube"]
+DEFAULT_GRAPH_TYPES        = ["erdos"]
 # "erdos", "barabasi",
 #                               "smallworld", "grid", "hypercube"]
-DEFAULT_NODE_COUNTS        = [16, 32, 64, 128]
-DEFAULT_TARGET_DEGREES     = [3, 5, 7, 16]
+DEFAULT_NODE_COUNTS        = [1000]
 DEFAULT_GRAPH_SEEDS        = [42]
-DEFAULT_NUM_RUNS_PER_GRAPH = 1
+DEFAULT_NUM_RUNS_PER_GRAPH = 8
 DEFAULT_MAX_ROUNDS         = 150_000
 DEFAULT_OUTPUT_FILE        = "simulation_results.json"
 DEFAULT_WORKERS            = os.cpu_count() or 1
@@ -44,12 +43,11 @@ def _run_single(config: tuple[str,int,int,int,int,bool,int]) -> dict:
     Returns:
         dict – one entry in the results json
     """
-    (kind, n, d, gseed, run_idx, max_rounds) = config
+    (kind, n, gseed, run_idx, max_rounds) = config
 
     entry = {
         "graph_type":     kind,
         "num_nodes":      n,
-        "target_degree":  d,
         "graph_seed":     gseed,
         "run_index":      run_idx,
         "max_degree_actual": None,
@@ -65,7 +63,7 @@ def _run_single(config: tuple[str,int,int,int,int,bool,int]) -> dict:
 
     try:
         # Build base graph inside the worker (cheap, avoids cross‑process copy)
-        G0 = build_graph(kind, n, d, gseed)
+        G0 = build_graph(kind, n, gseed)
         entry["max_degree_actual"] = G0.graph.get("delta", -1)
         entry["diameter"]          = nx.diameter(G0)
         entry["num_edges"]         = G0.number_of_edges()
@@ -100,13 +98,11 @@ def _run_single(config: tuple[str,int,int,int,int,bool,int]) -> dict:
 def run_simulation_suite(args):
     graph_types   = args.types
     node_counts   = args.nodes
-    target_degrees= args.degrees
     graph_seeds   = args.graph_seeds
     runs_per_graph= args.runs_per_graph
 
     combos = list(itertools.product(graph_types,
                                     node_counts,
-                                    target_degrees,
                                     graph_seeds))
     total_runs = len(combos) * runs_per_graph
     print(f"Launching {total_runs} runs "
@@ -114,9 +110,9 @@ def run_simulation_suite(args):
 
     # Create list of argument tuples for workers
     worker_args = []
-    for kind, n, d, gseed in combos:
+    for kind, n, gseed in combos:
         for run_idx in range(runs_per_graph):
-            worker_args.append((kind, n, d, gseed, run_idx, args.max_rounds))
+            worker_args.append((kind, n, gseed, run_idx, args.max_rounds))
 
     results = []
     start_all = time.time()
@@ -154,7 +150,6 @@ if __name__ == "__main__":
                    help="JSON file (default: %(default)s)")
     p.add_argument("--types",   nargs="+", default=DEFAULT_GRAPH_TYPES)
     p.add_argument("--nodes",   nargs="+", type=int, default=DEFAULT_NODE_COUNTS)
-    p.add_argument("--degrees", nargs="+", type=int, default=DEFAULT_TARGET_DEGREES)
     p.add_argument("--graph-seeds", nargs="+", type=int, default=DEFAULT_GRAPH_SEEDS)
     p.add_argument("--runs-per-graph", type=int, default=DEFAULT_NUM_RUNS_PER_GRAPH)
     p.add_argument("--max-rounds", type=int, default=DEFAULT_MAX_ROUNDS)

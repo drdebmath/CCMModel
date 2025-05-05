@@ -7,12 +7,18 @@ from typing import Dict, List, Tuple, Optional, Set
 import networkx as nx
 import numpy as np
 
+def _pyseed(x):
+    """Return a native `int` or `None` suitable for RNG seeding."""
+    try:
+        return None if x is None else int(x)
+    except Exception:  # pragma: no cover
+        return None
 
 # ──────────────────────────────  Graph helpers  ──────────────────────────────
 def _assign_ports(G: nx.Graph) -> None:
     for u in G.nodes():
         neighs = list(G.neighbors(u))
-        rng = random.Random(u)
+        rng = random.Random(_pyseed(G.graph.get("seed")))
         rng.shuffle(neighs)
         port_map = {p: v for p, v in enumerate(neighs)}
         G.nodes[u]["port_map"] = port_map
@@ -30,7 +36,7 @@ def _assign_ports(G: nx.Graph) -> None:
 
 
 def randomize_ports(G: nx.Graph, seed: int) -> None:
-    rng = random.Random(seed)
+    rng = random.Random(_pyseed(seed))
     for u in G.nodes():
         neighs = list(G.neighbors(u))
         if len(neighs) <= 1:
@@ -64,7 +70,7 @@ def randomize_ports(G: nx.Graph, seed: int) -> None:
 
 
 def assign_weights(G: nx.Graph, lo: float = 0.0, hi: float = 10.0, seed: int = 0) -> None:
-    rng = random.Random(seed)
+    rng = random.Random(_pyseed(seed))
     mid, sd = (lo + hi) / 2, (hi - lo) / 3
     for u, v in G.edges():
         if G[u][v] is None:
@@ -292,7 +298,7 @@ def run_leader_election(G: nx.Graph,
 
 # ───────────────────  Scatter helper  ────────────────────────────────────────
 def scatter_one_agent_per_node(G: nx.Graph, seed: int = 0) -> Dict[int, Agent]:
-    rng   = random.Random(seed)
+    rng   = random.Random(_pyseed(seed))
     nodes = list(G.nodes())
     if not nodes:
         return {}
@@ -318,30 +324,34 @@ def scatter_one_agent_per_node(G: nx.Graph, seed: int = 0) -> Dict[int, Agent]:
 
 
 # ───────────────────  Graph builder  ────────────────────────────────────────
-def build_graph(kind: str, n: int, d: int, seed: int) -> nx.Graph:
+
+def build_graph(kind: str, n: int, seed: int, param: int = 3) -> nx.Graph:
     seed = int(seed)
     if n <= 0:
         return nx.Graph()
+    
     def _connected(g: nx.Graph) -> bool:
         return n <= 1 or nx.is_connected(g)
 
     if kind == "regular":
-        if d >= n or (n*d) % 2:
-            raise nx.NetworkXError("regular: need d<n and n·d even")
+        d = param  # Degree for regular graph
+        if d >= n or (n * d) % 2:
+            raise nx.NetworkXError("regular: need d < n and n·d even")
         G = nx.random_regular_graph(d, n, seed=seed)
 
     elif kind == "erdos":
-        p = d / max(1, n - 1)
-        G = nx.erdos_renyi_graph(n, min(1.0, p), seed=seed)
+        # Ensure connectivity: p > ln(n)/n
+        p = min(1.0, (math.log(n) + math.log(math.log(n))) / max(1, n))  # Slightly above threshold
+        G = nx.erdos_renyi_graph(n, p, seed=seed)
 
     elif kind == "barabasi":
-        m = max(1, round(d/2))
+        m = max(1, param)  # Number of edges to attach per new node
         if n <= m:
-            raise nx.NetworkXError("barabasi: need n>m")
+            raise nx.NetworkXError("barabasi: need n > m")
         G = nx.barabasi_albert_graph(n, m, seed=seed)
 
     elif kind == "smallworld":
-        k = max(2, d)
+        k = max(2, param)  # Initial degree for each node
         G = nx.watts_strogatz_graph(n, k, 0.1, seed=seed)
 
     elif kind == "grid":
@@ -356,7 +366,7 @@ def build_graph(kind: str, n: int, d: int, seed: int) -> nx.Graph:
         k = round(math.log2(n))
         if 2**k != n:
             raise nx.NetworkXError("hypercube: n must be 2^k")
-        G = nx.hypercube_graph(k, seed=seed)
+        G = nx.hypercube_graph(k)
 
     else:
         raise ValueError(f"unknown graph kind '{kind}'")
@@ -364,7 +374,7 @@ def build_graph(kind: str, n: int, d: int, seed: int) -> nx.Graph:
     if not _connected(G):
         raise nx.NetworkXError(f"{kind}: not connected")
 
-    _assign_ports(G)
+    # Assign maximum degree to graph attribute
     delta = max(dict(G.degree()).values(), default=0)
     G.graph["delta"] = delta
     return G
