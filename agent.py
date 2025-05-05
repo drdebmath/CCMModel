@@ -80,97 +80,50 @@ def get_agent_positions_and_statuses(G, agents):
     statuses  = [a.state['status'] for a in agents]
     return positions, statuses
 
-def elect_leader(G, agents):
-    leaders = set()
-    for a in agents:
-        if a.state['role'] == AgentRole['LEADER']:
-            leaders.add((a.state['level'],a))
-    if len(leaders) == 0:
-        print(f"No leader found at node {agents[0].currentnode}")
-        print(f"Agents at node {agents[0].currentnode}: {[(a.id, a.state['level'], a.state['role'], a.state['status']) for a in agents]}")
-        return
-    elif len(leaders) == 1:
-        leader = leaders.pop()
-        print(f"Only one leader: {leader[1].id, leader[0]} at node {leader[1].currentnode} with level {leader[0]}")
-        return leader[1]
-    else:
-        sorted_leaders = sorted(leaders, key=lambda x: (-x[0], x[1].id))
-        leader = sorted_leaders[0]
-        print(f"Leader elected: {leader[1].id, leader[0]} at node {leader[1].currentnode} with level {leader[0]}")
-        return leader[1]
+def elect_leader(G, leaders):
+    settled_agent = G.nodes[leaders[0].currentnode]['settled_agent']
+    if settled_agent is not None:
+        leaders.append(settled_agent.state['leader'])
+    # sort the leaders by their ids and level
+    leaders.sort(key=lambda x: (-x.state['level'], x.id))
+    leader = leaders[0]
+    for a in leaders:
+        if a != leader:
+            a.reset(leader, a.state['level'], AgentRole['FOLLOWER'], a.state['status'])
 
-def increase_level(G, agents, leader):
-    max_level = max(a.state['level'] for a in agents)
-    if leader.state['level'] < max_level:
-        # everyone becomes a chaser except the max level settled agent
-        # find the max level agent
-        max_agent = None
-        for a in agents:
-            if a.state['level'] == max_level:
-                max_agent = a
-                break
-        if max_agent.state['status'] != AgentStatus['SETTLED']:
-            print(f"Max agent {max_agent.id} is not settled")
-            raise Exception("Max agent not settled")
-        # make everyone a chaser with level set to max_level and role set to chaser and leader is the leader of the max agent
-        for a in agents:
-            if a != max_agent:
-                a.reset(max_agent.state['leader'], max_level, AgentRole['CHASER'], AgentStatus['UNSETTLED'])
-                print(f"Agent {a.id} changed leader to {max_agent.state['leader'].id, max_level} and role to CHASER {a.state['role']}")
-        print(f"Leader {leader.id} is not max level agent, making all agents a chaser for leader {max_agent.state['leader'].id, max_level}")
 
-    elif leader.state['level'] == max_level:
-        # find the number of agents with the same level
-        max_level_agents = [a for a in agents if a.state['level'] == max_level and a.state['leader']!= leader]
-        if leader not in max_level_agents:
-            max_level_agents.append(leader)
-        if len(max_level_agents) > 1:
-            # increase level of all agents to max_level + 1
-            for a in agents:
-                a.state['level'] = max_level + 1
-                a.state['leader'] = leader
-                if a != leader:
-                    a.reset(leader, max_level + 1, AgentRole['FOLLOWER'], AgentStatus['UNSETTLED'])
-                    print(f"Changed leader of {a.id} to {leader.id, max_level + 1} and role to FOLLOWER {a.state['role']}")
-            G.nodes[leader.currentnode]['settled_agent'] = None
-            print(f"Leader {leader.id} is not unique max level agent, increasing level of all agents to {max_level + 1}")
-        else:
-            print(f"Leader {leader.id, leader.state['level']} is unique max level agent that is a leader already at max level {max_level}")
-            # check for the leader of other agents
-            G.nodes[leader.currentnode]['settled_agent'] = None
-            for a in agents:
-                a.state['level'] = max_level
-                if a.state['leader'] != leader:
-                    a.reset(leader, max_level, AgentRole['FOLLOWER'], AgentStatus['UNSETTLED'])
-                    print(f"Agent {a.id} changed leader to {leader.id, leader.state['level']}")
-    else:
-        print(f"Leader {leader.id} is unique max level agent, no need to increase level")
 
 def settle_an_agent(G, agent):
     print(f"Checking for settled agent at Node {agent.currentnode}")
     settled_agent = G.nodes[agent.currentnode]['settled_agent']
-    if settled_agent is None:
-        # settle an agent
-        agents_at_node = G.nodes[agent.currentnode]['agents']
-        if len(agents_at_node) == 1:
-            print(f"Leader {agent.id} is alone at node {agent.currentnode}, becomes settled_wait")
-            agent.reset(agent.state['leader'], agent.state['level'], AgentRole['LEADER'], AgentStatus['SETTLED_WAIT'])
-            agent.parent_port = agent.pin
-            G.nodes[agent.currentnode]['settled_agent'] = agent
-        else:
+    agents_at_node = G.nodes[agent.currentnode]['agents']
+    if len(agents_at_node) == 1:
+        print(f"Leader {agent.id} is alone at node {agent.currentnode}, becomes settled_wait")
+        agent.reset(agent.state['leader'], agent.state['level'], AgentRole['LEADER'], AgentStatus['SETTLED_WAIT'])
+        agent.parent_port = agent.pin
+        G.nodes[agent.currentnode]['settled_agent'] = agent
+    else:
+        if settled_agent is None:
             non_leader_agents = [a for a in agents_at_node if a.state['role'] != AgentRole['LEADER']]
             max_id_agent = max(non_leader_agents, key=lambda x: x.id)
             max_id_agent.reset(agent.state['leader'], agent.state['level'], AgentRole['FOLLOWER'], AgentStatus['SETTLED'])
             max_id_agent.parent_port = agent.pin
             G.nodes[agent.currentnode]['settled_agent'] = max_id_agent
             print(f"Leader {agent.id, agent.state['level']} settled {max_id_agent.id} at node {agent.currentnode}")
+
+def increase_level(G, a):
+    unsettled_agents = [b for b in G.nodes[a.currentnode]['agents'] if b.state['status'] == AgentStatus['UNSETTLED']]
+    for b in unsettled_agents:
+        if b.state['level'] == a.state['level']:
+            b.state['level'] = 0
+            a.state['level'] += 1
+    settled_agent = G.nodes[a.currentnode]['settled_agent']
+    if settled_agent is None:
+        raise Exception(f"No settled agent at node, Increase level at by agent {a.id} at node {a.currentnode}")
     else:
-        print(f"Settled agent {settled_agent.id} at node {agent.currentnode} is already settled")
-        # check if the settled agent has the same leader and level
-        if settled_agent.state['leader'] != agent or agent.state['level'] != settled_agent.state['level']:
-            print(f"Settled agent {settled_agent.id} at node {agent.currentnode} has different leader {settled_agent.state['leader'].id} and level {settled_agent.state['level']} than agent {agent.id} with leader {agent.state['leader'].id} and level {agent.state['level']}")
-            raise Exception("Settled agent has different leader")
-    return settled_agent
+        settled_agent.parent_port = None
+        settled_agent.state['level'] = a.state['level']
+        settled_agent.state['leader'] = a
 
 def move_to_scout(G, agent):
     if agent.state['role'] != AgentRole['HELPER']:
@@ -493,23 +446,21 @@ def run_simulation(G, agents, max_degree, rounds, starting_positions):
         print(f'------\nround Number {round_number - 1}\n------')
 
 
-        agents_by_node = defaultdict(list)
+        leaders_by_node = defaultdict(list)
         for a in agents:
-            agents_by_node[a.currentnode].append(a)
+            if a.state['role'] == AgentRole['LEADER']:
+                leaders_by_node[a.currentnode].append(a)
 
-        for node, agents_at_node in agents_by_node.items():
-            if len(agents_at_node) > 1:
+        for node, leaders_at_node in leaders_by_node.items():
+            if len(leaders_at_node) > 0:
                 print(f'Electing leader at {node}: {[a.id for a in agents_at_node]}')
-                leader = elect_leader(G, agents_at_node)
-                print(f'Increase level at {node}: {[(a.id,(a.state['leader'].id,a.state['level']) ) for a in agents_at_node]}')
-                if leader is not None:
-                    increase_level(G, agents_at_node, leader)
+                leader = elect_leader(G, leaders_at_node)
+                settle_an_agent(G, leader)
         # positions, statuses = snapshot("elect_leader")
 
         for a in agents:
             if a.state['role'] == AgentRole['LEADER']:
-                settle_an_agent(G, a)
-        # positions, statuses = snapshot("settle_an_agent")
+                increase_level(G, a)
 
         for a in agents:
             if a.state['role'] == AgentRole['HELPER']:
