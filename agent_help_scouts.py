@@ -640,7 +640,7 @@ def rooted_async(G, agents, root_node, max_rounds):
 def run_simulation(G, agents, max_rounds=-1):
     if len(agents)>len(G):
         raise RuntimeError("Agents should not be more than nodes")
-    max_rounds = 200*len(agents)
+    max_rounds = 40*len(agents)
     simmer.clearr()
     for u in G.nodes():
         G.nodes[u]["agents"] = set()

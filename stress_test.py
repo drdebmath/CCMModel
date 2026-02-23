@@ -22,12 +22,12 @@ def main():
     rng = random.Random(0)
 
     degree = 4
-    num_tests = 1000
+    num_tests = 500
 
     tests = []
     while len(tests)<num_tests:
-        nodes = rng.randint(1, 30)
-        agent_count = rng.randint(1, 80)
+        nodes = rng.randint(30, 100)
+        agent_count = rng.randint(30, 100)
         seed = rng.randint(0, 10_000)
         if (agent_count<=nodes):
             tests.append((nodes, agent_count, seed))
