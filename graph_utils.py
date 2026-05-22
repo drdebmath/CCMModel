@@ -1,18 +1,19 @@
 # graph_utils.py
 
-import networkx as nx
+import networkx as nx # type: ignore
 import random
 
 def create_port_labeled_graph(nodes, max_degree, seed):
-    """
-    Build an undirected graph where each node u has ports 0..deg(u)-1 
-    mapped to its neighbors in arbitrary order.
-    """
-    G = nx.random_regular_graph(max_degree, nodes, seed = seed)
-
+    attempt = 0
+    while True:
+        # G = nx.random_regular_graph(max_degree, nodes, seed=seed + attempt)
+        m = (nodes * max_degree) // 2
+        G = nx.gnm_random_graph(nodes, m, seed=seed + attempt)
+        if nx.is_connected(G):
+            break
+        attempt += 1
     for u in G.nodes():
         neighs = list(G.neighbors(u))
-        # assign ports 0..len(neighs)-1 to neighbors
         G.nodes[u]['port_map'] = {p: v for p, v in enumerate(neighs)}
         for p, v in enumerate(neighs):
             G[u][v][f'port_{u}'] = p

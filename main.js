@@ -137,6 +137,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const sp = getVal(document.getElementById('startingPositionsInput'), 5, 1);
             const r = n*d; // Default rounds
             const seed = parseInt(document.getElementById('seedInput').value, 10) || 42;
+            const algorithm = document.getElementById('algorithmSelect').value;
+            console.log(`main.js: Algorithm = ${algorithm}`);
             console.log(`main.js: Simulation Parameters - n=${n}, d=${d}, a=${a}, r=${r}, seed=${seed}, sp=${sp}`);
 
             if (a > n) {
@@ -149,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (out) out.textContent = `Gen graph: ${n} nodes, maxDeg ${d}, #agents ${a}, #maxrounds ${r}, seed ${seed}, #starting positions ${sp}`;
 
             console.log("main.js: Calling runSimulation...");
-            const data = await runSimulation(py, n, d, a, r, seed, sp);
+            const data = await runSimulation(py, n, d, a, r, seed, sp, algorithm);
             console.log("main.js: runSimulation returned.");
 
             if (!data || !data.positions || !data.statuses) {
