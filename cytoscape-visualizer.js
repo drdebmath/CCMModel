@@ -10,6 +10,8 @@ let pauseDuration = 150;
 
 let filteredPositions = [];
 let filteredStatuses = [];
+let filteredHomes = [];
+let filteredTreeEdges = [];
 let filteredLeaders = [];
 let filteredLevels = [];
 let filteredNodeStates = [];
@@ -38,16 +40,20 @@ function filterSimulationDataForSteps(originalData, flags) {
   const { showScout, showChase, showFollow } = flags;
   const positions = [];
   const statuses = [];
+  const homes = [];
+  const treeEdges = [];
   const leaders = [];
   const levels = [];
   const nodeStates = [];
 
   if (!originalData.positions || originalData.positions.length === 0) {
-    return { positions, statuses, leaders, levels, nodeStates };
+    return { positions, statuses, leaders, levels, nodeStates, homes};
   }
 
   positions.push(originalData.positions[0]);
   if (originalData.statuses?.[0]) statuses.push(originalData.statuses[0]);
+  if (originalData.homes?.[0]) homes.push(originalData.homes[0]);
+  if (originalData.tree_edges?.[0]) treeEdges.push(originalData.tree_edges[0]);
   if (originalData.leaders?.[0]) leaders.push(originalData.leaders[0]);
   if (originalData.levels?.[0]) levels.push(originalData.levels[0]);
   if (originalData.node_settled_states?.[0]) nodeStates.push(originalData.node_settled_states[0]);
@@ -63,6 +69,8 @@ function filterSimulationDataForSteps(originalData, flags) {
     if (keepStep) {
       positions.push(originalData.positions[i]);
       if (originalData.statuses?.[i]) statuses.push(originalData.statuses[i]);
+      if (originalData.homes?.[i]) homes.push(originalData.homes[i]); // NEW
+      if (originalData.tree_edges?.[i]) treeEdges.push(originalData.tree_edges[i]);
       if (originalData.leaders?.[i]) leaders.push(originalData.leaders[i]);
       if (originalData.levels?.[i]) levels.push(originalData.levels[i]);
       if (originalData.node_settled_states?.[i]) nodeStates.push(originalData.node_settled_states[i]);
@@ -77,7 +85,7 @@ function filterSimulationDataForSteps(originalData, flags) {
   console.log(
     `filterSimulationDataForSteps: Original steps: ${originalData.positions.length}, Steps included in animation: ${positions.length}`
   );
-  return { positions, statuses, leaders, levels, nodeStates };
+  return { positions, statuses, leaders, levels, nodeStates, homes, treeEdges};
 }
 
 
@@ -173,59 +181,52 @@ function updateTooltip(node, event) {
     }
 
     const nodeId = node.id();
-    const stepIndex = Math.max(
-        0,
-        Math.min(currentFilteredStep, totalFilteredSteps - 1)
-    );
+    const stepIndex = Math.max(0, Math.min(currentFilteredStep, totalFilteredSteps - 1));
 
     let content = `<strong>Node ${nodeId}</strong><br>`;
-    let foundSettled = false;
 
     if (
-        filteredPositions.length > stepIndex &&
-        filteredStatuses.length > stepIndex &&
-        filteredLeaders.length > stepIndex &&
-        filteredLevels.length > stepIndex
+        filteredPositions.length <= stepIndex ||
+        filteredStatuses.length <= stepIndex
     ) {
-        const positionsAtStep = filteredPositions[stepIndex][1];
-        const statusesAtStep = filteredStatuses[stepIndex]?.[1] || [];
-        const leadersAtStep = filteredLeaders[stepIndex]?.[1] || [];
-        const levelsAtStep = filteredLevels[stepIndex]?.[1] || [];
-
-        const nodeStatesDict = filteredNodeStates[stepIndex]?.[1] || {};
-        const settledState = nodeStatesDict[nodeId];
-
-        for (let i = 0; i < positionsAtStep.length; i++) {
-            if (String(positionsAtStep[i]) === nodeId) {
-                const status = statusesAtStep[i];
-                if (status === 0 || status === 2) {
-                    const leaderId = leadersAtStep[i];
-                    const level = levelsAtStep[i];
-                    const statusText = status === 0 ? "SETTLED" : "SETTLED_WAIT";
-
-                    const parentPort = settledState?.parent_port ?? '(N/A)';
-                    const checkedPort = settledState?.checked_port ?? '(N/A)';
-                    const maxScoutedPort = settledState?.max_scouted_port ?? '(N/A)';
-                    const nextPort = settledState?.next_port ?? '(N/A)';
-
-                    content += `Settled Agent: A${i}<br>`;
-                    content += `  Status: ${statusText}<br>`;
-                    content += `  Leader: A${leaderId}<br>`;
-                    content += `  Level: ${level}<br>`;
-                    content += `  Parent Port: ${parentPort}<br>`;
-                    content += `  Checked Port: ${checkedPort}<br>`;
-                    content += `  Max Scouted: ${maxScoutedPort}<br>`;
-                    content += `  Next Port: ${nextPort}`;
-
-                    foundSettled = true;
-                    break;
-                }
-            }
-        }
+        nodeTooltip.innerHTML = content + "No data for this step.";
+        return;
     }
 
-    if (!foundSettled) {
-        content += "No settled agent at this step.";
+    const positionsAtStep = filteredPositions[stepIndex]?.[1] || [];
+    const statusesAtStep  = filteredStatuses[stepIndex]?.[1] || [];
+    const homesAtStep  = filteredHomes[stepIndex]?.[1] || [];
+
+    // Collect ALL agents currently at this node
+    const agentIdxsHere = [];
+    for (let i = 0; i < positionsAtStep.length; i++) {
+      if (String(positionsAtStep[i]) === nodeId) agentIdxsHere.push(i);
+    }
+
+    if (agentIdxsHere.length === 0) {
+      content += "No agents at this node at this step.";
+    } else {
+      content += `<strong>Agents here:</strong> ${agentIdxsHere.length}<br><br>`;
+      const byStatus = {};
+
+      for (const i of agentIdxsHere) {
+        const status = statusesAtStep[i] ?? "??";
+        const home = homesAtStep?.[i] ?? "?";
+        const label =
+          (status == "settled" || status == "settledScout")
+            ? `A${i}(${home})`
+            : `A${i}`;
+
+        (byStatus[status] ??= []).push(label);
+      }
+
+      const order = ["settled", "settledScout", "unsettled"];
+      const keys = [...new Set([...order, ...Object.keys(byStatus)])];
+
+      for (const s of keys) {
+        if (!byStatus[s]?.length) continue;
+        content += `<strong>${s}</strong> : ${byStatus[s].join(", ")}<br>`;
+      }
     }
 
     nodeTooltip.innerHTML = content;
@@ -235,12 +236,8 @@ function updateTooltip(node, event) {
     let y = event.originalEvent.pageY + padding;
 
     const tooltipRect = nodeTooltip.getBoundingClientRect();
-    if (x + tooltipRect.width > window.innerWidth) {
-        x = event.originalEvent.pageX - tooltipRect.width - padding;
-    }
-    if (y + tooltipRect.height > window.innerHeight) {
-        y = event.originalEvent.pageY - tooltipRect.height - padding;
-    }
+    if (x + tooltipRect.width > window.innerWidth) x = event.originalEvent.pageX - tooltipRect.width - padding;
+    if (y + tooltipRect.height > window.innerHeight) y = event.originalEvent.pageY - tooltipRect.height - padding;
     if (x < 0) x = padding;
     if (y < 0) y = padding;
 
@@ -253,6 +250,32 @@ function updateTooltip(node, event) {
 function hideTooltip() {
   if (nodeTooltip) {
     nodeTooltip.classList.add("hidden");
+  }
+}
+
+function updateTreeEdgesForStep(stepIndex) {
+  if (!cy) return;
+
+  // remove previous overlay edges
+  cy.edges(".tree-edge").remove();
+
+  const edgesAtStep = filteredTreeEdges?.[stepIndex]?.[1] ?? [];
+  for (let k = 0; k < edgesAtStep.length; k++) {
+    const e = edgesAtStep[k];
+
+    // accept either {u,v,srcPort,dstPort} objects or [u,v] tuples
+    const u = String(e.u ?? e[0]);
+    const v = String(e.v ?? e[1]);
+
+    cy.add({
+      group: "edges",
+      data: {
+        id: `tree_${stepIndex}_${k}_${u}_${v}`,
+        source: u,
+        target: v,
+      },
+      classes: "tree-edge",
+    });
   }
 }
 
@@ -275,11 +298,13 @@ function doStepAnimation() {
   const currentLabel = stepData[0];
   const currentPositions = stepData[1];
   const currentStatuses = filteredStatuses?.[currentFilteredStep]?.[1] || [];
+  const currentHomes = filteredHomes?.[currentFilteredStep]?.[1] || [];
   const currentLeaders = filteredLeaders?.[currentFilteredStep]?.[1] || [];
   const currentLevels = filteredLevels?.[currentFilteredStep]?.[1] || [];
 
   updateDisplay();
   updateNodeStyles(currentPositions, currentStatuses);
+  updateTreeEdgesForStep(currentFilteredStep); // NEW
 
   currentPositions.forEach((nodeId, i) => {
     const agentId = `a${i}`;
@@ -475,11 +500,14 @@ export function drawCytoscape(containerId, originalData) {
   totalFilteredSteps = 0;
   filteredPositions = [];
   filteredStatuses = [];
+  filteredHomes = [];
+  filteredTreeEdges = [];
   filteredLeaders = [];
   filteredLevels = [];
   filteredNodeStates = [];
   originalNodes = originalData.nodes || [];
   originalEdges = originalData.edges || [];
+  originalData.tree_edges = originalData.tree_edges || [];
 
   const container = document.getElementById(containerId);
   roundDisplay = document.getElementById("round-display");
@@ -513,6 +541,8 @@ export function drawCytoscape(containerId, originalData) {
   const filteredData = filterSimulationDataForSteps(originalData, flags);
   filteredPositions = filteredData.positions;
   filteredStatuses = filteredData.statuses;
+  filteredHomes = filteredData.homes;
+  filteredTreeEdges = filteredData.treeEdges || [];
   filteredLeaders = filteredData.leaders;
   filteredLevels = filteredData.levels;
   filteredNodeStates = filteredData.nodeStates;
@@ -616,6 +646,28 @@ export function drawCytoscape(containerId, originalData) {
           "border-color": (ele) =>
             ele.data("agentColor") ? `color-mix(in srgb, ${ele.data("agentColor")} 80%, ${isDark ? '#f59e0b' : '#d97706'})` : (isDark ? "#f59e0b" : "#d97706"),
 
+        },
+      },
+      {
+        selector: "edge.tree-edge",
+        style: {
+          width: 2,
+          "line-color": isDark ? "#22c55e" : "#16a34a",
+          "line-style": "solid",
+          opacity: 1,
+
+          // hide labels on overlay
+          "source-label": "",
+          "target-label": "",
+
+          // --- NEW: arrow ---
+          "target-arrow-shape": "triangle",
+          "target-arrow-color": isDark ? "#22c55e" : "#16a34a",
+          "target-arrow-fill": "filled",
+          "arrow-scale": 0.7,
+          "target-distance-from-node": 0,
+          "curve-style": "straight",
+          "z-index": 9999,
         },
       },
     ],

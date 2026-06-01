@@ -83,6 +83,13 @@ class="fixed sm:relative
             <label class="flex justify-between items-center"><span>Agents</span><input id="agentCountInput" type="number" min="1" value="26" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
             <label class="flex justify-between items-center"><span>Start Nodes</span><input id="startingPositionsInput" type="number" min="1" value="5" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
             <label class="flex justify-between items-center"><span>Seed</span><input id="seedInput" type="number" value="42" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
+            <label class="flex justify-between items-center">
+              <span>Algorithm</span>
+              <select id="algorithmSelect" class="w-32 text-center rounded dark:bg-gray-700 dark:border-gray-600">
+                <option value="Drop and Freeze">Drop and Freeze</option>
+                <option value="Help by Scouts">Help by Scouts</option>
+              </select>
+            </label>
           </div>
         </div>
         <div class="flex flex-col gap-3 bg-white dark:bg-darkcard shadow-card rounded-xl p-4">
