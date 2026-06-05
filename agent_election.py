@@ -159,10 +159,10 @@ def exchange_and_update_state(buckets: Dict[int, List[Agent]], agents: Dict[int,
         local_max = max(a.known_max_id for a in here)
         broadcasters = set()
         for a in here:
-            if local_max > a.known_max_id:
-                a.known_max_id = local_max
-            if a.id == local_max:
+            if a.known_max_id == local_max:
                 broadcasters.add(a.id)
+            if a.known_max_id < local_max:
+                a.known_max_id = local_max
 
         # parent assignment
         for a in here:
@@ -340,9 +340,20 @@ def build_graph(kind: str, n: int, seed: int, param: int = 3) -> nx.Graph:
         G = nx.random_regular_graph(d, n, seed=seed)
 
     elif kind == "erdos":
-        # Ensure connectivity: p > ln(n)/n
-        p = min(1.0, (math.log(n) + math.log(math.log(n))) / max(1, n))  # Slightly above threshold
+        # Set p slightly above connectivity threshold
+        p = min(1.0, (math.log(n) + math.log(math.log(n))) / max(1, n))
         G = nx.erdos_renyi_graph(n, p, seed=seed)
+        # If not connected, add edges to connect components
+        if not _connected(G):
+            components = list(nx.connected_components(G))
+            if len(components) > 1:
+                # Connect components by adding edges between them
+                for i in range(len(components) - 1):
+                    # Pick one node from each component
+                    node1 = random.choice(list(components[i]))
+                    node2 = random.choice(list(components[i + 1]))
+                    G.add_edge(node1, node2)
+
 
     elif kind == "barabasi":
         m = max(1, param)  # Number of edges to attach per new node
@@ -353,6 +364,15 @@ def build_graph(kind: str, n: int, seed: int, param: int = 3) -> nx.Graph:
     elif kind == "smallworld":
         k = max(2, param)  # Initial degree for each node
         G = nx.watts_strogatz_graph(n, k, 0.1, seed=seed)
+        if not _connected(G):
+            components = list(nx.connected_components(G))
+            if len(components) > 1:
+                # Connect components by adding edges between them
+                for i in range(len(components) - 1):
+                    # Pick one node from each component
+                    node1 = random.choice(list(components[i]))
+                    node2 = random.choice(list(components[i + 1]))
+                    G.add_edge(node1, node2)
 
     elif kind == "grid":
         side = round(math.sqrt(n))
@@ -360,13 +380,21 @@ def build_graph(kind: str, n: int, seed: int, param: int = 3) -> nx.Graph:
         G = nx.convert_node_labels_to_integers(G)
 
     elif kind == "tree":
-        G = nx.random_tree(n, seed=seed)
+        G = nx.balanced_tree(param, int(math.ceil(math.log(n * (param - 1) + 1, param))), create_using=nx.Graph())
+        G = nx.convert_node_labels_to_integers(G)
+        if len(G) > n:
+            G = G.subgraph(range(n)).copy()
 
     elif kind == "hypercube":
         k = round(math.log2(n))
         if 2**k != n:
             raise nx.NetworkXError("hypercube: n must be 2^k")
         G = nx.hypercube_graph(k)
+
+    elif kind == "complete":
+        if n < 2:
+            raise nx.NetworkXError("complete: need n >= 2")
+        G = nx.complete_graph(n)
 
     else:
         raise ValueError(f"unknown graph kind '{kind}'")

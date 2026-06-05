@@ -23,10 +23,9 @@ from agent_election import (build_graph, randomize_ports,
                             scatter_one_agent_per_node, run_leader_election)
 
 # —— Defaults ————————————————————————————————————————————————————————
-DEFAULT_GRAPH_TYPES        = ["erdos"]
-# "erdos", "barabasi",
-#                               "smallworld", "grid", "hypercube"]
-DEFAULT_NODE_COUNTS        = [1000]
+DEFAULT_GRAPH_TYPES        = ["erdos", "barabasi", "smallworld",
+                               "grid", "hypercube", "complete", "tree"]
+DEFAULT_NODE_COUNTS        = [16, 32, 64, 128, 256]
 DEFAULT_GRAPH_SEEDS        = [42]
 DEFAULT_NUM_RUNS_PER_GRAPH = 8
 DEFAULT_MAX_ROUNDS         = 150_000
