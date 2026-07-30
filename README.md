@@ -4,7 +4,7 @@ This project simulates a multi-agent system with agents navigating and coordinat
 
 ## Background
 
-The graph considered is an anonymous port labeled graph. The agents can move from one node to another in synchrnous rounds. 
+The graph considered is an anonymous port labeled graph. The agents can move from one node to another in synchronous rounds. 
 
 WIP: [Near-Linear Time Dispersion](https://arxiv.org/html/2310.04376v3) by Sudo et al. 
 

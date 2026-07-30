@@ -19,7 +19,7 @@ def main():
     print("\nAgent final states:")
     for a in agents:
         state = a.state
-        print(f"  A{a.ID} @ node {a.node:>2}  →  {state}")
+        print(f"  A{a.ID} @ node {a.node:>2}  ->  {state}")
 
 
 if __name__ == "__main__":
