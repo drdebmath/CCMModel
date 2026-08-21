@@ -631,6 +631,9 @@ fn set_frame(state: &Rc<RefCell<AppState>>, index: isize) {
 
 fn layout_for(graph: &Graph, width: f64, height: f64) -> Vec<(f64, f64)> {
     let n = graph.node_count;
+    if n == 0 {
+        return Vec::new();
+    }
     let margin = 30.0_f64.max(width.min(height) * 0.08);
     let mut points = vec![(width / 2.0, height / 2.0); n];
     if graph.family == "path" {
@@ -655,6 +658,42 @@ fn layout_for(graph: &Graph, width: f64, height: f64) -> Vec<(f64, f64)> {
                 + (height - margin * 2.0) * (i / columns) as f64
                     / rows.saturating_sub(1).max(1) as f64;
         }
+    } else if graph.family == "tree" {
+        // `make_graph` builds the tree with binary-heap indexing, so node i sits
+        // at depth floor(log2(i + 1)) and its parent is (i - 1) / 2.  Giving
+        // each level its full 2^d slots rather than spreading only the nodes
+        // present keeps every parent centred over its two children even when
+        // the bottom level is partly filled.
+        let usable_width = (width - margin * 2.0).max(1.0);
+        let usable_height = (height - margin * 2.0).max(1.0);
+        let max_depth = tree_depth(n - 1);
+        for (i, point) in points.iter_mut().enumerate() {
+            let depth = tree_depth(i);
+            let slots = 1_usize << depth;
+            let local = i + 1 - slots;
+            point.0 = margin + usable_width * (local as f64 + 0.5) / slots as f64;
+            point.1 = if max_depth == 0 {
+                height / 2.0
+            } else {
+                margin + usable_height * depth as f64 / max_depth as f64
+            };
+        }
+        // A partly filled bottom level leaves the tree hugging one side; a
+        // uniform fit re-centres it without disturbing parent alignment.
+        points = fit_layout(points, width, height, margin);
+    } else if graph.family == "star" {
+        // Hub at the centre, leaves on one ring.  A star's entire structure is
+        // "one node adjacent to every other", which a plain circle hides by
+        // putting the hub on the rim among its own leaves.
+        let radius = 20.0_f64.max(width.min(height) / 2.0 - margin);
+        points[0] = (width / 2.0, height / 2.0);
+        let leaves = n.saturating_sub(1).max(1) as f64;
+        for (i, point) in points.iter_mut().enumerate().skip(1) {
+            let angle =
+                -std::f64::consts::FRAC_PI_2 + (i - 1) as f64 * std::f64::consts::TAU / leaves;
+            point.0 = width / 2.0 + angle.cos() * radius;
+            point.1 = height / 2.0 + angle.sin() * radius;
+        }
     } else if graph.family == "random" {
         let usable_width = (width - margin * 2.0).max(1.0);
         let usable_height = (height - margin * 2.0).max(1.0);
@@ -676,6 +715,11 @@ fn layout_for(graph: &Graph, width: f64, height: f64) -> Vec<(f64, f64)> {
     } else {
         points
     }
+}
+
+/// Depth of a node in a binary-heap-indexed tree: floor(log2(index + 1)).
+fn tree_depth(index: usize) -> usize {
+    (usize::BITS - 1 - (index + 1).leading_zeros()) as usize
 }
 
 fn layout_noise(index: usize, salt: u32) -> f64 {
@@ -2124,6 +2168,74 @@ mod tests {
             render_bytes: vec![1, 2, 0, 0, 1],
         };
         assert_eq!(trace_frames(&result.render_bytes, &[0], &result).len(), 2);
+    }
+
+    #[test]
+    fn tree_layout_puts_each_parent_above_and_between_its_children() {
+        let graph = make_graph("tree", 15, 2);
+        let points = layout_for(&graph, 900.0, 600.0);
+        for child in 1..15 {
+            let parent = (child - 1) / 2;
+            assert!(
+                points[parent].1 < points[child].1,
+                "parent {parent} must sit above child {child}"
+            );
+        }
+        // Heap indexing: 2j+1 and 2j+2 are the two children of j.
+        for parent in 0..7 {
+            let (left, right) = (2 * parent + 1, 2 * parent + 2);
+            let midpoint = (points[left].0 + points[right].0) / 2.0;
+            assert!(
+                (points[parent].0 - midpoint).abs() < 0.5,
+                "parent {parent} is not centred over its children"
+            );
+            assert!(points[left].0 < points[right].0);
+        }
+    }
+
+    #[test]
+    fn tree_layout_separates_levels_and_stays_inside_the_canvas() {
+        let graph = make_graph("tree", 12, 2);
+        let points = layout_for(&graph, 900.0, 600.0);
+        let depths: Vec<usize> = (0..12).map(tree_depth).collect();
+        assert_eq!(depths, vec![0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3]);
+        for (i, point) in points.iter().enumerate() {
+            assert!(
+                point.0 >= 0.0 && point.0 <= 900.0 && point.1 >= 0.0 && point.1 <= 600.0,
+                "node {i} at {point:?} escaped the canvas"
+            );
+        }
+    }
+
+    #[test]
+    fn star_layout_puts_the_hub_at_the_centre() {
+        let graph = make_graph("star", 9, 2);
+        let points = layout_for(&graph, 800.0, 600.0);
+        assert_eq!(points[0], (400.0, 300.0));
+        let spokes: Vec<f64> = points[1..]
+            .iter()
+            .map(|p| (p.0 - 400.0).hypot(p.1 - 300.0))
+            .collect();
+        // Every leaf is the same distance out, and none sits on the hub.
+        for length in &spokes {
+            assert!((length - spokes[0]).abs() < 0.5);
+            assert!(*length > 100.0);
+        }
+    }
+
+    #[test]
+    fn cycle_and_complete_keep_the_circular_layout() {
+        for family in ["cycle", "complete"] {
+            let graph = make_graph(family, 8, 2);
+            let points = layout_for(&graph, 800.0, 600.0);
+            let radii: Vec<f64> = points
+                .iter()
+                .map(|p| (p.0 - 400.0).hypot(p.1 - 300.0))
+                .collect();
+            for radius in &radii {
+                assert!((radius - radii[0]).abs() < 0.5, "{family} is not circular");
+            }
+        }
     }
 
     fn stub_measure(label: &str) -> f64 {
