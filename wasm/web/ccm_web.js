@@ -603,9 +603,6 @@ function __wbg_get_imports() {
     imports.wbg.__wbg_removeAttribute_e419cd6726b4c62f = function() { return handleError(function (arg0, arg1, arg2) {
         arg0.removeAttribute(getStringFromWasm0(arg1, arg2));
     }, arguments) };
-    imports.wbg.__wbg_remove_282d941ca37d0c63 = function() { return handleError(function (arg0, arg1, arg2) {
-        arg0.remove(getStringFromWasm0(arg1, arg2));
-    }, arguments) };
     imports.wbg.__wbg_remove_e2d2659f3128c045 = function(arg0) {
         arg0.remove();
     };

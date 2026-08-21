@@ -1689,6 +1689,17 @@ fn hook_click(state: &Rc<RefCell<AppState>>, id: &str, callback: fn(&Rc<RefCell<
     closure.forget();
 }
 
+/// The mobile drawer and its dismiss scrim are one piece of state, so both
+/// always receive the same `open` class rather than drifting apart.
+fn set_panel_open(state: &Rc<RefCell<AppState>>, open: bool) {
+    let app = state.borrow();
+    for id in ["controlPanel", "panelScrim"] {
+        let _ = element::<Element>(&app.document, id)
+            .class_list()
+            .toggle_with_force("open", open);
+    }
+}
+
 #[wasm_bindgen]
 pub fn start() -> Result<(), JsValue> {
     let window = web_sys::window().ok_or_else(|| JsValue::from_str("window unavailable"))?;
@@ -1816,18 +1827,9 @@ pub fn start() -> Result<(), JsValue> {
         drop(app);
         render(s);
     });
-    hook_click(&state, "panelToggle", |s| {
-        let app = s.borrow();
-        let _ = element::<Element>(&app.document, "controlPanel")
-            .class_list()
-            .add_1("open");
-    });
-    hook_click(&state, "closePanel", |s| {
-        let app = s.borrow();
-        let _ = element::<Element>(&app.document, "controlPanel")
-            .class_list()
-            .remove_1("open");
-    });
+    hook_click(&state, "panelToggle", |s| set_panel_open(s, true));
+    hook_click(&state, "closePanel", |s| set_panel_open(s, false));
+    hook_click(&state, "panelScrim", |s| set_panel_open(s, false));
     let canvas: HtmlCanvasElement = element(&document, "networkCanvas");
     {
         let state = Rc::clone(&state);
