@@ -1,0 +1,17 @@
+[package]
+name = "ccm-bench"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+ccm-algorithms = { path = "../ccm-algorithms" }
+ccm-core = { path = "../ccm-core" }
+ccm-help-scouts = { path = "../ccm-help-scouts" }
+
+[lints]
+workspace = true
+

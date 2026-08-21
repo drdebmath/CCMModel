@@ -67,3 +67,9 @@ htmlcov/
 
 # Custom
 *.txt
+
+# Rust build output
+target/
+
+# Obsolete pre-web WASM package output
+wasm/pkg/

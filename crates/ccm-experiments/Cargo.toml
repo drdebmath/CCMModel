@@ -1,0 +1,16 @@
+[package]
+name = "ccm-experiments"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+repository.workspace = true
+
+[dependencies]
+ccm-algorithms = { path = "../ccm-algorithms" }
+ccm-core = { path = "../ccm-core" }
+ccm-help-scouts = { path = "../ccm-help-scouts" }
+ccm-trace = { path = "../ccm-trace" }
+
+[lints]
+workspace = true

@@ -1,0 +1,16 @@
+[package]
+name = "ccm-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Deterministic, platform-independent simulation primitives for CCM algorithms"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+
+[lints]
+workspace = true

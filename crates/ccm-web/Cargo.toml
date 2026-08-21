@@ -1,0 +1,45 @@
+[package]
+name = "ccm-web"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+description = "Rust/WASM main-thread UI for the CCM Network Lab"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+js-sys = "=0.3.77"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "=0.2.100"
+web-sys = { version = "=0.3.77", features = [
+    "Blob",
+    "CanvasRenderingContext2d",
+    "CssStyleDeclaration",
+    "Document",
+    "DomTokenList",
+    "DomRect",
+    "Element",
+    "Event",
+    "EventTarget",
+    "File",
+    "FileList",
+    "FileReader",
+    "HtmlAnchorElement",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "HtmlInputElement",
+    "HtmlSelectElement",
+    "MessageEvent",
+    "MouseEvent",
+    "Node",
+    "ResizeObserver",
+    "ResizeObserverEntry",
+    "Storage",
+    "Window",
+    "Worker",
+    "Url",
+    "console",
+] }

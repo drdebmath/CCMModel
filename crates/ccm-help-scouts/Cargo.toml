@@ -1,0 +1,15 @@
+[package]
+name = "ccm-help-scouts"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Indexed Rust implementation of CCM Help-by-Scouts"
+
+[dependencies]
+ccm-core = { path = "../ccm-core" }
+ccm-trace = { path = "../ccm-trace" }
+
+[lints]
+workspace = true

@@ -30,7 +30,6 @@ BOLD  = "\033[1m"
 RESET = "\033[0m"
 
 AGENT_STATUS_SETTLED = 0
-AGENT_STATUS_UNSETTLED = 1
 
 
 def run_help_scouts(nodes: int, agent_count: int, degree: int, seed: int) -> dict:
@@ -39,7 +38,7 @@ def run_help_scouts(nodes: int, agent_count: int, degree: int, seed: int) -> dic
     agents = [agent_help_scouts.Agent(i, 0) for i in range(agent_count)]
     agent_help_scouts.run_simulation(G, agents)
 
-    unsettled = [a for a in agents if a.state == "unsettled"]
+    unsettled = [a for a in agents if a.state != "settled"]
     return {
         "agents": len(agents),
         "unsettled": len(unsettled),
@@ -52,7 +51,7 @@ def run_drop_freeze(nodes: int, agent_count: int, degree: int, seed: int) -> dic
     agents = [agent_drop_freeze.Agent(i, 0) for i in range(agent_count)]
     agent_drop_freeze.run_simulation(G, agents, rounds=500)
 
-    unsettled = [a for a in agents if a.state["status"] == AGENT_STATUS_UNSETTLED]
+    unsettled = [a for a in agents if a.state["status"] != AGENT_STATUS_SETTLED]
     return {
         "agents": len(agents),
         "unsettled": len(unsettled),
@@ -67,11 +66,16 @@ ALGORITHMS: dict[str, Callable] = {
 
 def main():
     parser = argparse.ArgumentParser(description="Stress test CCM simulation algorithms")
-    parser.add_argument("--algo", choices=list(ALGORITHMS.keys()), help="Run only one algorithm")
+    parser.add_argument(
+        "--algo",
+        choices=["both", *ALGORITHMS.keys()],
+        default="both",
+        help="Run both algorithms or select one",
+    )
     parser.add_argument("--num-tests", type=int, default=200, help="Number of random tests per algorithm")
     args = parser.parse_args()
 
-    algos = {args.algo: ALGORITHMS[args.algo]} if args.algo else ALGORITHMS
+    algos = ALGORITHMS if args.algo == "both" else {args.algo: ALGORITHMS[args.algo]}
 
     for algo_name, run_fn in algos.items():
         rng = random.Random(0)
