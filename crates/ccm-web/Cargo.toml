@@ -38,6 +38,7 @@ web-sys = { version = "=0.3.77", features = [
     "ResizeObserver",
     "ResizeObserverEntry",
     "Storage",
+    "TextMetrics",
     "Window",
     "Worker",
     "Url",

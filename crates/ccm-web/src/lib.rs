@@ -20,6 +20,9 @@ const MAX_IMPORT_EDGES: usize = 200_000;
 const MAX_IMPORT_FRAMES: usize = 1_000_002;
 const MAX_PORT_LABEL_EDGES: usize = 180;
 const MAX_PORT_LABEL_DEGREE: usize = 12;
+const PORT_FONT: &str = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+const PORT_CHIP_HEIGHT: f64 = 14.0;
+const PORT_CHIP_PADDING: f64 = 4.5;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Graph {
@@ -780,11 +783,13 @@ fn fit_layout(
     points
 }
 
-fn edge_port_labels(graph: &Graph) -> Vec<(usize, usize)> {
+/// Sorted neighbour lists.  A node's local port for a neighbour is that
+/// neighbour's index in this list -- the one rule both the canvas and the hover
+/// table read, so the two can never disagree about a port number.
+fn sorted_neighbors(graph: &Graph) -> Vec<Vec<usize>> {
     let mut neighbors = vec![Vec::<usize>::new(); graph.node_count];
     for edge in graph.edges.chunks_exact(2) {
-        let a = edge[0] as usize;
-        let b = edge[1] as usize;
+        let (a, b) = (edge[0] as usize, edge[1] as usize);
         if a < graph.node_count && b < graph.node_count {
             neighbors[a].push(b);
             neighbors[b].push(a);
@@ -793,23 +798,7 @@ fn edge_port_labels(graph: &Graph) -> Vec<(usize, usize)> {
     for list in &mut neighbors {
         list.sort_unstable();
     }
-    graph
-        .edges
-        .chunks_exact(2)
-        .map(|edge| {
-            let a = edge[0] as usize;
-            let b = edge[1] as usize;
-            let a_port = neighbors
-                .get(a)
-                .and_then(|list| list.binary_search(&b).ok())
-                .unwrap_or(0);
-            let b_port = neighbors
-                .get(b)
-                .and_then(|list| list.binary_search(&a).ok())
-                .unwrap_or(0);
-            (a_port, b_port)
-        })
-        .collect()
+    neighbors
 }
 
 fn port_labels_are_legible(graph: &Graph) -> bool {
@@ -830,19 +819,165 @@ fn port_labels_are_legible(graph: &Graph) -> bool {
     degrees.into_iter().max().unwrap_or(0) <= MAX_PORT_LABEL_DEGREE
 }
 
-fn draw_port_badge(
-    context: &CanvasRenderingContext2d,
-    label: &str,
+/// One laid-out port label.
+#[derive(Clone, Debug, PartialEq)]
+struct PortChip {
     x: f64,
     y: f64,
+    half_width: f64,
+    label: String,
+}
+
+/// How far the agent markers around a node reach.  Mirrors the marker geometry
+/// in `render` so port chips can sit outside them rather than on top.
+fn agent_ring_extent(count: usize, radius: f64) -> f64 {
+    if count == 0 {
+        return radius;
+    }
+    radius + 5.0 + count.min(10) as f64 + (2.0_f64).max(radius * 0.58)
+}
+
+/// Smallest gap between consecutive bearings around a full turn.
+fn smallest_angular_gap(bearings: &[f64]) -> f64 {
+    if bearings.len() < 2 {
+        return std::f64::consts::TAU;
+    }
+    let wrapped = bearings[0] + std::f64::consts::TAU - bearings[bearings.len() - 1];
+    bearings
+        .windows(2)
+        .map(|pair| pair[1] - pair[0])
+        .fold(wrapped, f64::min)
+}
+
+/// Lays each port label on a ring around the node that owns it, at the bearing
+/// of that port's own edge.
+///
+/// Placing per node rather than per edge is what makes these readable.  The
+/// previous per-edge placement offset every label by its own port number, so
+/// labels sat at four different distances from their node, flipped sides on
+/// port 4, and on short edges crossed the midpoint into the neighbour's
+/// territory.  A ring gives every chip one distance from the node that owns it,
+/// and widens when a node's edges leave at similar bearings.
+fn port_chips(
+    graph: &Graph,
+    points: &[(f64, f64)],
+    radius: f64,
+    agents_at: &[usize],
+    measure: &dyn Fn(&str) -> f64,
+) -> Vec<PortChip> {
+    let neighbors = sorted_neighbors(graph);
+    let mut chips = Vec::new();
+    for (node, list) in neighbors.iter().enumerate() {
+        let Some(&origin) = points.get(node) else {
+            continue;
+        };
+        let mut spokes: Vec<(f64, usize, f64)> = Vec::with_capacity(list.len());
+        let mut shortest = f64::INFINITY;
+        for (port, &neighbor) in list.iter().enumerate() {
+            let Some(&target) = points.get(neighbor) else {
+                continue;
+            };
+            let (dx, dy) = (target.0 - origin.0, target.1 - origin.1);
+            let length = dx.hypot(dy);
+            if length < 1.0 {
+                continue;
+            }
+            shortest = shortest.min(length);
+            let label = port.to_string();
+            let half = measure(&label) / 2.0 + PORT_CHIP_PADDING;
+            spokes.push((dy.atan2(dx), port, half));
+        }
+        if spokes.is_empty() {
+            continue;
+        }
+        spokes.sort_by(|a, b| a.0.total_cmp(&b.0));
+
+        // Clear the node and any agent markers drawn around it.
+        let mut ring = agent_ring_extent(agents_at.get(node).copied().unwrap_or(0), radius) + 8.0;
+        // Widen until neighbouring chips on the ring clear each other.
+        let bearings: Vec<f64> = spokes.iter().map(|spoke| spoke.0).collect();
+        let half_gap = (smallest_angular_gap(&bearings) / 2.0).sin().abs();
+        if half_gap > f64::EPSILON {
+            let widest = spokes.iter().map(|s| s.2).fold(0.0_f64, f64::max);
+            ring = ring.max((widest + 2.0) / half_gap);
+        }
+        // Never past the midpoint of the node's shortest edge, so a chip always
+        // reads as belonging to this node rather than its neighbour.
+        ring = ring.min(shortest * 0.44);
+
+        for (bearing, port, half_width) in spokes {
+            // Nudge each chip to the left of its own outgoing bearing.  The two
+            // chips on an edge therefore land on opposite sides of it -- left of
+            // A->B is right of B->A -- so they cannot collide head-on however
+            // short the edge is.  Without this, every gap on a path graph held
+            // two competing chips and the lower node index always won, which
+            // silently deleted one whole port number from the display.
+            let offset = PORT_CHIP_HEIGHT / 2.0 + 2.0;
+            chips.push(PortChip {
+                x: origin.0 + bearing.cos() * ring - bearing.sin() * offset,
+                y: origin.1 + bearing.sin() * ring + bearing.cos() * offset,
+                half_width,
+                label: port.to_string(),
+            });
+        }
+    }
+    chips
+}
+
+/// Drops any chip that would overlap one already kept.  Clamping the ring to
+/// the shortest edge can still leave two chips fighting on a dense graph; a
+/// dropped label is recoverable by hovering, an unreadable pile of them is not.
+/// Returns the kept chips and how many were dropped.
+fn resolve_port_overlaps(chips: Vec<PortChip>) -> (Vec<PortChip>, usize) {
+    let mut kept: Vec<PortChip> = Vec::with_capacity(chips.len());
+    let mut dropped = 0;
+    for chip in chips {
+        let clash = kept.iter().any(|other| {
+            (chip.x - other.x).abs() < chip.half_width + other.half_width + 2.0
+                && (chip.y - other.y).abs() < PORT_CHIP_HEIGHT + 2.0
+        });
+        if clash {
+            dropped += 1;
+        } else {
+            kept.push(chip);
+        }
+    }
+    (kept, dropped)
+}
+
+fn rounded_rect(context: &CanvasRenderingContext2d, x: f64, y: f64, w: f64, h: f64, r: f64) {
+    context.begin_path();
+    context.move_to(x + r, y);
+    let _ = context.arc_to(x + w, y, x + w, y + h, r);
+    let _ = context.arc_to(x + w, y + h, x, y + h, r);
+    let _ = context.arc_to(x, y + h, x, y, r);
+    let _ = context.arc_to(x, y, x + w, y, r);
+    context.close_path();
+}
+
+/// A bordered chip rather than bare text: port labels sit on top of edges, and
+/// an outline is what separates one from the line it covers.
+fn draw_port_chip(
+    context: &CanvasRenderingContext2d,
+    chip: &PortChip,
     foreground: &str,
     background: &str,
+    border: &str,
 ) {
-    let width = 7.0 + label.len() as f64 * 6.0;
+    rounded_rect(
+        context,
+        chip.x - chip.half_width,
+        chip.y - PORT_CHIP_HEIGHT / 2.0,
+        chip.half_width * 2.0,
+        PORT_CHIP_HEIGHT,
+        4.0,
+    );
     context.set_fill_style_str(background);
-    context.fill_rect(x - width / 2.0, y - 6.5, width, 13.0);
+    context.fill();
+    context.set_stroke_style_str(border);
+    context.stroke();
     context.set_fill_style_str(foreground);
-    let _ = context.fill_text(label, x, y + 0.5);
+    let _ = context.fill_text(&chip.label, chip.x, chip.y + 0.5);
 }
 
 fn theme_colors(document: &Document) -> (String, String, String) {
@@ -907,66 +1042,8 @@ fn render(state: &Rc<RefCell<AppState>>) {
             "Hover a node for details"
         },
     );
-    let port_labels = show_ports.then(|| edge_port_labels(graph));
     let show_agents = checked(&app.document, "showAgents");
     let draw_individuals = show_agents && graph.node_count <= 2500;
-    if show_edges {
-        context.set_stroke_style_str(&border);
-        context.set_line_width(if graph.node_count > 800 { 0.55 } else { 1.0 });
-        context.begin_path();
-        for edge in graph.edges.chunks_exact(2) {
-            if let (Some(a), Some(b)) = (points.get(edge[0] as usize), points.get(edge[1] as usize))
-            {
-                context.move_to(a.0, a.1);
-                context.line_to(b.0, b.1);
-            }
-        }
-        context.stroke();
-    }
-    if let Some(port_labels) = port_labels.as_ref() {
-        context.set_font("10px ui-monospace, SFMono-Regular, Menlo, monospace");
-        context.set_text_align("center");
-        context.set_text_baseline("middle");
-        context.set_fill_style_str(&border);
-        for (index, edge) in graph.edges.chunks_exact(2).enumerate() {
-            let (Some(a), Some(b), Some((a_port, b_port))) = (
-                points.get(edge[0] as usize),
-                points.get(edge[1] as usize),
-                port_labels.get(index),
-            ) else {
-                continue;
-            };
-            let dx = b.0 - a.0;
-            let dy = b.1 - a.1;
-            let distance = dx.hypot(dy).max(1.0);
-            let ux = dx / distance;
-            let uy = dy / distance;
-            let nx = -uy;
-            let ny = ux;
-            let a_label = format!("p{a_port}");
-            let b_label = format!("p{b_port}");
-            let a_distance = 18.0 + (a_port % 4) as f64 * 10.0;
-            let b_distance = 18.0 + (b_port % 4) as f64 * 10.0;
-            let a_side = if (a_port / 4) % 2 == 0 { 1.0 } else { -1.0 };
-            let b_side = if (b_port / 4) % 2 == 0 { 1.0 } else { -1.0 };
-            draw_port_badge(
-                &context,
-                &a_label,
-                a.0 + ux * a_distance + nx * 6.0 * a_side,
-                a.1 + uy * a_distance + ny * 6.0 * a_side,
-                &text_color,
-                &empty_fill,
-            );
-            draw_port_badge(
-                &context,
-                &b_label,
-                b.0 - ux * b_distance - nx * 6.0 * b_side,
-                b.1 - uy * b_distance - ny * 6.0 * b_side,
-                &text_color,
-                &empty_fill,
-            );
-        }
-    }
     let mut by_node: Vec<Vec<usize>> = vec![Vec::new(); points.len()];
     if show_agents {
         for (agent, node) in frame.positions.iter().enumerate() {
@@ -983,6 +1060,47 @@ fn render(state: &Rc<RefCell<AppState>>) {
             }
         }
     }
+    let radius = (2.5_f64).max((9.0_f64).min(12.0 - graph.node_count as f64 / 1800.0));
+    if show_edges {
+        context.set_stroke_style_str(&border);
+        context.set_line_width(if graph.node_count > 800 { 0.55 } else { 1.0 });
+        context.begin_path();
+        for edge in graph.edges.chunks_exact(2) {
+            if let (Some(a), Some(b)) = (points.get(edge[0] as usize), points.get(edge[1] as usize))
+            {
+                context.move_to(a.0, a.1);
+                context.line_to(b.0, b.1);
+            }
+        }
+        context.stroke();
+    }
+    if show_ports {
+        let counts: Vec<usize> = by_node.iter().map(Vec::len).collect();
+        context.set_font(PORT_FONT);
+        context.set_text_align("center");
+        context.set_text_baseline("middle");
+        context.set_line_width(1.0);
+        // Measured in the live context font, so multi-digit ports size correctly
+        // instead of assuming a fixed per-character width.
+        let measure = |label: &str| {
+            context
+                .measure_text(label)
+                .map(|metrics| metrics.width())
+                .unwrap_or_else(|_| label.len() as f64 * 6.0)
+        };
+        let (chips, dropped) =
+            resolve_port_overlaps(port_chips(graph, &points, radius, &counts, &measure));
+        for chip in &chips {
+            draw_port_chip(&context, chip, &text_color, &empty_fill, &border);
+        }
+        if dropped > 0 {
+            set_text(
+                &app.document,
+                "legendTip",
+                "Some port labels are hidden where they collide; hover a node for its full table",
+            );
+        }
+    }
     if graph.node_count > 2500 {
         for (node, point) in points.iter().enumerate() {
             let agents = &by_node[node];
@@ -995,7 +1113,6 @@ fn render(state: &Rc<RefCell<AppState>>) {
         }
         return;
     }
-    let radius = (2.5_f64).max((9.0_f64).min(12.0 - graph.node_count as f64 / 1800.0));
     for (node, point) in points.iter().enumerate() {
         let agents = &by_node[node];
         let color = agents
@@ -1921,18 +2038,11 @@ fn tooltip(state: &Rc<RefCell<AppState>>, event: MouseEvent) {
             format!("Agent {}: node {} · {}{}", i, position, status, home)
         })
         .collect();
-    let degree = graph.edges.iter().filter(|n| **n as usize == node).count();
-    let mut port_neighbors = Vec::new();
-    for edge in graph.edges.chunks_exact(2) {
-        let a = edge[0] as usize;
-        let b = edge[1] as usize;
-        if a == node {
-            port_neighbors.push(b);
-        } else if b == node {
-            port_neighbors.push(a);
-        }
-    }
-    port_neighbors.sort_unstable();
+    let port_neighbors = sorted_neighbors(graph)
+        .get(node)
+        .cloned()
+        .unwrap_or_default();
+    let degree = port_neighbors.len();
     let ports = if port_neighbors.is_empty() {
         "No ports".to_owned()
     } else {
@@ -1941,7 +2051,7 @@ fn tooltip(state: &Rc<RefCell<AppState>>, event: MouseEvent) {
             port_neighbors
                 .iter()
                 .enumerate()
-                .map(|(port, neighbor)| format!("p{port}→{neighbor}"))
+                .map(|(port, neighbor)| format!("{port}→{neighbor}"))
                 .collect::<Vec<_>>()
                 .join(", ")
         )
@@ -1977,7 +2087,7 @@ mod tests {
         assert_eq!(random.edges, make_graph_with_seed("random", 20, 2, 7).edges);
         assert_eq!(random.edges.len(), 2 * (19 + 40));
         let path = make_graph("path", 3, 2);
-        assert_eq!(edge_port_labels(&path), vec![(0, 0), (1, 0)]);
+        assert_eq!(sorted_neighbors(&path), vec![vec![1], vec![0, 2], vec![1]]);
         assert!(port_labels_are_legible(&path));
         assert!(!port_labels_are_legible(&make_graph("complete", 20, 2)));
         let spring = layout_for(&random, 800.0, 600.0);
@@ -2014,6 +2124,81 @@ mod tests {
             render_bytes: vec![1, 2, 0, 0, 1],
         };
         assert_eq!(trace_frames(&result.render_bytes, &[0], &result).len(), 2);
+    }
+
+    fn stub_measure(label: &str) -> f64 {
+        label.len() as f64 * 6.0
+    }
+
+    #[test]
+    fn every_port_of_a_path_is_labelled_exactly_once() {
+        let graph = make_graph("path", 6, 2);
+        let points: Vec<(f64, f64)> = (0..6).map(|i| (60.0 + i as f64 * 90.0, 200.0)).collect();
+        let (chips, dropped) =
+            resolve_port_overlaps(port_chips(&graph, &points, 9.0, &[0; 6], &stub_measure));
+        // Two endpoints with one port, four interior nodes with two.
+        assert_eq!(dropped, 0);
+        assert_eq!(chips.len(), 10);
+        let mut labels: Vec<&str> = chips.iter().map(|c| c.label.as_str()).collect();
+        labels.sort_unstable();
+        assert_eq!(labels.iter().filter(|l| **l == "0").count(), 6);
+        assert_eq!(labels.iter().filter(|l| **l == "1").count(), 4);
+    }
+
+    #[test]
+    fn opposing_chips_on_one_edge_sit_on_opposite_sides_of_it() {
+        // Regression: placing both chips on the edge line made them collide
+        // head-on, and the greedy pass then deleted one port number from every
+        // gap on a path graph.
+        let graph = make_graph("path", 2, 2);
+        let points = vec![(0.0, 0.0), (80.0, 0.0)];
+        let chips = port_chips(&graph, &points, 9.0, &[0, 0], &stub_measure);
+        assert_eq!(chips.len(), 2);
+        assert!(
+            chips[0].y * chips[1].y < 0.0,
+            "chips must straddle the edge: {chips:?}"
+        );
+    }
+
+    #[test]
+    fn kept_chips_never_overlap() {
+        let graph = make_graph("complete", 6, 2);
+        let points: Vec<(f64, f64)> = (0..6)
+            .map(|i| {
+                let a = f64::from(i) * std::f64::consts::TAU / 6.0;
+                (200.0 + a.cos() * 70.0, 200.0 + a.sin() * 70.0)
+            })
+            .collect();
+        let (chips, _) =
+            resolve_port_overlaps(port_chips(&graph, &points, 9.0, &[0; 6], &stub_measure));
+        for (i, a) in chips.iter().enumerate() {
+            for b in &chips[i + 1..] {
+                assert!(
+                    (a.x - b.x).abs() >= a.half_width + b.half_width + 2.0
+                        || (a.y - b.y).abs() >= PORT_CHIP_HEIGHT + 2.0,
+                    "overlapping chips survived: {a:?} {b:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn chips_clear_the_agent_markers_drawn_around_a_node() {
+        let graph = make_graph("path", 3, 2);
+        let points = vec![(0.0, 0.0), (300.0, 0.0), (600.0, 0.0)];
+        let busy = port_chips(&graph, &points, 9.0, &[0, 4, 0], &stub_measure);
+        let middle: Vec<&PortChip> = busy
+            .iter()
+            .filter(|c| (c.x - 300.0).abs() < 150.0 && c.x != 0.0)
+            .collect();
+        let reach = agent_ring_extent(4, 9.0);
+        for chip in middle {
+            let d = (chip.x - 300.0).hypot(chip.y);
+            assert!(
+                d > reach,
+                "chip at {d} intrudes on markers reaching {reach}"
+            );
+        }
     }
 
     #[test]
