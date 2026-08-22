@@ -1,6 +1,8 @@
-//! Import/export adapters for the JSON produced by `simulation_wrapper.py`.
+//! Import/export adapters for the JSON the historical Python wrapper produced.
 //!
-//! The legacy format has five positional histories whose meanings differ by
+//! That implementation has been removed from the repository, but executions
+//! saved from it have not, so this crate remains the way to read them. The
+//! legacy format has five positional histories whose meanings differ by
 //! algorithm. This crate keeps that format at the boundary and converts it to
 //! an explicit canonical representation. No legacy schema types are placed in
 //! `ccm-core`.

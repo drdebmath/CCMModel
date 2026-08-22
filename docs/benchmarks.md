@@ -1,5 +1,11 @@
 # Engineering benchmark: legacy Python versus Rust
 
+> **Archival measurement.** The Python implementation compared against here,
+> and the `benchmarks/compare_legacy.py` harness that drove it, have been
+> removed from the repository. These numbers are no longer reproducible from
+> this tree; they are retained as the recorded justification for the migration.
+> The raw per-sample CSV is kept alongside for the same reason.
+
 This benchmark measures implementation runtime, not round, move, message, or
 memory complexity. Algorithmic conclusions must use the explicit counters
 defined in [complexity-metrics.md](complexity-metrics.md).
@@ -38,12 +44,8 @@ profile, Python 3.13.14, repository baseline commit
 
 Raw dispersion is retained in
 [`benchmarks/results-2026-08-20.csv`](../benchmarks/results-2026-08-20.csv).
-Reproduce with:
-
-```sh
-python benchmarks/compare_legacy.py \
-  --sizes 25,50,100 --iterations 3 --samples 5
-```
+The harness that produced these rows has been removed along with the Python
+implementation it measured.
 
 ## Browser scale checks
 

@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main, rust-migration]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Scoped to this job on purpose: applying it workspace-wide would also
+    # apply to `cargo install wasm-bindgen-cli` in the other job, where a
+    # warning in someone else's dependency would fail our build.
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the channel and the wasm target.
+      - name: Show toolchain
+        run: rustup show && cargo --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets
+
+      - name: Test
+        run: cargo test --workspace
+
+  wasm-is-current:
+    # wasm/web is committed and served directly by GitHub Pages, so a forgotten
+    # rebuild silently ships stale code to users with no error anywhere. Rebuild
+    # and fail if the result differs from what is in the tree.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: rustup show
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version 0.2.100 --locked
+
+      - name: Rebuild the browser package
+        run: ./scripts/build-wasm.sh
+
+      - name: Fail if committed WASM is stale
+        run: |
+          if ! git diff --exit-code -- wasm/web; then
+            echo "::error::wasm/web is out of date. Run ./scripts/build-wasm.sh and commit the result."
+            exit 1
+          fi

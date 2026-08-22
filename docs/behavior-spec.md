@@ -1,5 +1,13 @@
 # Current Python behavior specification
 
+> **Archival document.** This describes the Python implementation that this
+> repository has since removed; the repository is now Rust end to end. File and
+> line citations below point at code that no longer exists in this tree and are
+> historical references, not live pointers. It is retained because it is the
+> provenance for the Rust ports: it records the behavior they were built to
+> reproduce, and the reasoning behind the choices they encode. See
+> [migration.md](migration.md) for the current state.
+
 This document records the behavior of the Python code as it exists in this
 repository. It is a compatibility/reference document, not a claim that every
 shortcut or failure mode is part of the intended distributed algorithms. The

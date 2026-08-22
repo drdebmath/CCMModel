@@ -7,12 +7,13 @@ mobile-agent dispersion state machines:
 - Help-by-Scouts.
 
 Both native experiments and browser playback execute the same authoritative
-Rust algorithms. The production browser is client-only Rust/WebAssembly in a
+Rust algorithms. The repository is Rust end to end: simulation core, native
+CLI, browser application, and development server. The production browser is client-only Rust/WebAssembly in a
 Web Worker with Canvas 2D rendering—no Python, Pyodide, NetworkX, Cytoscape,
 CDN, or application backend.
 
 > The repository implementations preserve the behavior of the historical
-> Python files. Their names and transitions are not literal ports of the
+> Python files they replaced. Their names and transitions are not literal ports of the
 > algorithms in Sudo et al., *Near-linear Time Dispersion of Mobile Agents*.
 > Read [the behavior specification](docs/behavior-spec.md) before relating
 > empirical results to the paper's assumptions or theorems.
@@ -76,7 +77,7 @@ and serve the repository:
 ```sh
 cargo install wasm-bindgen-cli --version 0.2.100 --locked
 ./scripts/build-wasm.sh
-python3 -m http.server 8000 --bind 127.0.0.1
+cargo run -p ccm-serve
 ```
 
 Open <http://127.0.0.1:8000>. The UI supports both algorithms, deterministic
@@ -85,7 +86,7 @@ filters, canonical local port labels, node tooltips with agent positions,
 JSON import/export, responsive controls, and light/dark themes. Random graphs
 use a deterministic spring layout that is cached across playback frames.
 Port badges are drawn for sparse views where they remain legible; the complete
-canonical `pN→neighbor` table is always available in each node tooltip. Imported
+canonical `port→neighbor` table is always available in each node tooltip. Imported
 executions are validated for graph and agent-state invariants before rendering.
 Full tracing is for small simulations. The UI automatically uses bounded trace
 and reduced visual detail for large cases; 10,000 agents is an upper-bound
@@ -96,10 +97,12 @@ content-derived `manifest.json`. The page and worker load both generated modules
 and their `.wasm` binaries with that build ID, preventing mixed cached builds
 without accumulating manually numbered package directories.
 
-This workspace also includes a persistent macOS development service. Its
-source plist is [`dev/com.ccmmodel.local-server.plist`](dev/com.ccmmodel.local-server.plist);
-the installed `com.ccmmodel.local-server` LaunchAgent serves this checkout at
-port 8000 and restarts at login independently of a Codex session.
+`ccm-serve` is a dependency-free static file server in this workspace. The page
+loads ES modules, spawns a Web Worker, and instantiates WASM, none of which work
+from `file://`, so the app has to be served over HTTP; `ccm-serve` makes that a
+`cargo run` rather than a second toolchain. It binds loopback only and is a
+development tool, not a production server. Use `--port` and `--root` to change
+where it listens and what it serves.
 
 ## Tests and verification
 
@@ -113,32 +116,25 @@ cargo check -p ccm-wasm --target wasm32-unknown-unknown
 cargo check -p ccm-web --target wasm32-unknown-unknown
 ```
 
-The historical Python code is retained only as a reference, differential-test
-source, and benchmark baseline. In an environment with `pytest` and
-`networkx`:
-
-```sh
-python -m pytest -q
-python stress_test.py --algo both --num-tests 10
-```
+CI runs exactly these on every push and pull request, and additionally rebuilds
+`wasm/web` and fails if the result differs from what is committed. That check
+matters because GitHub Pages serves the committed package directly: without it,
+a forgotten `./scripts/build-wasm.sh` ships stale code with no error anywhere.
 
 ## Engineering benchmark
 
 On the recorded Apple Silicon environment, rooted path cases with `n = k`
 showed median speedups of 16.89×–26.78× for Drop-and-Freeze and
 1,109.85×–5,176.19× for Help-by-Scouts at sizes 25–100. Every sample had an
-equal final-position checksum. The legacy Python path necessarily records full
-snapshot history while optimized Rust uses `NoTrace`; this is a research
+equal final-position checksum. The legacy path necessarily recorded full
+snapshot history while optimized Rust uses `NoTrace`; this was a research
 throughput comparison, not an algorithmic-complexity result or equal-tracing
 microbenchmark. Method, dispersion, caveats, and raw CSV are in
 [docs/benchmarks.md](docs/benchmarks.md).
 
-Reproduce it with:
-
-```sh
-python benchmarks/compare_legacy.py \
-  --sizes 25,50,100 --iterations 3 --samples 5
-```
+This measurement is archival. The Python implementation it compared against has
+been removed from the repository, so it is no longer reproducible from this
+tree; it is retained as the record of why the migration was undertaken.
 
 ## Workspace map
 

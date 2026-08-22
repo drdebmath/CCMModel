@@ -32,6 +32,14 @@ pub struct Graph {
     pub edges: Vec<u32>,
     #[serde(rename = "gridColumns")]
     pub grid_columns: usize,
+    /// Defaulted so executions exported before trees were configurable still
+    /// import cleanly under the same schema version.
+    #[serde(rename = "treeBranching", default = "default_tree_branching")]
+    pub tree_branching: usize,
+}
+
+const fn default_tree_branching() -> usize {
+    2
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -48,6 +56,10 @@ pub struct Config {
     pub round_limit: u64,
     #[serde(rename = "gridColumns")]
     pub grid_columns: usize,
+    /// Defaulted so executions exported before trees were configurable still
+    /// import cleanly under the same schema version.
+    #[serde(rename = "treeBranching", default = "default_tree_branching")]
+    pub tree_branching: usize,
     #[serde(rename = "traceMode")]
     pub trace_mode: String,
     #[serde(rename = "maxTraceRecords")]
@@ -202,6 +214,16 @@ pub fn make_graph(family: &str, n: usize, grid_columns: usize) -> Graph {
 }
 
 pub fn make_graph_with_seed(family: &str, n: usize, grid_columns: usize, seed: u32) -> Graph {
+    make_graph_full(family, n, grid_columns, 2, seed)
+}
+
+pub fn make_graph_full(
+    family: &str,
+    n: usize,
+    grid_columns: usize,
+    tree_branching: usize,
+    seed: u32,
+) -> Graph {
     if family == "random" {
         let mut edges = Vec::new();
         let mut seen = BTreeSet::new();
@@ -253,6 +275,7 @@ pub fn make_graph_with_seed(family: &str, n: usize, grid_columns: usize, seed: u
             node_count: n,
             edges,
             grid_columns,
+            tree_branching,
         };
     }
     let mut edges = Vec::new();
@@ -282,8 +305,9 @@ pub fn make_graph_with_seed(family: &str, n: usize, grid_columns: usize, seed: u
         }
     }
     if family == "tree" {
+        let branching = tree_branching.max(1);
         for i in 1..n {
-            add((i - 1) / 2, i);
+            add((i - 1) / branching, i);
         }
     }
     let columns = grid_columns.max(1).min(n.max(1));
@@ -302,6 +326,7 @@ pub fn make_graph_with_seed(family: &str, n: usize, grid_columns: usize, seed: u
         node_count: n,
         edges,
         grid_columns,
+        tree_branching,
     }
 }
 
@@ -318,6 +343,7 @@ fn read_config(document: &Document) -> Config {
         seed: number(document, "seed", 42, 0, u32::MAX as usize) as u32,
         round_limit: number(document, "roundLimit", 500, 1, 1_000_000) as u64,
         grid_columns: number(document, "gridColumns", 5, 1, 10_000),
+        tree_branching: number(document, "treeBranching", 2, 2, 16),
         trace_mode: select_value(document, "traceMode"),
         max_trace_records: number(document, "traceLimit", 600, 0, 1_000_000),
         sample_every: number(document, "sampleEvery", 4, 1, 1_000_000),
@@ -659,28 +685,7 @@ fn layout_for(graph: &Graph, width: f64, height: f64) -> Vec<(f64, f64)> {
                     / rows.saturating_sub(1).max(1) as f64;
         }
     } else if graph.family == "tree" {
-        // `make_graph` builds the tree with binary-heap indexing, so node i sits
-        // at depth floor(log2(i + 1)) and its parent is (i - 1) / 2.  Giving
-        // each level its full 2^d slots rather than spreading only the nodes
-        // present keeps every parent centred over its two children even when
-        // the bottom level is partly filled.
-        let usable_width = (width - margin * 2.0).max(1.0);
-        let usable_height = (height - margin * 2.0).max(1.0);
-        let max_depth = tree_depth(n - 1);
-        for (i, point) in points.iter_mut().enumerate() {
-            let depth = tree_depth(i);
-            let slots = 1_usize << depth;
-            let local = i + 1 - slots;
-            point.0 = margin + usable_width * (local as f64 + 0.5) / slots as f64;
-            point.1 = if max_depth == 0 {
-                height / 2.0
-            } else {
-                margin + usable_height * depth as f64 / max_depth as f64
-            };
-        }
-        // A partly filled bottom level leaves the tree hugging one side; a
-        // uniform fit re-centres it without disturbing parent alignment.
-        points = fit_layout(points, width, height, margin);
+        points = tree_layout(graph, width, height, margin);
     } else if graph.family == "star" {
         // Hub at the centre, leaves on one ring.  A star's entire structure is
         // "one node adjacent to every other", which a plain circle hides by
@@ -717,9 +722,84 @@ fn layout_for(graph: &Graph, width: f64, height: f64) -> Vec<(f64, f64)> {
     }
 }
 
-/// Depth of a node in a binary-heap-indexed tree: floor(log2(index + 1)).
-fn tree_depth(index: usize) -> usize {
-    (usize::BITS - 1 - (index + 1).leading_zeros()) as usize
+/// Tidy layered layout derived from the tree's own edges rather than from an
+/// index convention.
+///
+/// Reading the structure back out of the edges is what makes this work for any
+/// branching factor, for unbalanced trees, and for imported executions whose
+/// node numbering this code did not choose. Leaves take successive slots left
+/// to right and every parent is centred between its first and last child, so
+/// no edge crosses another.
+fn tree_layout(graph: &Graph, width: f64, height: f64, margin: f64) -> Vec<(f64, f64)> {
+    let n = graph.node_count;
+    let neighbors = sorted_neighbors(graph);
+    let mut depth = vec![usize::MAX; n];
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut order = Vec::with_capacity(n);
+
+    // Breadth-first from node 0, so `order` is sorted by depth.
+    depth[0] = 0;
+    let mut queue = std::collections::VecDeque::from([0_usize]);
+    while let Some(node) = queue.pop_front() {
+        order.push(node);
+        for &next in &neighbors[node] {
+            if depth[next] == usize::MAX {
+                depth[next] = depth[node] + 1;
+                children[node].push(next);
+                queue.push_back(next);
+            }
+        }
+    }
+
+    // Leaves claim successive slots in a depth-first left-to-right walk.
+    let mut slot = vec![0.0_f64; n];
+    let mut next_slot = 0.0_f64;
+    let mut stack = vec![0_usize];
+    while let Some(node) = stack.pop() {
+        if children[node].is_empty() {
+            slot[node] = next_slot;
+            next_slot += 1.0;
+        }
+        stack.extend(children[node].iter().rev());
+    }
+    // Deepest first, so a parent is centred once its children are placed.
+    for &node in order.iter().rev() {
+        if let (Some(&first), Some(&last)) = (children[node].first(), children[node].last()) {
+            slot[node] = (slot[first] + slot[last]) / 2.0;
+        }
+    }
+
+    // Anything unreachable from node 0 is not part of the tree; give it a row
+    // of its own rather than stacking it on the root.
+    let mut max_depth = order.iter().map(|&node| depth[node]).max().unwrap_or(0);
+    let orphans: Vec<usize> = (0..n).filter(|&node| depth[node] == usize::MAX).collect();
+    if !orphans.is_empty() {
+        max_depth += 1;
+        for &node in &orphans {
+            depth[node] = max_depth;
+            slot[node] = next_slot;
+            next_slot += 1.0;
+        }
+    }
+
+    let usable_width = (width - margin * 2.0).max(1.0);
+    let usable_height = (height - margin * 2.0).max(1.0);
+    let span = (next_slot - 1.0).max(1.0);
+    let mut points = Vec::with_capacity(n);
+    for node in 0..n {
+        let x = if next_slot <= 1.0 {
+            width / 2.0
+        } else {
+            margin + usable_width * slot[node] / span
+        };
+        let y = if max_depth == 0 {
+            height / 2.0
+        } else {
+            margin + usable_height * depth[node] as f64 / max_depth as f64
+        };
+        points.push((x, y));
+    }
+    points
 }
 
 fn layout_noise(index: usize, salt: u32) -> f64 {
@@ -1486,10 +1566,11 @@ fn run(state: &Rc<RefCell<AppState>>) {
             "busy",
         );
     }
-    let graph = make_graph_with_seed(
+    let graph = make_graph_full(
         &config.family,
         config.node_count,
         config.grid_columns,
+        config.tree_branching,
         config.seed,
     );
     let starts = if config.placement == "rooted" {
@@ -1950,10 +2031,13 @@ pub fn start() -> Result<(), JsValue> {
     {
         let document = document.clone();
         let closure = Closure::<dyn FnMut(Event)>::new(move |_| {
-            let hidden = select_value(&document, "family") != "grid";
+            let family = select_value(&document, "family");
             let _ = element::<Element>(&document, "gridColumnsWrap")
                 .class_list()
-                .toggle_with_force("hidden", hidden);
+                .toggle_with_force("hidden", family != "grid");
+            let _ = element::<Element>(&document, "treeBranchingWrap")
+                .class_list()
+                .toggle_with_force("hidden", family != "tree");
         });
         let _ = family.add_event_listener_with_callback("change", closure.as_ref().unchecked_ref());
         closure.forget();
@@ -2172,39 +2256,71 @@ mod tests {
 
     #[test]
     fn tree_layout_puts_each_parent_above_and_between_its_children() {
-        let graph = make_graph("tree", 15, 2);
-        let points = layout_for(&graph, 900.0, 600.0);
-        for child in 1..15 {
-            let parent = (child - 1) / 2;
-            assert!(
-                points[parent].1 < points[child].1,
-                "parent {parent} must sit above child {child}"
-            );
-        }
-        // Heap indexing: 2j+1 and 2j+2 are the two children of j.
-        for parent in 0..7 {
-            let (left, right) = (2 * parent + 1, 2 * parent + 2);
-            let midpoint = (points[left].0 + points[right].0) / 2.0;
-            assert!(
-                (points[parent].0 - midpoint).abs() < 0.5,
-                "parent {parent} is not centred over its children"
-            );
-            assert!(points[left].0 < points[right].0);
+        for branching in 2..=4 {
+            let graph = make_graph_full("tree", 22, 2, branching, 42);
+            let points = layout_for(&graph, 900.0, 600.0);
+            for child in 1..22 {
+                let parent = (child - 1) / branching;
+                assert!(
+                    points[parent].1 < points[child].1,
+                    "k={branching}: parent {parent} must sit above child {child}"
+                );
+            }
+            let neighbors = sorted_neighbors(&graph);
+            for parent in 0..22 {
+                let kids: Vec<usize> = neighbors[parent]
+                    .iter()
+                    .copied()
+                    .filter(|&c| c > parent)
+                    .collect();
+                if kids.is_empty() {
+                    continue;
+                }
+                let midpoint = (points[kids[0]].0 + points[kids[kids.len() - 1]].0) / 2.0;
+                assert!(
+                    (points[parent].0 - midpoint).abs() < 0.5,
+                    "k={branching}: parent {parent} is not centred over its children"
+                );
+            }
         }
     }
 
     #[test]
-    fn tree_layout_separates_levels_and_stays_inside_the_canvas() {
-        let graph = make_graph("tree", 12, 2);
+    fn tree_layout_reads_structure_from_edges_not_node_numbering() {
+        // Same tree, node numbering permuted: 0-2, 2-1, 2-3.  An index-based
+        // layout would put 1 and 3 on different levels; the real structure has
+        // them as siblings under 2.
+        let graph = Graph {
+            family: "tree".to_owned(),
+            node_count: 4,
+            edges: vec![0, 2, 2, 1, 2, 3],
+            grid_columns: 2,
+            tree_branching: 2,
+        };
         let points = layout_for(&graph, 900.0, 600.0);
-        let depths: Vec<usize> = (0..12).map(tree_depth).collect();
-        assert_eq!(depths, vec![0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3]);
+        assert!(points[0].1 < points[2].1, "0 is the root, 2 is its child");
+        assert!(
+            (points[1].1 - points[3].1).abs() < 0.5,
+            "1 and 3 are siblings"
+        );
+        assert!(points[2].1 < points[1].1);
+        let midpoint = (points[1].0 + points[3].0) / 2.0;
+        assert!((points[2].0 - midpoint).abs() < 0.5);
+    }
+
+    #[test]
+    fn tree_layout_stays_inside_the_canvas_and_separates_levels() {
+        let graph = make_graph_full("tree", 30, 2, 3, 42);
+        let points = layout_for(&graph, 900.0, 600.0);
         for (i, point) in points.iter().enumerate() {
             assert!(
                 point.0 >= 0.0 && point.0 <= 900.0 && point.1 >= 0.0 && point.1 <= 600.0,
                 "node {i} at {point:?} escaped the canvas"
             );
         }
+        let levels: std::collections::BTreeSet<i64> =
+            points.iter().map(|p| (p.1 * 10.0) as i64).collect();
+        assert_eq!(levels.len(), 4, "30 nodes at k=3 form four levels");
     }
 
     #[test]
@@ -2315,7 +2431,7 @@ mod tests {
 
     #[test]
     fn imported_graphs_reject_invalid_endpoints_and_frame_dimensions() {
-        let text = include_str!("../../../tests/fixtures/browser_import_v1.json");
+        let text = include_str!("../../../fixtures/browser_import_v1.json");
         let mut payload: ImportPayload = serde_json::from_str(text).unwrap();
         assert!(validate_import(&payload).is_ok());
         payload.graph.edges[0] = payload.graph.node_count as u32;
@@ -2359,10 +2475,9 @@ mod tests {
 
     #[test]
     fn browser_v1_fixture_imports() {
-        let payload: ImportPayload = serde_json::from_str(include_str!(
-            "../../../tests/fixtures/browser_import_v1.json"
-        ))
-        .expect("browser v1 fixture");
+        let payload: ImportPayload =
+            serde_json::from_str(include_str!("../../../fixtures/browser_import_v1.json"))
+                .expect("browser v1 fixture");
         assert_eq!(payload.schema, "ccm-browser-v1");
         assert_eq!(payload.graph.node_count, 2);
         assert_eq!(payload.frames.len(), 2);

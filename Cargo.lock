@@ -65,6 +65,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ccm-serve"
+version = "0.1.0"
+
+[[package]]
 name = "ccm-trace"
 version = "0.1.0"
 dependencies = [

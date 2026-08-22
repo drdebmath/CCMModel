@@ -1,5 +1,13 @@
 # Complexity metrics and counting semantics
 
+> **Archival document.** This describes the Python implementation that this
+> repository has since removed; the repository is now Rust end to end. File and
+> line citations below point at code that no longer exists in this tree and are
+> historical references, not live pointers. It is retained because it is the
+> provenance for the Rust ports: it records the behavior they were built to
+> reproduce, and the reasoning behind the choices they encode. See
+> [migration.md](migration.md) for the current state.
+
 This document defines the metrics that the Rust simulator should report for the
 two CCM dispersion algorithms currently represented by
 `agent_drop_freeze.py` (Drop-and-Freeze) and `agent_help_scouts.py`

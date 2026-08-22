@@ -16,7 +16,7 @@
   <div class="app-shell">
     <aside id="controlPanel" class="controls" aria-label="Simulation controls">
       <div class="panel-heading"><div><p class="eyebrow">EXPERIMENT</p><h1>Network simulation</h1></div><button id="closePanel" class="icon-button mobile-only" type="button" aria-label="Close controls">×</button></div>
-      <section class="control-section"><h2>Model</h2><label>Algorithm<select id="algorithm"><option value="drop">Drop and Freeze</option><option value="help">Help by Scouts</option></select></label><label>Graph family<select id="family"><option value="path">Path</option><option value="cycle">Cycle</option><option value="star">Star</option><option value="complete">Complete</option><option value="tree">Balanced tree</option><option value="grid">Grid</option><option value="random">Random connected</option></select></label><label>Initial placement<select id="placement"><option value="rooted">Rooted at node 0</option><option value="spread">Seeded distinct nodes</option></select></label><div class="two-col"><label>Nodes<input id="nodes" type="number" min="1" max="10000" value="26" inputmode="numeric"></label><label>Agents<input id="agents" type="number" min="1" max="10000" value="5" inputmode="numeric"></label></div><div class="two-col"><label>Seed<input id="seed" type="number" min="0" max="4294967295" value="42" inputmode="numeric"></label><label>Round limit<input id="roundLimit" type="number" min="1" max="1000000" value="500" inputmode="numeric"></label></div><label id="gridColumnsWrap" class="hidden">Grid columns<input id="gridColumns" type="number" min="1" max="10000" value="5"></label></section>
+      <section class="control-section"><h2>Model</h2><label>Algorithm<select id="algorithm"><option value="drop">Drop and Freeze</option><option value="help">Help by Scouts</option></select></label><label>Graph family<select id="family"><option value="path">Path</option><option value="cycle">Cycle</option><option value="star">Star</option><option value="complete">Complete</option><option value="tree">Balanced tree</option><option value="grid">Grid</option><option value="random">Random connected</option></select></label><label>Initial placement<select id="placement"><option value="rooted">Rooted at node 0</option><option value="spread">Seeded distinct nodes</option></select></label><div class="two-col"><label>Nodes<input id="nodes" type="number" min="1" max="10000" value="26" inputmode="numeric"></label><label>Agents<input id="agents" type="number" min="1" max="10000" value="5" inputmode="numeric"></label></div><div class="two-col"><label>Seed<input id="seed" type="number" min="0" max="4294967295" value="42" inputmode="numeric"></label><label>Round limit<input id="roundLimit" type="number" min="1" max="1000000" value="500" inputmode="numeric"></label></div><label id="gridColumnsWrap" class="hidden">Grid columns<input id="gridColumns" type="number" min="1" max="10000" value="5"></label><label id="treeBranchingWrap" class="hidden">Tree branching<input id="treeBranching" type="number" min="2" max="16" value="2" inputmode="numeric"></label></section>
       <section class="control-section"><h2>Trace & playback</h2><label>Trace mode<select id="traceMode"><option value="off">Off — fastest</option><option value="full" selected>Full — playback</option><option value="bounded">Bounded — capped</option></select></label><label id="traceLimitWrap">Max records<input id="traceLimit" type="number" min="0" max="1000000" value="600"></label><label id="sampleEveryWrap" class="hidden">Sample every<input id="sampleEvery" type="number" min="1" max="1000000" value="4"></label><label>Playback speed <output id="speedValue">240 ms</output><input id="speed" type="range" min="40" max="1000" step="20" value="240"></label></section>
       <section class="control-section"><h2>Display filters</h2><div class="checks"><label><input id="showEdges" type="checkbox" checked> Edges</label><label><input id="showPorts" type="checkbox" checked> Port labels</label><label><input id="showAgents" type="checkbox" checked> Agents</label><label><input id="showSettled" type="checkbox" checked> Settled</label><label><input id="showUnsettled" type="checkbox" checked> Unsettled</label><label><input id="showScout" type="checkbox" checked> Scouts / waiting</label></div></section>
       <div class="run-actions"><button id="run" class="primary" type="button">Run simulation</button><button id="cancel" class="secondary" type="button" disabled>Cancel</button></div><div class="file-actions"><button id="export" class="secondary" type="button" disabled>Export JSON</button><label class="file-button secondary">Import JSON<input id="import" type="file" accept="application/json,.json"></label></div><p id="message" class="message" role="status">Choose parameters, then run.</p><p class="help-note">The simulation runs locally in a Web Worker. No Python, server, or network data is required.</p>
@@ -26,11 +26,26 @@
   <div id="panelScrim" class="panel-scrim" aria-hidden="true"></div>
   <footer>CCM Network Lab · one Rust implementation, native and WASM · <a href="https://github.com/drdebmath/CCMModel">source</a></footer>
   <script type="module">
-    const response = await fetch('./wasm/web/manifest.json', { cache: 'no-store' });
-    if (!response.ok) throw new Error(`WASM manifest returned ${response.status}`);
-    const { buildId } = await response.json();
-    if (!buildId) throw new Error('WASM manifest has no build ID');
-    await import(`./main.js?v=${encodeURIComponent(buildId)}`);
+    // The manifest is fetched once here and the build id handed to main.js in
+    // its own import URL, so the main thread does not request it twice.
+    const engine = document.getElementById('engineState');
+    const message = document.getElementById('message');
+    try {
+      const response = await fetch('./wasm/web/manifest.json', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`manifest returned ${response.status}`);
+      const { buildId } = await response.json();
+      if (!buildId) throw new Error('manifest has no build id');
+      await import(`./main.js?v=${encodeURIComponent(buildId)}`);
+    } catch (error) {
+      // An uncaught throw here left the page on "Checking WASM..." forever with
+      // the only trace in a console nobody is watching.
+      engine.textContent = 'WASM unavailable';
+      engine.className = 'engine-state error';
+      message.textContent =
+        `Could not start the engine (${error.message}). Build the browser package with ` +
+        `./scripts/build-wasm.sh, then serve over HTTP with: cargo run -p ccm-serve`;
+      message.className = 'message error';
+    }
   </script>
 </body>
 </html>

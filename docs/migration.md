@@ -26,16 +26,29 @@ one Rust simulation core shared by native and browser consumers.
 - Added content-derived WASM package loading, transferable typed worker arrays,
   cached deterministic random-graph layouts, legibility-aware port badges, and
   invariant validation for browser execution imports.
+- Laid out families by their real structure: tidy layered trees derived from
+  the graph's own edges at any branching factor, hub-centred stars, and
+  per-node port label rings.
+- Sized the browser shell to the viewport so the canvas always ends on screen,
+  across a full set of responsive tiers.
+- Removed the Python implementation, its fixtures, and its benchmark harness.
+  Replaced the machine-specific launchd plist with `ccm-serve`, a
+  dependency-free static server in the workspace.
+- Added CI covering format, lints, and tests, and failing if the committed
+  `wasm/web` package does not match a fresh build of the current source.
 
 ## Compatibility decisions
 
-The Rust ports preserve the current dedicated Python files before attempting
-paper-level semantic changes. In particular, Drop-and-Freeze canonicalizes
-ports because Python does, and the current Help-by-Scouts multi-start failure
-is retained and covered by a test. Neither implementation is presented as a
+The Rust ports preserve the behavior of the dedicated Python files they
+replaced, before attempting paper-level semantic changes. In particular,
+Drop-and-Freeze canonicalizes ports because the Python reference did, and that
+reference's Help-by-Scouts multi-start failure is retained and covered by a
+test. Neither implementation is presented as a
 proof-compatible port of the named algorithms in Sudo et al.; see the behavior
 and metrics documents before interpreting empirical results.
 
-Python remains in the repository as a reference and benchmark baseline. It is
-not loaded by the production browser application and is not required for
-native Rust experiments.
+Python has been removed. The repository is Rust end to end: simulation core,
+native CLI, browser application, and the `ccm-serve` development server. The
+behavior it defined is preserved in the Rust ports and recorded in
+[behavior-spec.md](behavior-spec.md) and
+[complexity-metrics.md](complexity-metrics.md), both archival.
