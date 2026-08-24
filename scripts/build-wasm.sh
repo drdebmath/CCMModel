@@ -12,13 +12,24 @@ hash_files() {
   sha256 < <(cat "$@") | cut -c1-16
 }
 
-# Every input the browser package is built from. Sorted under a fixed locale so
-# the result does not depend on the machine's collation.
+# Every input the browser package is built from.
+#
+# The list comes from git rather than from find: a working tree can hold build
+# output that a fresh checkout does not, and generated .rs files under a stray
+# crates/*/target/ were enough to make the same sources hash differently on two
+# machines. Tracked files are the same set everywhere by definition. Sorted
+# under a fixed locale so the order does not depend on the machine's collation.
 source_hash() {
   {
-    LC_ALL=C find crates -type f \( -name '*.rs' -o -name 'Cargo.toml' \) | LC_ALL=C sort
+    if git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1; then
+      git -C "$repo_dir" ls-files -- crates | grep -E '\.rs$|Cargo\.toml$'
+    else
+      # Fallback for a checkout without git; prune build output explicitly.
+      find crates -type d -name target -prune -o -type f \
+        \( -name '*.rs' -o -name 'Cargo.toml' \) -print
+    fi
     printf '%s\n' Cargo.toml Cargo.lock rust-toolchain.toml scripts/build-wasm.sh
-  } | while IFS= read -r file; do
+  } | LC_ALL=C sort | while IFS= read -r file; do
     printf '%s\n' "$file"
     cat "$file"
   done | sha256 | cut -c1-16
