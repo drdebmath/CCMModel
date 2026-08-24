@@ -23,6 +23,16 @@ const MAX_PORT_LABEL_DEGREE: usize = 12;
 const PORT_FONT: &str = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
 const PORT_CHIP_HEIGHT: f64 = 14.0;
 const PORT_CHIP_PADDING: f64 = 4.5;
+/// Room left outside a ring layout for the port chips and agent markers drawn
+/// around each node.
+const RING_LABEL_INSET: f64 = 14.0;
+
+/// How far the two axes of a force-directed fit may diverge. Chosen so a
+/// typical 16:9 canvas is filled while edge lengths stay readable as distance.
+const STRETCH_LIMIT: f64 = 1.45;
+
+/// Centre-seeking pull applied to the shorter axis of a force-directed layout.
+const GRAVITY: f64 = 0.025;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Graph {
@@ -138,7 +148,6 @@ struct ImportPayload {
 struct AppState {
     document: Document,
     canvas: HtmlCanvasElement,
-    wrap: Element,
     worker: Option<Worker>,
     observer: Option<ResizeObserver>,
     busy: bool,
@@ -150,6 +159,9 @@ struct AppState {
     frame: usize,
     timer: Option<i32>,
     layout: Vec<(f64, f64)>,
+    /// CSS size the cached layout was computed for, so a resize event that does
+    /// not actually change the box does not rebuild it.
+    layout_size: (f64, f64),
 }
 
 fn element<T: JsCast>(document: &Document, id: &str) -> T {
@@ -690,14 +702,14 @@ fn layout_for(graph: &Graph, width: f64, height: f64) -> Vec<(f64, f64)> {
         // Hub at the centre, leaves on one ring.  A star's entire structure is
         // "one node adjacent to every other", which a plain circle hides by
         // putting the hub on the rim among its own leaves.
-        let radius = 20.0_f64.max(width.min(height) / 2.0 - margin);
+        let (radius_x, radius_y) = ring_radii(width, height, margin);
         points[0] = (width / 2.0, height / 2.0);
         let leaves = n.saturating_sub(1).max(1) as f64;
         for (i, point) in points.iter_mut().enumerate().skip(1) {
             let angle =
                 -std::f64::consts::FRAC_PI_2 + (i - 1) as f64 * std::f64::consts::TAU / leaves;
-            point.0 = width / 2.0 + angle.cos() * radius;
-            point.1 = height / 2.0 + angle.sin() * radius;
+            point.0 = width / 2.0 + angle.cos() * radius_x;
+            point.1 = height / 2.0 + angle.sin() * radius_y;
         }
     } else if graph.family == "random" {
         let usable_width = (width - margin * 2.0).max(1.0);
@@ -707,12 +719,17 @@ fn layout_for(graph: &Graph, width: f64, height: f64) -> Vec<(f64, f64)> {
             point.1 = margin + usable_height * layout_noise(i, 0x85eb_ca6b);
         }
     } else {
-        let radius = 20.0_f64.max(width.min(height) / 2.0 - margin);
+        // An ellipse rather than a circle. A circle is sized by the shorter axis,
+        // so on a wide canvas it left roughly a quarter of the width empty on
+        // each side while the graph sat squeezed in the middle. Spreading the
+        // ring over both axes uses that space without changing what the picture
+        // says: a cycle is still a ring, a complete graph still regular.
+        let (radius_x, radius_y) = ring_radii(width, height, margin);
         for (i, point) in points.iter_mut().enumerate() {
             let angle =
                 -std::f64::consts::FRAC_PI_2 + i as f64 * std::f64::consts::TAU / n.max(1) as f64;
-            point.0 = width / 2.0 + angle.cos() * radius;
-            point.1 = height / 2.0 + angle.sin() * radius;
+            point.0 = width / 2.0 + angle.cos() * radius_x;
+            point.1 = height / 2.0 + angle.sin() * radius_y;
         }
     }
     if graph.family == "random" && n <= 600 {
@@ -730,6 +747,18 @@ fn layout_for(graph: &Graph, width: f64, height: f64) -> Vec<(f64, f64)> {
 /// node numbering this code did not choose. Leaves take successive slots left
 /// to right and every parent is centred between its first and last child, so
 /// no edge crosses another.
+/// Semi-axes for a ring that fills the drawable box on both axes.
+///
+/// Port chips and agent markers are drawn outside their node, so the ring stops
+/// short of the margin rather than sitting on it.
+fn ring_radii(width: f64, height: f64, margin: f64) -> (f64, f64) {
+    let inset = margin + RING_LABEL_INSET;
+    (
+        20.0_f64.max(width / 2.0 - inset),
+        20.0_f64.max(height / 2.0 - inset),
+    )
+}
+
 fn tree_layout(graph: &Graph, width: f64, height: f64, margin: f64) -> Vec<(f64, f64)> {
     let n = graph.node_count;
     let neighbors = sorted_neighbors(graph);
@@ -824,6 +853,9 @@ fn spring_layout(
     let area = (width - margin * 2.0).max(1.0) * (height - margin * 2.0).max(1.0);
     let ideal = (area / n as f64).sqrt().clamp(12.0, 100.0);
     let mut temperature = width.min(height) * 0.12;
+    let shortest = width.min(height);
+    let gravity_x = GRAVITY * (shortest / width.max(1.0));
+    let gravity_y = GRAVITY * (shortest / height.max(1.0));
     for _ in 0..80 {
         let mut force = vec![(0.0, 0.0); n];
         for a in 0..n {
@@ -858,8 +890,16 @@ fn spring_layout(
             force[b].1 -= fy;
         }
         for i in 0..n {
-            force[i].0 += (width / 2.0 - points[i].0) * 0.025;
-            force[i].1 += (height / 2.0 - points[i].1) * 0.025;
+            // Gravity is weaker along the longer axis. With one coefficient on
+            // both axes the layout relaxed into a circle whatever the canvas
+            // shape, so a wide canvas ended up with a round graph adrift in the
+            // middle and had to be stretched afterwards. Scaling the pull by
+            // each axis lets the graph settle into the box's own proportions,
+            // which is a real equilibrium rather than a distorted one: only
+            // this external field is anisotropic, while the repulsion and edge
+            // forces that set the distance between nodes stay isotropic.
+            force[i].0 += (width / 2.0 - points[i].0) * gravity_x;
+            force[i].1 += (height / 2.0 - points[i].1) * gravity_y;
             let magnitude = force[i].0.hypot(force[i].1).max(1.0);
             let step = magnitude.min(temperature) / magnitude;
             points[i].0 += force[i].0 * step;
@@ -894,15 +934,21 @@ fn fit_layout(
         .fold(f64::NEG_INFINITY, f64::max);
     let span_x = (max_x - min_x).max(1.0);
     let span_y = (max_y - min_y).max(1.0);
-    let scale = (((width - margin * 2.0).max(1.0) / span_x)
-        .min((height - margin * 2.0).max(1.0) / span_y)
-        * 0.94)
-        .max(0.01);
+    let fit_x = (width - margin * 2.0).max(1.0) / span_x;
+    let fit_y = (height - margin * 2.0).max(1.0) / span_y;
+    // A single uniform scale is bounded by the tighter axis, which on a wide
+    // canvas left most of the width unused. Letting the axes differ takes that
+    // space back, but only up to STRETCH_LIMIT: a force-directed layout encodes
+    // distance, so stretching without bound would misreport how far apart
+    // nodes are.
+    let uniform = fit_x.min(fit_y);
+    let scale_x = (fit_x.min(uniform * STRETCH_LIMIT) * 0.94).max(0.01);
+    let scale_y = (fit_y.min(uniform * STRETCH_LIMIT) * 0.94).max(0.01);
     let center_x = (min_x + max_x) / 2.0;
     let center_y = (min_y + max_y) / 2.0;
     for point in &mut points {
-        point.0 = (width / 2.0 + (point.0 - center_x) * scale).clamp(margin, width - margin);
-        point.1 = (height / 2.0 + (point.1 - center_y) * scale).clamp(margin, height - margin);
+        point.0 = (width / 2.0 + (point.0 - center_x) * scale_x).clamp(margin, width - margin);
+        point.1 = (height / 2.0 + (point.1 - center_y) * scale_y).clamp(margin, height - margin);
     }
     points
 }
@@ -1140,7 +1186,7 @@ fn render(state: &Rc<RefCell<AppState>>) {
     let rect = app.canvas.get_bounding_client_rect();
     let width = rect.width();
     let height = rect.height();
-    let dpr = web_sys::window().map_or(1.0, |window| window.device_pixel_ratio());
+    let dpr = device_pixel_ratio();
     let _ = context.set_transform(dpr, 0.0, 0.0, dpr, 0.0, 0.0);
     context.clear_rect(0.0, 0.0, width, height);
     let (graph, frame) = match (app.graph.as_ref(), app.frames.get(app.frame)) {
@@ -1281,19 +1327,58 @@ fn render(state: &Rc<RefCell<AppState>>) {
     }
 }
 
+/// Device pixel ratio, guarded against the zero/NaN a detached window reports.
+fn device_pixel_ratio() -> f64 {
+    let ratio = web_sys::window().map_or(1.0, |window| window.device_pixel_ratio());
+    if ratio.is_finite() && ratio > 0.0 {
+        ratio
+    } else {
+        1.0
+    }
+}
+
+/// Matches the backing store to the canvas box and rebuilds the cached layout
+/// when that box changes.
+///
+/// The measurement has to come from the canvas itself. Sizing the backing store
+/// from the wrapper measured the border box, which is two pixels larger in each
+/// axis, so the browser rescaled the bitmap by `dpr * 1.003` rather than exactly
+/// `dpr`. That destroys the 1:1 device-pixel mapping the ratio exists to give:
+/// every frame is resampled, and content drifts toward the right and bottom
+/// edges by roughly two pixels. `render` and `tooltip` both measure the canvas,
+/// so it is the box all three have to agree on.
 fn resize(state: &Rc<RefCell<AppState>>) {
     let mut app = state.borrow_mut();
-    let rect = app.wrap.get_bounding_client_rect();
-    let dpr = web_sys::window()
-        .and_then(|w| w.device_pixel_ratio().into())
-        .unwrap_or(1.0);
-    app.canvas.set_width((rect.width() * dpr).max(1.0) as u32);
-    app.canvas.set_height((rect.height() * dpr).max(1.0) as u32);
-    app.layout = app
-        .graph
-        .as_ref()
-        .map(|g| layout_for(g, rect.width(), rect.height()))
-        .unwrap_or_default();
+    let rect = app.canvas.get_bounding_client_rect();
+    let css_width = rect.width().max(1.0);
+    let css_height = rect.height().max(1.0);
+    let dpr = device_pixel_ratio();
+
+    // Round rather than truncate: a fractional CSS box would otherwise lose up
+    // to a whole device pixel and reintroduce the rescale this fixes.
+    let width = ((css_width * dpr).round() as u32).max(1);
+    let height = ((css_height * dpr).round() as u32).max(1);
+    // Assigning either dimension clears the canvas, so only assign on a change.
+    if app.canvas.width() != width {
+        app.canvas.set_width(width);
+    }
+    if app.canvas.height() != height {
+        app.canvas.set_height(height);
+    }
+
+    // Both a ResizeObserver and a window listener call this, so the same box
+    // arrives twice for one visual change; rebuilding the layout each time
+    // would rerun the spring solver for nothing.
+    let node_count = app.graph.as_ref().map(|graph| graph.node_count);
+    let stale = node_count.is_some_and(|count| app.layout.len() != count);
+    if stale || app.layout_size != (css_width, css_height) {
+        app.layout_size = (css_width, css_height);
+        app.layout = app
+            .graph
+            .as_ref()
+            .map(|graph| layout_for(graph, css_width, css_height))
+            .unwrap_or_default();
+    }
     drop(app);
     render(state);
 }
@@ -1586,6 +1671,7 @@ fn run(state: &Rc<RefCell<AppState>>) {
         app.result = None;
         app.frames.clear();
         app.layout.clear();
+        app.layout_size = (0.0, 0.0);
         set_disabled(&element::<HtmlElement>(&app.document, "export"), true);
     }
     set_busy(state, true);
@@ -1774,6 +1860,7 @@ fn import_file(state: &Rc<RefCell<AppState>>, event: Event) {
                 app.frames = data.frames;
                 app.frame = 0;
                 app.layout.clear();
+                app.layout_size = (0.0, 0.0);
                 let _ = element::<Element>(&app.document, "emptyState")
                     .class_list()
                     .add_1("hidden");
@@ -1949,11 +2036,9 @@ pub fn start() -> Result<(), JsValue> {
         .document()
         .ok_or_else(|| JsValue::from_str("document unavailable"))?;
     let canvas: HtmlCanvasElement = element(&document, "networkCanvas");
-    let wrap: Element = element(&document, "canvasWrap");
     let state = Rc::new(RefCell::new(AppState {
         document: document.clone(),
         canvas,
-        wrap,
         worker: None,
         observer: None,
         busy: false,
@@ -1965,6 +2050,7 @@ pub fn start() -> Result<(), JsValue> {
         frame: 0,
         timer: None,
         layout: Vec::new(),
+        layout_size: (0.0, 0.0),
     }));
     hook_click(&state, "run", run);
     hook_click(&state, "cancel", cancel);
@@ -2323,33 +2409,127 @@ mod tests {
         assert_eq!(levels.len(), 4, "30 nodes at k=3 form four levels");
     }
 
+    fn span(points: &[(f64, f64)]) -> (f64, f64) {
+        let xs: Vec<f64> = points.iter().map(|p| p.0).collect();
+        let ys: Vec<f64> = points.iter().map(|p| p.1).collect();
+        let max_x = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let min_x = xs.iter().copied().fold(f64::INFINITY, f64::min);
+        let max_y = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let min_y = ys.iter().copied().fold(f64::INFINITY, f64::min);
+        (max_x - min_x, max_y - min_y)
+    }
+
+    #[test]
+    fn layouts_use_the_width_of_a_wide_canvas() {
+        // Regression: every ring was sized by the shorter axis, so on a 2:1
+        // canvas the graph occupied barely half the width and sat marooned in
+        // the middle with a quarter of the canvas blank on either side.
+        let (w, h) = (1000.0, 500.0);
+        for family in ["cycle", "complete", "star", "tree", "grid", "random"] {
+            let graph = make_graph_full(family, 24, 6, 2, 7);
+            let (span_x, span_y) = span(&layout_for(&graph, w, h));
+            assert!(
+                span_x > w * 0.6,
+                "{family} uses only {:.0}% of the width",
+                span_x / w * 100.0
+            );
+            assert!(
+                span_y > h * 0.5,
+                "{family} uses only {:.0}% of the height",
+                span_y / h * 100.0
+            );
+        }
+    }
+
+    #[test]
+    fn a_force_directed_fit_is_stretched_only_within_the_limit() {
+        // Filling the width must not turn into misreporting distance.
+        let graph = make_graph_full("random", 40, 6, 2, 5);
+        let (wide_x, wide_y) = span(&layout_for(&graph, 1600.0, 400.0));
+        let box_ratio = 1600.0 / 400.0;
+        let layout_ratio = (wide_x / wide_y) / box_ratio;
+        assert!(
+            layout_ratio <= 1.0 + f64::EPSILON,
+            "layout is wider than its box"
+        );
+        let (square_x, square_y) = span(&layout_for(&graph, 800.0, 800.0));
+        let anisotropy = (wide_x / wide_y) / (square_x / square_y);
+        assert!(
+            anisotropy <= STRETCH_LIMIT * 1.6,
+            "stretched {anisotropy:.2}x versus a square canvas"
+        );
+    }
+
+    #[test]
+    fn ring_layouts_leave_room_for_the_labels_drawn_outside_them() {
+        let graph = make_graph("cycle", 16, 2);
+        let points = layout_for(&graph, 900.0, 600.0);
+        let margin = 30.0_f64.max(900.0_f64.min(600.0) * 0.08);
+        for (i, point) in points.iter().enumerate() {
+            assert!(
+                point.0 >= margin && point.0 <= 900.0 - margin,
+                "node {i} at x={} is outside the margin",
+                point.0
+            );
+            assert!(point.1 >= margin && point.1 <= 600.0 - margin);
+        }
+    }
+
+    /// How far each point sits along its ring, as a fraction of the ring.
+    /// Exactly 1.0 for every point on a common ellipse centred on the canvas.
+    fn ellipse_residuals(points: &[(f64, f64)], w: f64, h: f64) -> Vec<f64> {
+        let (cx, cy) = (w / 2.0, h / 2.0);
+        let rx = points
+            .iter()
+            .map(|p| (p.0 - cx).abs())
+            .fold(0.0_f64, f64::max);
+        let ry = points
+            .iter()
+            .map(|p| (p.1 - cy).abs())
+            .fold(0.0_f64, f64::max);
+        points
+            .iter()
+            .map(|p| ((p.0 - cx) / rx).hypot((p.1 - cy) / ry))
+            .collect()
+    }
+
     #[test]
     fn star_layout_puts_the_hub_at_the_centre() {
         let graph = make_graph("star", 9, 2);
         let points = layout_for(&graph, 800.0, 600.0);
         assert_eq!(points[0], (400.0, 300.0));
-        let spokes: Vec<f64> = points[1..]
-            .iter()
-            .map(|p| (p.0 - 400.0).hypot(p.1 - 300.0))
-            .collect();
-        // Every leaf is the same distance out, and none sits on the hub.
-        for length in &spokes {
-            assert!((length - spokes[0]).abs() < 0.5);
-            assert!(*length > 100.0);
+        // The leaves ring the hub. The ring is an ellipse so that it fills a
+        // canvas of any aspect, so evenness is checked against the ellipse
+        // rather than against one radius.
+        for (i, residual) in ellipse_residuals(&points[1..], 800.0, 600.0)
+            .into_iter()
+            .enumerate()
+        {
+            assert!(
+                (residual - 1.0).abs() < 0.01,
+                "leaf {i} is off the ring at {residual}"
+            );
+        }
+        for (i, leaf) in points[1..].iter().enumerate() {
+            assert!(
+                (leaf.0 - 400.0).hypot(leaf.1 - 300.0) > 100.0,
+                "leaf {i} sits on top of the hub"
+            );
         }
     }
 
     #[test]
-    fn cycle_and_complete_keep_the_circular_layout() {
+    fn cycle_and_complete_stay_regular_rings() {
         for family in ["cycle", "complete"] {
-            let graph = make_graph(family, 8, 2);
-            let points = layout_for(&graph, 800.0, 600.0);
-            let radii: Vec<f64> = points
-                .iter()
-                .map(|p| (p.0 - 400.0).hypot(p.1 - 300.0))
-                .collect();
-            for radius in &radii {
-                assert!((radius - radii[0]).abs() < 0.5, "{family} is not circular");
+            for (w, h) in [(800.0, 600.0), (1400.0, 500.0), (500.0, 900.0)] {
+                let graph = make_graph(family, 8, 2);
+                let points = layout_for(&graph, w, h);
+                for (i, residual) in ellipse_residuals(&points, w, h).into_iter().enumerate() {
+                    assert!(
+                        (residual - 1.0).abs() < 0.01,
+                        "{family} at {w}x{h}: node {i} is off the ring at {residual}"
+                    );
+                }
             }
         }
     }
