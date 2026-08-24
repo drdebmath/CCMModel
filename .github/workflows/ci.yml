@@ -35,27 +35,29 @@ jobs:
         run: cargo test --workspace
 
   wasm-is-current:
-    # wasm/web is committed and served directly by GitHub Pages, so a forgotten
-    # rebuild silently ships stale code to users with no error anywhere. Rebuild
-    # and fail if the result differs from what is in the tree.
+    # wasm/web is committed and GitHub Pages serves it directly, so a forgotten
+    # ./scripts/build-wasm.sh silently ships stale code with no error anywhere.
+    #
+    # This compares the sources the package was built from, not the bytes it
+    # produced. Byte comparison would require the compiler to emit identical
+    # output on this runner and on the machine that committed the package -
+    # bit-for-bit reproducible codegen across hosts, which is a stronger promise
+    # than detecting a missed rebuild needs, and which failed here for exactly
+    # that reason. Comparing inputs needs no toolchain and no compile.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show toolchain
-        run: rustup show
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli --version 0.2.100 --locked
-
-      - name: Rebuild the browser package
-        run: ./scripts/build-wasm.sh
-
       - name: Fail if committed WASM is stale
         run: |
-          if ! git diff --exit-code -- wasm/web; then
+          recorded=$(sed -n 's/.*"sourceId":"\([^"]*\)".*/\1/p' wasm/web/manifest.json)
+          actual=$(./scripts/build-wasm.sh --source-id)
+          echo "recorded=$recorded actual=$actual"
+          if [ -z "$recorded" ]; then
+            echo "::error::wasm/web/manifest.json has no sourceId. Run ./scripts/build-wasm.sh and commit the result."
+            exit 1
+          fi
+          if [ "$recorded" != "$actual" ]; then
             echo "::error::wasm/web is out of date. Run ./scripts/build-wasm.sh and commit the result."
             exit 1
           fi
