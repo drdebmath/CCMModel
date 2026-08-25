@@ -1,0 +1,38 @@
+{
+  "schema": "ccm-browser-v1",
+  "config": {
+    "algorithm": "drop",
+    "family": "path",
+    "placement": "rooted",
+    "nodeCount": 2,
+    "agentCount": 1,
+    "seed": 42,
+    "roundLimit": 10,
+    "gridColumns": 1,
+    "traceMode": "off",
+    "maxTraceRecords": 0,
+    "sampleEvery": 1
+  },
+  "graph": {
+    "family": "path",
+    "nodeCount": 2,
+    "edges": [0, 1],
+    "gridColumns": 1
+  },
+  "starts": [0],
+  "result": {
+    "positions": [1],
+    "statuses": [0],
+    "homes": [1],
+    "terminationCode": 0,
+    "rounds": 1,
+    "moves": 1,
+    "probes": 0,
+    "renderRecordCount": 0,
+    "renderTruncated": false
+  },
+  "frames": [
+    {"step": 0, "positions": [0], "statuses": [1], "homes": [-1]},
+    {"step": 1, "positions": [1], "statuses": [0], "homes": [1]}
+  ]
+}

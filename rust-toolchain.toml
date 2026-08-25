@@ -1,0 +1,8 @@
+[toolchain]
+channel = "1.97.1"
+profile = "minimal"
+# Declared so a pinned toolchain still has the tools CI runs; the minimal
+# profile omits them.
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]
+

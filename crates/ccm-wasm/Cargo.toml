@@ -1,0 +1,18 @@
+[package]
+name = "ccm-wasm"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+description = "Typed browser/WASM adapter for the shared CCM simulation core"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ccm-core = { path = "../ccm-core" }
+ccm-trace = { path = "../ccm-trace" }
+ccm-help-scouts = { path = "../ccm-help-scouts" }
+ccm-algorithms = { path = "../ccm-algorithms" }
+js-sys = "=0.3.77"
+wasm-bindgen = "=0.2.100"

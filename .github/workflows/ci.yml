@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, rust-migration]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Scoped to this job on purpose: applying it workspace-wide would also
+    # apply to `cargo install wasm-bindgen-cli` in the other job, where a
+    # warning in someone else's dependency would fail our build.
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the channel and the wasm target.
+      - name: Show toolchain
+        run: rustup show && cargo --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets
+
+      - name: Test
+        run: cargo test --workspace
+
+  wasm-is-current:
+    # wasm/web is committed and GitHub Pages serves it directly, so a forgotten
+    # ./scripts/build-wasm.sh silently ships stale code with no error anywhere.
+    #
+    # This compares the sources the package was built from, not the bytes it
+    # produced. Byte comparison would require the compiler to emit identical
+    # output on this runner and on the machine that committed the package -
+    # bit-for-bit reproducible codegen across hosts, which is a stronger promise
+    # than detecting a missed rebuild needs, and which failed here for exactly
+    # that reason. Comparing inputs needs no toolchain and no compile.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail if committed WASM is stale
+        run: |
+          recorded=$(sed -n 's/.*"sourceId":"\([^"]*\)".*/\1/p' wasm/web/manifest.json)
+          actual=$(./scripts/build-wasm.sh --source-id)
+          echo "recorded=$recorded actual=$actual"
+          if [ -z "$recorded" ]; then
+            echo "::error::wasm/web/manifest.json has no sourceId. Run ./scripts/build-wasm.sh and commit the result."
+            exit 1
+          fi
+          if [ "$recorded" != "$actual" ]; then
+            echo "::error::wasm/web is out of date. Run ./scripts/build-wasm.sh and commit the result."
+            exit 1
+          fi

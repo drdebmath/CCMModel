@@ -1,0 +1,839 @@
+/* CCM Network Lab — application shell, controls, and canvas viewport.
+ *
+ * Layout contract: the page is a viewport-height flex column
+ * (topbar / shell / footer).  The shell is a grid of controls + workspace, and
+ * the workspace is a flex column whose canvas is the only element that
+ * absorbs leftover space.  Every ancestor of the canvas therefore sets
+ * `min-height:0` so the flex/grid automatic minimum size cannot push the
+ * canvas past the fold.  The canvas is absolutely positioned inside its wrap
+ * so its intrinsic size never feeds back into layout.
+ */
+
+/* ---------------------------------------------------------------- tokens - */
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: dark;
+
+  --bg: #0b1020;
+  --panel: #11192b;
+  --panel-2: #17223a;
+  --border: #263653;
+  --text: #e8eef9;
+  --muted: #91a0bb;
+  --accent: #7c8cff;
+  --accent-2: #39d3b4;
+  --warn: #f6b44f;
+  --danger: #ff7183;
+  --canvas: #0e1628;
+  --shadow: 0 16px 45px #0005;
+
+  /* Chrome heights are tokens so the drawer and any offset math stay in sync
+   * with the real bars instead of repeating magic numbers. */
+  --topbar-h: 64px;
+  --footer-h: 41px;
+
+  --sidebar-w: clamp(288px, 21vw, 352px);
+  --workspace-pad: clamp(18px, 3vw, 38px);
+  --workspace-gap: 15px;
+
+  /* Floor for the canvas.  Capped against the viewport so a short window
+   * shrinks the canvas instead of overflowing the page. */
+  --canvas-min: min(440px, 46vh);
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f7fb;
+  --panel: #fff;
+  --panel-2: #f0f4fa;
+  --border: #d8e0ec;
+  --text: #182237;
+  --muted: #60708a;
+  --canvas: #fbfcfe;
+  --shadow: 0 16px 45px #31415b1c;
+}
+
+/* ------------------------------------------------------------------ base - */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  background-image:
+    radial-gradient(circle at 80% -10%, #586bda24, transparent 40%),
+    radial-gradient(#ffffff08 1px, transparent 1px);
+  background-size: auto, 24px 24px;
+
+  /* A definite height, not min-height: the shell below resolves `flex:1`
+   * against it, and without it the grid row sizes to the tall controls column
+   * and pushes the canvas past the fold.  dvh keeps that height inside the
+   * visible area when a mobile URL bar is showing; vh is the fallback.
+   * Each column scrolls itself, so the page never does. */
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .42;
+}
+
+/* ---------------------------------------------------------------- topbar - */
+
+.topbar {
+  flex: 0 0 auto;
+  height: var(--topbar-h);
+  padding: 0 clamp(16px, 3vw, 42px);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  min-width: 0;
+}
+
+.brand > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.brand small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.brand-mark {
+  color: var(--accent-2);
+  font-size: 24px;
+  flex: 0 0 auto;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.engine-state {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.engine-state.ready {
+  color: var(--accent-2);
+}
+
+.engine-state.error {
+  color: var(--danger);
+}
+
+.icon-button {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 9px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+}
+
+/* ----------------------------------------------------------------- shell - */
+
+.app-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, var(--sidebar-w)) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  /* Neither column may push the pair wider than the shell. */
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.controls {
+  min-height: 0;
+  min-width: 0;
+  scrollbar-gutter: stable;
+  background: color-mix(in srgb, var(--panel) 95%, transparent);
+  border-right: 1px solid var(--border);
+  padding: 24px 20px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.panel-scrim {
+  display: none;
+}
+
+.panel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  color: var(--accent-2);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .15em;
+  margin: 0 0 6px;
+}
+
+.panel-heading h1,
+.workspace-head h2 {
+  font-size: 20px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+/* --------------------------------------------------------------- controls - */
+
+.control-section {
+  border-top: 1px solid var(--border);
+  padding: 18px 0;
+  min-width: 0;
+}
+
+.control-section h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .11em;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+
+.control-section label {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 10px 0;
+}
+
+/* The live slider value sits on the label's own line.  Taking it out of flow
+ * beats the negative-margin pull it replaces: the range input below keeps its
+ * natural position at every width. */
+.control-section label > output {
+  position: absolute;
+  top: 0;
+  right: 0;
+  color: var(--text);
+  font-size: 11px;
+}
+
+/* auto-fit collapses these to one column when the panel is narrow, so no
+ * breakpoint has to know how many fields a row holds. */
+.two-col {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 10px;
+}
+
+.two-col label {
+  min-width: 0;
+}
+
+input[type=number],
+select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 8px 9px;
+  outline: none;
+}
+
+input:focus,
+select:focus,
+button:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px #7c8cff30;
+  outline: none;
+}
+
+input[type=range] {
+  accent-color: var(--accent);
+  width: 100%;
+  /* The UA stylesheet puts a 2px margin on inputs. Combined with width:100%
+     that is wider than the container, which gave the control panel a permanent
+     horizontal scrollbar. */
+  margin: 0;
+  min-width: 0;
+}
+
+.checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 10px;
+}
+
+.checks label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.checks input {
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.run-actions,
+.file-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.file-actions {
+  margin-top: 9px;
+}
+
+.primary,
+.secondary {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.primary:hover {
+  filter: brightness(1.1);
+}
+
+.secondary {
+  background: var(--panel-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.secondary:hover {
+  border-color: var(--accent);
+}
+
+.file-button {
+  text-align: center;
+  cursor: pointer;
+}
+
+.file-button input {
+  display: none;
+}
+
+.message {
+  min-height: 34px;
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.message.error {
+  color: var(--danger);
+}
+
+.message.busy {
+  color: var(--warn);
+}
+
+.help-note {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  opacity: .85;
+}
+
+/* ------------------------------------------------------------- workspace - */
+
+.workspace {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--workspace-pad);
+  gap: var(--workspace-gap);
+}
+
+.workspace-head {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+
+.workspace-head h2 {
+  font-size: clamp(20px, 3vw, 29px);
+}
+
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(12px, 3vw, 28px);
+}
+
+.metrics span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.metrics b {
+  font-size: 17px;
+  color: var(--accent-2);
+}
+
+.metrics small {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+/* -------------------------------------------------- canvas viewport ----- */
+
+/* The only element that grows.  `min-height:0` is deliberately absent here:
+ * --canvas-min is the floor, and it is viewport-relative so it can never
+ * demand more room than the workspace has. */
+.canvas-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: var(--canvas-min);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--canvas);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+/* Absolute so the canvas bitmap never contributes intrinsic height back to
+ * the flex column.  Rust sizes the backing store from the wrap's client rect. */
+.canvas-wrap canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  color: var(--muted);
+  pointer-events: none;
+  padding: 16px;
+}
+
+.empty-state h3 {
+  color: var(--text);
+  margin: 10px 0 3px;
+}
+
+.empty-state p {
+  font-size: 12px;
+  margin: 0;
+}
+
+.empty-icon {
+  font-size: 48px;
+  line-height: 1;
+  color: var(--accent);
+  opacity: .7;
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 2;
+  max-width: 230px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  font-size: 11px;
+  line-height: 1.55;
+  pointer-events: none;
+}
+
+/* -------------------------------------------------- playback and legend - */
+
+/* Flex rather than a fixed grid: the frame counter drops to its own line
+ * before the transport buttons or the scrubber are squeezed. */
+.playback {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.playback button {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 7px;
+  height: 34px;
+  width: 38px;
+  font-size: 20px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.playback #play {
+  width: 42px;
+}
+
+.playback input {
+  accent-color: var(--accent);
+  flex: 1 1 140px;
+  min-width: 0;
+}
+
+.playback span {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.legend {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+
+.dot.settled {
+  background: var(--accent-2);
+}
+
+.dot.waiting {
+  background: var(--warn);
+}
+
+.dot.unsettled {
+  background: var(--danger);
+}
+
+.legend-tip {
+  margin-left: auto;
+}
+
+/* ---------------------------------------------------------------- footer - */
+
+footer {
+  flex: 0 0 auto;
+  height: var(--footer-h);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 12px;
+  text-align: center;
+}
+
+footer a {
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------- utilities - */
+
+.hidden {
+  display: none !important;
+}
+
+.mobile-only {
+  display: none;
+}
+
+/* ============================================================ breakpoints = */
+
+/* Compact desktop: reclaim workspace width before the sidebar has to go. */
+@media (max-width: 1180px) {
+  :root {
+    --sidebar-w: 272px;
+    --workspace-gap: 12px;
+  }
+
+  .metrics {
+    gap: 16px;
+  }
+
+  .metrics b {
+    font-size: 15px;
+  }
+}
+
+/* Drawer mode.  Two triggers: narrow viewports, and short-and-not-wide ones
+ * (landscape phones), where a permanent 272px sidebar would leave nothing.
+ * 900px keeps 768px tablet portrait out of the old cramped two-column zone. */
+@media (max-width: 900px), (max-width: 1024px) and (max-height: 560px) {
+  :root {
+    --topbar-h: 58px;
+    --canvas-min: min(300px, 40vh);
+  }
+
+  .mobile-only {
+    display: block;
+  }
+
+  .brand small {
+    display: none;
+  }
+
+  .engine-state {
+    display: none;
+  }
+
+  .app-shell {
+    display: block;
+  }
+
+  .controls {
+    position: fixed;
+    z-index: 10;
+    left: 0;
+    top: var(--topbar-h);
+    bottom: 0;
+    width: min(330px, 92vw);
+    border-right: 1px solid var(--border);
+    background: var(--panel);
+    transform: translateX(-102%);
+    transition: transform .2s ease;
+    box-shadow: var(--shadow);
+  }
+
+  .controls.open {
+    transform: translateX(0);
+  }
+
+  /* Dismiss target for the drawer; only exists while the drawer is open. */
+  .panel-scrim.open {
+    display: block;
+    position: fixed;
+    inset: var(--topbar-h) 0 0 0;
+    z-index: 9;
+    background: #05080f80;
+    backdrop-filter: blur(2px);
+  }
+
+  /* The workspace is no longer a grid child, so it needs the viewport height
+   * relationship restated to keep the canvas inside the fold. */
+  /* The shell is no longer a grid here, so the workspace has to restate its
+     own height. Definite, not a minimum: the canvas is the flex child that
+     absorbs whatever the surrounding controls leave, and against a minimum it
+     could only grow, which pushed the footer off screen. */
+  .workspace {
+    height: calc(100vh - var(--topbar-h) - var(--footer-h));
+    height: calc(100dvh - var(--topbar-h) - var(--footer-h));
+    min-height: 0;
+    overflow: auto;
+    padding: 18px 14px;
+  }
+
+  .workspace-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .metrics {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .metrics span {
+    align-items: flex-start;
+  }
+
+  .legend-tip {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+/* Phone: single-column controls and a full-width scrubber row. */
+@media (max-width: 560px) {
+  :root {
+    --canvas-min: min(240px, 34vh);
+  }
+
+  .workspace {
+    padding: 14px 12px;
+  }
+
+  .two-col,
+  .checks,
+  .run-actions,
+  .file-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics {
+    gap: 12px;
+  }
+
+  .metrics b {
+    font-size: 14px;
+  }
+
+  .playback input {
+    flex: 1 1 100%;
+    order: 1;
+  }
+
+  .playback span {
+    order: 2;
+    margin-left: 0;
+  }
+}
+
+/* Short viewports (landscape phones, split-screen): shed chrome so the
+ * canvas keeps a usable share of the height. */
+@media (max-height: 620px) {
+  :root {
+    --workspace-gap: 10px;
+    --canvas-min: 180px;
+  }
+
+  .workspace {
+    padding: 12px;
+  }
+
+  .workspace-head h2 {
+    font-size: 18px;
+  }
+
+  .help-note {
+    display: none;
+  }
+
+  .legend {
+    gap: 12px;
+  }
+}
+
+/* Landscape phones (~390px tall).  At this height the legend and the section
+ * eyebrow cost more than they inform, and the canvas needs every pixel. */
+@media (max-height: 480px) {
+  :root {
+    --workspace-gap: 8px;
+    --canvas-min: 132px;
+  }
+
+  .workspace .eyebrow {
+    display: none;
+  }
+
+  .workspace-head {
+    gap: 8px 16px;
+  }
+
+  .legend {
+    display: none;
+  }
+}
+
+/* --------------------------------------------------- input and motion --- */
+
+/* Touch pointers get 44px targets without inflating the mouse layout. */
+@media (pointer: coarse) {
+  .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .playback button {
+    height: 44px;
+    width: 46px;
+  }
+
+  .playback #play {
+    width: 52px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .controls {
+    transition: none;
+  }
+
+  .panel-scrim.open {
+    backdrop-filter: none;
+  }
+}

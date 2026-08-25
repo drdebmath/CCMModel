@@ -1,0 +1,31 @@
+[workspace]
+members = [
+    "crates/ccm-algorithms",
+    "crates/ccm-bench",
+    "crates/ccm-core",
+    "crates/ccm-cli",
+    "crates/ccm-compat",
+    "crates/ccm-experiments",
+    "crates/ccm-help-scouts",
+    "crates/ccm-serve",
+    "crates/ccm-trace",
+    "crates/ccm-wasm",
+    "crates/ccm-web",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/drdebmath/CCMModel"
+rust-version = "1.75"
+
+[workspace.dependencies]
+ccm-core = { path = "crates/ccm-core" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }

@@ -1,0 +1,15 @@
+[package]
+name = "ccm-algorithms"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/drdebmath/CCMModel"
+rust-version = "1.75"
+description = "Typed Rust implementations of the CCM algorithms"
+
+[dependencies]
+ccm-core = { path = "../ccm-core" }
+ccm-trace = { path = "../ccm-trace" }
+
+[lints]
+workspace = true

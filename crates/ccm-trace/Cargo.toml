@@ -1,0 +1,14 @@
+[package]
+name = "ccm-trace"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/drdebmath/CCMModel"
+rust-version = "1.75"
+description = "Optional semantic execution tracing for the CCM simulation core"
+
+[dependencies]
+ccm-core = { path = "../ccm-core" }
+
+[lints]
+workspace = true

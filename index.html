@@ -1,186 +1,51 @@
-<!DOCTYPE html>
-<html lang="en" class="dark">
+<!doctype html>
+<html lang="en" data-theme="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Simulation of Agents in a Network</title>
-
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            primary: '#3b82f6',
-            accent:  '#f97316',
-            darkbg:  '#0f172a',
-            darkcard:'#1e293b',
-            darktext:'#e2e8f0',
-          },
-          fontFamily: {
-            sans: ['Inter','ui-sans-serif','system-ui']
-          },
-          boxShadow: {
-            card: '0 4px 20px rgba(0,0,0,.08)'
-          }
-        }
-      }
-    }
-  </script>
-
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/cytoscape@3.24.0/dist/cytoscape.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js"></script>
-
-  <style>
-    html{scroll-behavior:smooth}
-    button:disabled{opacity:.4;cursor:not-allowed}
-    body::before{content:"";position:fixed;inset:0;z-index:-1;background-image:radial-gradient(rgba(59,130,246,.05)1px,transparent 1px);background-size:20px 20px}
-    html.dark body::before{background-image:radial-gradient(rgba(255,255,255,.04)1px,transparent 1px)}
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Client-side Rust/WASM visualization of CCM network algorithms">
+  <title>CCM Network Lab</title>
+  <link rel="stylesheet" href="./app.css">
 </head>
-<body class="min-h-screen flex flex-col bg-gray-50 text-gray-900 dark:bg-darkbg dark:text-darktext font-sans">
-  <header class="bg-gradient-to-r from-primary to-accent text-white shadow-md sticky top-0 z-[100]">
-    <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-      <h1 class="text-lg sm:text-2xl font-semibold tracking-wide">Simulation of Agents in a Network</h1>
-      <div class="flex items-center gap-3">
-        <button id="togglePanelBtn"
-  class="fixed sm:static         
-         top-4 left-4 sm:top-auto sm:left-auto
-         z-[65]                     
-         rounded-full sm:rounded-lg
-         p-3 sm:px-3 sm:py-1.5
-         bg-primary text-white      
-         sm:bg-white/10 hover:sm:bg-white/20
-         active:scale-95 transition text-xs sm:text-sm">
-  ☰
-</button>
-        <a href="https://drdebmath.github.io" class="rounded-lg px-3 py-1.5 text-xs sm:text-sm hover:bg-white/10 active:scale-95 transition">Home</a>
-        <button id="darkModeToggle" class="rounded-lg px-3 py-1.5 text-xs sm:text-sm bg-white/10 hover:bg-white/20 active:scale-95 transition">🌙 Dark</button>
-      </div>
-    </div>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">◈</span><span>CCM Network Lab</span><small>Rust / Web Worker</small></div>
+    <div class="top-actions"><span id="engineState" class="engine-state" role="status">Checking WASM…</span><button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme">☀</button><button id="panelToggle" class="icon-button mobile-only" type="button" aria-label="Open controls">☰</button></div>
   </header>
 
-  <div class="flex flex-1 relative"> <!-- Removed overflow-hidden -->
-    <!-- ❷ replace the existing class string on <aside id="controlPanel"> -->
-    <aside id="controlPanel"
-class="fixed sm:relative
-       top-16 sm:top-0
-       bottom-0 left-0
-       -translate-x-full sm:translate-x-0
-       z-50 w-64 sm:w-72 lg:w-80
-       bg-white dark:bg-darkcard border-r dark:border-darkcard/40
-       overflow-y-auto
-       transition-transform duration-300 ease-in-out">
-
-      <div class="p-4 flex flex-col gap-6 lg:gap-8">
-        <div class="flex flex-col gap-3 bg-white dark:bg-darkcard shadow-card rounded-xl p-4">
-          <h3 class="text-sm font-semibold border-b dark:border-gray-700 pb-1">Parameters</h3>
-          <div class="flex flex-col gap-2 text-sm">
-            <label class="flex justify-between items-center"><span>Nodes</span><input id="nodeCountInput" type="number" min="1" value="26" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
-            <label class="flex justify-between items-center"><span>Max Deg</span><input id="maxDegreeInput" type="number" min="1" value="4" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
-            <label class="flex justify-between items-center"><span>Agents</span><input id="agentCountInput" type="number" min="1" value="26" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
-            <label class="flex justify-between items-center"><span>Start Nodes</span><input id="startingPositionsInput" type="number" min="1" value="5" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
-            <label class="flex justify-between items-center"><span>Seed</span><input id="seedInput" type="number" value="42" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
-            <label class="flex justify-between items-center">
-              <span>Algorithm</span>
-              <select id="algorithmSelect" class="w-32 text-center rounded dark:bg-gray-700 dark:border-gray-600">
-                <option value="Drop and Freeze">Drop and Freeze</option>
-                <option value="Help by Scouts">Help by Scouts</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <div class="flex flex-col gap-3 bg-white dark:bg-darkcard shadow-card rounded-xl p-4">
-          <h3 class="text-sm font-semibold border-b dark:border-gray-700 pb-1">Animation</h3>
-          <label class="flex justify-between items-center text-sm"><span>Step Speed (ms)</span><input id="animationDurationInput" type="number" min="50" step="50" value="300" class="w-24 text-center rounded dark:bg-gray-700 dark:border-gray-600"/></label>
-          <div class="flex gap-3 mt-3">
-            <button id="prevStepBtn" class="flex-1 px-3 py-1.5 bg-primary/90 hover:bg-primary text-white rounded-lg text-xs transition" disabled>◀◀ Prev</button>
-            <button id="playPauseBtn" class="flex-1 px-3 py-1.5 bg-primary/90 hover:bg-primary text-white rounded-lg text-xs transition" disabled>▶️ Play</button>
-            <button id="nextStepBtn" class="flex-1 px-3 py-1.5 bg-primary/90 hover:bg-primary text-white rounded-lg text-xs transition" disabled>Next ▶▶</button>
-          </div>
-          <div class="border-t pt-3 mt-2 dark:border-gray-700">
-            <h4 class="text-xs font-semibold mb-1">Display Options</h4>
-            <div class="flex flex-col gap-1 text-xs">
-              <label class="flex items-center gap-2"><input id="showAgentsCheck" type="checkbox" class="h-4 w-4 text-primary rounded focus:ring-primary" checked/><span>Show Agents</span></label>
-              <label class="flex items-center gap-2"><input id="showScoutCheck" type="checkbox" class="h-4 w-4 text-primary rounded focus:ring-primary" checked/><span>Show Scout</span></label>
-              <label class="flex items-center gap-2"><input id="showChaseCheck" type="checkbox" class="h-4 w-4 text-primary rounded focus:ring-primary" checked/><span>Show Chase</span></label>
-              <label class="flex items-center gap-2"><input id="showFollowCheck" type="checkbox" class="h-4 w-4 text-primary rounded focus:ring-primary" checked/><span>Show Follow</span></label>
-            </div>
-          </div>
-        </div>
-        <div class="flex flex-col items-center gap-2 bg-white dark:bg-darkcard shadow-card rounded-xl p-4">
-          <button id="runBtn" class="bg-accent hover:bg-orange-600 text-white px-5 py-2 rounded-lg text-sm font-semibold shadow-lg transition">▶️ Run Simulation</button>
-          <button id="saveDataBtn" class="w-full bg-gray-500 hover:bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition mt-2" disabled>💾 Save Data</button>
-          <div class="flex flex-col gap-2 text-sm w-full mt-3 border-t pt-3 dark:border-gray-700">
-              <label for="jsonFileInput" class="block text-xs font-semibold">Load from JSON File:</label>
-              <input type="file" id="jsonFileInput" accept=".json" class="block w-full text-xs text-gray-900 dark:text-gray-300
-                  file:mr-4 file:py-1 file:px-2
-                  file:rounded-md file:border-0
-                  file:text-xs file:font-semibold
-                  file:bg-blue-50 dark:file:bg-blue-900
-                  file:text-blue-700 dark:file:text-blue-300
-                  hover:file:bg-blue-100 dark:hover:file:bg-blue-800
-              "/>
-              <button id="loadJsonBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition">Load & Visualize</button>
-          </div>
-          <div id="output" class="text-xs italic text-center max-w-[10rem] mt-3">Click "Run Simulation" or "Load & Visualize" to start.</div>
-        </div>
-      </div>
+  <div class="app-shell">
+    <aside id="controlPanel" class="controls" aria-label="Simulation controls">
+      <div class="panel-heading"><div><p class="eyebrow">EXPERIMENT</p><h1>Network simulation</h1></div><button id="closePanel" class="icon-button mobile-only" type="button" aria-label="Close controls">×</button></div>
+      <section class="control-section"><h2>Model</h2><label>Algorithm<select id="algorithm"><option value="drop">Drop and Freeze</option><option value="help">Help by Scouts</option></select></label><label>Graph family<select id="family"><option value="path">Path</option><option value="cycle">Cycle</option><option value="star">Star</option><option value="complete">Complete</option><option value="tree">Balanced tree</option><option value="grid">Grid</option><option value="random">Random connected</option></select></label><label>Initial placement<select id="placement"><option value="rooted">Rooted at node 0</option><option value="spread">Seeded distinct nodes</option></select></label><div class="two-col"><label>Nodes<input id="nodes" type="number" min="1" max="10000" value="26" inputmode="numeric"></label><label>Agents<input id="agents" type="number" min="1" max="10000" value="5" inputmode="numeric"></label></div><div class="two-col"><label>Seed<input id="seed" type="number" min="0" max="4294967295" value="42" inputmode="numeric"></label><label>Round limit<input id="roundLimit" type="number" min="1" max="1000000" value="500" inputmode="numeric"></label></div><label id="gridColumnsWrap" class="hidden">Grid columns<input id="gridColumns" type="number" min="1" max="10000" value="5"></label><label id="treeBranchingWrap" class="hidden">Tree branching<input id="treeBranching" type="number" min="2" max="16" value="2" inputmode="numeric"></label></section>
+      <section class="control-section"><h2>Trace & playback</h2><label>Trace mode<select id="traceMode"><option value="off">Off — fastest</option><option value="full" selected>Full — playback</option><option value="bounded">Bounded — capped</option></select></label><label id="traceLimitWrap">Max records<input id="traceLimit" type="number" min="0" max="1000000" value="600"></label><label id="sampleEveryWrap" class="hidden">Sample every<input id="sampleEvery" type="number" min="1" max="1000000" value="4"></label><label>Playback speed <output id="speedValue">240 ms</output><input id="speed" type="range" min="40" max="1000" step="20" value="240"></label></section>
+      <section class="control-section"><h2>Display filters</h2><div class="checks"><label><input id="showEdges" type="checkbox" checked> Edges</label><label><input id="showPorts" type="checkbox" checked> Port labels</label><label><input id="showAgents" type="checkbox" checked> Agents</label><label><input id="showSettled" type="checkbox" checked> Settled</label><label><input id="showUnsettled" type="checkbox" checked> Unsettled</label><label><input id="showScout" type="checkbox" checked> Scouts / waiting</label></div></section>
+      <div class="run-actions"><button id="run" class="primary" type="button">Run simulation</button><button id="cancel" class="secondary" type="button" disabled>Cancel</button></div><div class="file-actions"><button id="export" class="secondary" type="button" disabled>Export JSON</button><label class="file-button secondary">Import JSON<input id="import" type="file" accept="application/json,.json"></label></div><p id="message" class="message" role="status">Choose parameters, then run.</p><p class="help-note">The simulation runs locally in a Web Worker. No Python, server, or network data is required.</p>
     </aside>
-
-    <div id="backdrop" class="fixed inset-0 bg-black/40 z-40 opacity-0 pointer-events-none transition-opacity duration-300 sm:hidden"></div>
-
-    <main class="flex-1 min-w-0 flex flex-col"> <!-- Removed overflow-hidden -->
-      <div id="round-display" class="text-base sm:text-lg font-semibold text-center bg-white dark:bg-darkcard shadow-card py-2">Status: Idle</div>
-      <div class="flex flex-wrap justify-center items-center gap-4 text-xs bg-white/60 dark:bg-darkcard/60 p-3 shadow-card">
-        <span class="font-semibold">Agent Status:</span>
-        <div class="flex items-center gap-1"><span class="w-3 h-3 rounded-full border-2 border-green-600 dark:border-green-400 bg-gray-400/30"></span><span>SETTLED</span></div>
-        <div class="flex items-center gap-1"><span class="w-3 h-3 rounded-full border-2 border-dashed border-amber-600 dark:border-amber-400 bg-gray-400/30"></span><span>SETTLED_WAIT</span></div>
-        <div class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-gray-400/50"></span><span>UNSETTLED</span></div>
-        <span class="font-semibold">Node:</span>
-        <div class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-blue-300 dark:bg-blue-600"></span><span>Idle</span></div>
-        <div class="flex items-center gap-1"><span class="w-3 h-3 rounded bg-yellow-400 dark:bg-yellow-500"></span><span>Has Unsettled</span></div>
-        <span class="italic text-gray-500 dark:text-gray-400">(Agent hue ≈ Leader/Level)</span>
-      </div>
-      <div id="cy-container" class="flex-1 min-h-[300px] sm:min-h-[450px] bg-white dark:bg-darkcard"> <!-- New container -->
-         <div id="cy" class="w-full h-full"></div> <!-- cy element inside new container -->
-      </div>
-      <div id="node-tooltip" class="hidden absolute z-50 p-2 bg-white dark:bg-darkcard border dark:border-gray-600 rounded-lg shadow-card text-xs pointer-events-none max-w-xs break-words"></div>
-    </main>
+    <main class="workspace"><div class="workspace-head"><div><p class="eyebrow">LIVE VIEW</p><h2 id="runTitle">Ready to simulate</h2></div><div class="metrics" aria-live="polite"><span><b id="rounds">—</b><small>rounds</small></span><span><b id="moves">—</b><small>moves</small></span><span><b id="probes">—</b><small>probes</small></span><span><b id="recordCount">—</b><small>records</small></span></div></div><div id="canvasWrap" class="canvas-wrap"><canvas id="networkCanvas" aria-label="Network visualization" tabindex="0"></canvas><div id="emptyState" class="empty-state"><span class="empty-icon">◌</span><h3>No execution loaded</h3><p>Run a simulation or import a saved JSON execution.</p></div><div id="tooltip" class="tooltip" hidden></div></div><div class="playback" aria-label="Playback controls"><button id="prev" type="button" disabled aria-label="Previous frame">‹</button><button id="play" type="button" disabled aria-label="Play or pause">▶</button><button id="next" type="button" disabled aria-label="Next frame">›</button><input id="timeline" type="range" min="0" max="0" value="0" disabled aria-label="Playback timeline"><span id="frameLabel">Frame 0 / 0</span></div><div class="legend"><span><i class="dot settled"></i> settled</span><span><i class="dot waiting"></i> waiting / scout</span><span><i class="dot unsettled"></i> unsettled</span><span id="legendTip" class="legend-tip">Hover a node for details</span></div></main>
   </div>
-
-  <footer class="bg-gray-100 dark:bg-darkcard py-6 text-center text-xs text-gray-600 dark:text-gray-400">
-    <p>Developed by <a href="https://drdebmath.github.io" class="underline hover:text-primary">Debasish Pattanayak</a> · Powered by
-      <a href="https://pyodide.org" class="underline hover:text-primary">Pyodide</a> and
-      <a href="https://cytoscape.org" class="underline hover:text-primary">Cytoscape.js</a> ·
-      With the help of
-      <a href="https://chatgpt.com/" class="underline hover:text-primary">ChatGPT</a>,
-      <a href="https://aistudio.google.com" class="underline hover:text-primary">Gemini</a>, and
-      <a href="https://code.visualstudio.com" class="underline hover:text-primary">VS Code</a> ✨
-    </p>
-  </footer>
-
-  <script type="module" src="./main.js"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded',()=>{
-      const html=document.documentElement;
-      const darkBtn=document.getElementById('darkModeToggle');
-      const panelBtn=document.getElementById('togglePanelBtn');
-      const panel=document.getElementById('controlPanel');
-      const backdrop=document.getElementById('backdrop');
-
-      const applyDark=(d)=>{html.classList.toggle('dark',d);darkBtn.textContent=d?'☀️ Light':'🌙 Dark'};
-      const saved=localStorage.getItem('darkMode');
-      const prefers=window.matchMedia('(prefers-color-scheme:dark)').matches;
-      applyDark(saved==='true'||(saved===null&&prefers));
-      darkBtn.addEventListener('click',()=>{const d=!html.classList.contains('dark');localStorage.setItem('darkMode',d);applyDark(d)});
-
-      function togglePanel(){const open=panel.classList.toggle('-translate-x-full');backdrop.classList.toggle('opacity-0',!open);backdrop.classList.toggle('pointer-events-none',!open)}
-      panelBtn.addEventListener('click',togglePanel);
-      backdrop.addEventListener('click',togglePanel);
-    });
+  <div id="panelScrim" class="panel-scrim" aria-hidden="true"></div>
+  <footer>CCM Network Lab · one Rust implementation, native and WASM · <a href="https://github.com/drdebmath/CCMModel">source</a></footer>
+  <script type="module">
+    // The manifest is fetched once here and the build id handed to main.js in
+    // its own import URL, so the main thread does not request it twice.
+    const engine = document.getElementById('engineState');
+    const message = document.getElementById('message');
+    try {
+      const response = await fetch('./wasm/web/manifest.json', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`manifest returned ${response.status}`);
+      const { buildId } = await response.json();
+      if (!buildId) throw new Error('manifest has no build id');
+      await import(`./main.js?v=${encodeURIComponent(buildId)}`);
+    } catch (error) {
+      // An uncaught throw here left the page on "Checking WASM..." forever with
+      // the only trace in a console nobody is watching.
+      engine.textContent = 'WASM unavailable';
+      engine.className = 'engine-state error';
+      message.textContent =
+        `Could not start the engine (${error.message}). Build the browser package with ` +
+        `./scripts/build-wasm.sh, then serve over HTTP with: cargo run -p ccm-serve`;
+      message.className = 'message error';
+    }
   </script>
 </body>
 </html>

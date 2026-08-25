@@ -1,0 +1,18 @@
+[package]
+name = "ccm-cli"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+repository.workspace = true
+
+[[bin]]
+name = "ccm"
+path = "src/main.rs"
+
+[dependencies]
+ccm-core = { path = "../ccm-core" }
+ccm-experiments = { path = "../ccm-experiments" }
+
+[lints]
+workspace = true
