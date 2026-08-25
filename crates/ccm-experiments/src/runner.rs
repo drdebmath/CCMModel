@@ -97,12 +97,24 @@ impl SimulationRunner for BuiltinRunner {
                 .map_err(|error| RunError::Message(error.to_string()))?;
                 (result.termination, metrics)
             }
+            Algorithm::P1Tree => {
+                let (result, metrics, _) = ccm_p1tree::simulate(
+                    &prepared.graph,
+                    &prepared.starts,
+                    limit,
+                    ComplexityMetrics::default(),
+                    NoTrace,
+                )
+                .map_err(|error| RunError::Message(error.to_string()))?;
+                (result.termination, metrics)
+            }
         };
         Ok(RunResult {
             algorithm: prepared.request.algorithm,
             algorithm_version: match prepared.request.algorithm {
                 Algorithm::DropAndFreeze => ccm_algorithms::ALGORITHM_VERSION,
                 Algorithm::HelpByScouts => ccm_help_scouts::ALGORITHM_VERSION,
+                Algorithm::P1Tree => ccm_p1tree::ALGORITHM_VERSION,
             },
             git_commit: option_env!("CCM_GIT_COMMIT").unwrap_or("unknown"),
             graph_family: prepared.request.graph.label(),
@@ -145,6 +157,7 @@ impl RunResult {
             algorithm_version: match prepared.request.algorithm {
                 Algorithm::DropAndFreeze => ccm_algorithms::ALGORITHM_VERSION,
                 Algorithm::HelpByScouts => ccm_help_scouts::ALGORITHM_VERSION,
+                Algorithm::P1Tree => ccm_p1tree::ALGORITHM_VERSION,
             },
             git_commit: option_env!("CCM_GIT_COMMIT").unwrap_or("unknown"),
             graph_family: prepared.request.graph.label(),
@@ -265,6 +278,7 @@ pub fn algorithm_label(algorithm: Algorithm) -> &'static str {
     match algorithm {
         Algorithm::DropAndFreeze => "drop_and_freeze",
         Algorithm::HelpByScouts => "help_by_scouts",
+        Algorithm::P1Tree => "p1tree",
     }
 }
 

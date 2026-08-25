@@ -4,6 +4,8 @@ use crate::InvalidConfiguration;
 pub enum Algorithm {
     DropAndFreeze,
     HelpByScouts,
+    /// `DFS_P1Tree` dispersion, which builds a port-one tree.
+    P1Tree,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

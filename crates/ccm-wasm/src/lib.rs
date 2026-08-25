@@ -25,6 +25,7 @@ use wasm_bindgen::prelude::*;
 pub enum AlgorithmSelector {
     HelpByScouts = 0,
     DropAndFreeze = 1,
+    P1Tree = 2,
 }
 
 /// Trace policy. `Bounded` uses the supplied record and sampling limits.
@@ -42,6 +43,7 @@ enum AdapterError {
     Graph(String),
     Help(String),
     Drop(String),
+    P1Tree(String),
     Trace(String),
 }
 
@@ -52,6 +54,7 @@ impl fmt::Display for AdapterError {
             | Self::Graph(message)
             | Self::Help(message)
             | Self::Drop(message)
+            | Self::P1Tree(message)
             | Self::Trace(message) => f.write_str(message),
         }
     }
@@ -227,6 +230,7 @@ impl WasmSimulation {
         match self.algorithm {
             AlgorithmSelector::DropAndFreeze => self.run_drop(),
             AlgorithmSelector::HelpByScouts => self.run_help(),
+            AlgorithmSelector::P1Tree => self.run_p1tree(),
         }
     }
 
@@ -331,6 +335,55 @@ impl WasmSimulation {
                 .map_err(|error| AdapterError::Help(error.to_string()))?;
                 let truncated = trace_was_truncated(&recorder);
                 Ok(output_from_help(
+                    result,
+                    metrics,
+                    Some(encode_trace(&recorder.into_trace(), truncated)),
+                ))
+            }
+        }
+    }
+
+    fn run_p1tree(&self) -> Result<SimulationOutput, AdapterError> {
+        match self.trace_mode {
+            TraceMode::Off => {
+                let (result, metrics, _) = ccm_p1tree::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    NoTrace,
+                )
+                .map_err(|error| AdapterError::P1Tree(error.to_string()))?;
+                Ok(output_from_p1tree(result, metrics, None))
+            }
+            TraceMode::Full => {
+                let (result, metrics, recorder) = ccm_p1tree::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    FullTrace::new(),
+                )
+                .map_err(|error| AdapterError::P1Tree(error.to_string()))?;
+                Ok(output_from_p1tree(
+                    result,
+                    metrics,
+                    Some(encode_trace(&recorder.into_trace(), false)),
+                ))
+            }
+            TraceMode::Bounded => {
+                let recorder = BoundedTrace::new(self.trace_budget())
+                    .map_err(|error| AdapterError::Trace(error.to_string()))?;
+                let (result, metrics, recorder) = ccm_p1tree::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    recorder,
+                )
+                .map_err(|error| AdapterError::P1Tree(error.to_string()))?;
+                let truncated = trace_was_truncated(&recorder);
+                Ok(output_from_p1tree(
                     result,
                     metrics,
                     Some(encode_trace(&recorder.into_trace(), truncated)),
@@ -553,6 +606,38 @@ fn output_from_help(
                 ccm_help_scouts::HelpStatus::Settled => 0,
                 ccm_help_scouts::HelpStatus::Unsettled => 1,
                 ccm_help_scouts::HelpStatus::SettledScout => 2,
+            })
+            .collect(),
+        homes: result
+            .agents
+            .iter()
+            .map(|agent| agent.home.map_or(-1, |node| node.0 as i32))
+            .collect(),
+        rounds: metrics.rounds,
+        moves: metrics.agent_moves,
+        probes: metrics.port_probes,
+        trace: trace.unwrap_or_else(empty_payload),
+    }
+}
+
+fn output_from_p1tree(
+    result: ccm_p1tree::P1Result,
+    metrics: ComplexityMetrics,
+    trace: Option<RenderPayload>,
+) -> SimulationOutput {
+    SimulationOutput {
+        algorithm: AlgorithmSelector::P1Tree,
+        termination_code: termination_code(&result.termination),
+        positions: result.agents.iter().map(|agent| agent.node.0).collect(),
+        statuses: result
+            .agents
+            .iter()
+            .map(|agent| match agent.status {
+                ccm_p1tree::P1Status::Settled => 0,
+                ccm_p1tree::P1Status::Unsettled => 1,
+                // The renderer's third status is "settled but away", which is
+                // what a travelling scout is.
+                ccm_p1tree::P1Status::SettledScout => 2,
             })
             .collect(),
         homes: result

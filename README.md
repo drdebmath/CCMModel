@@ -1,10 +1,11 @@
 # CCMModel
 
 CCMModel is a deterministic research simulator and browser visualizer for two
-mobile-agent dispersion state machines:
+mobile-agent dispersion algorithms:
 
 - Drop-and-Freeze;
-- Help-by-Scouts.
+- Help-by-Scouts;
+- P1Tree (`DFS_P1Tree`).
 
 Both native experiments and browser playback execute the same authoritative
 Rust algorithms. The repository is Rust end to end: simulation core, native
@@ -12,11 +13,17 @@ CLI, browser application, and development server. The production browser is clie
 Web Worker with Canvas 2D rendering—no Python, Pyodide, NetworkX, Cytoscape,
 CDN, or application backend.
 
-> The repository implementations preserve the behavior of the historical
-> Python files they replaced. Their names and transitions are not literal ports of the
-> algorithms in Sudo et al., *Near-linear Time Dispersion of Mobile Agents*.
-> Read [the behavior specification](docs/behavior-spec.md) before relating
-> empirical results to the paper's assumptions or theorems.
+> Drop-and-Freeze and Help-by-Scouts preserve the behavior of the historical
+> Python files they replaced. Their names and transitions are not literal ports
+> of the algorithms in Sudo et al., *Near-linear Time Dispersion of Mobile
+> Agents*. Read [the behavior specification](docs/behavior-spec.md) before
+> relating empirical results to that paper's assumptions or theorems.
+>
+> P1Tree is different in kind: it is written from Pattanayak et al., *Optimal
+> Dispersion Under Asynchrony*, and implements that paper's Definition 1 and
+> Algorithm 2. It implements the sequential neighbourhood search rather than the
+> asynchronous parallel-probe optimisation, so its round counts are not the
+> paper's `O(k)` bound. See [docs/p1tree.md](docs/p1tree.md).
 
 ## Quick start: native research runs
 
@@ -142,6 +149,8 @@ tree; it is retained as the record of why the migration was undertaken.
   termination, metrics, and scheduler primitives.
 - `ccm-algorithms`: Drop-and-Freeze.
 - `ccm-help-scouts`: Help-by-Scouts.
+- `ccm-p1tree`: P1Tree dispersion, from Pattanayak et al. See
+  [docs/p1tree.md](docs/p1tree.md).
 - `ccm-trace`: shared `NoTrace`, `FullTrace`, and deterministic bounded trace.
 - `ccm-experiments`: graph/port/placement families and parallel sweeps.
 - `ccm-cli`: native CSV command line.

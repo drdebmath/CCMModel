@@ -342,6 +342,15 @@ pub fn make_graph_full(
     }
 }
 
+/// Display name for an algorithm selector value.
+fn algorithm_label(value: &str) -> &'static str {
+    match value {
+        "help" => "Help by Scouts",
+        "p1tree" => "P1Tree (DFS)",
+        _ => "Drop and Freeze",
+    }
+}
+
 fn read_config(document: &Document) -> Config {
     let node_count = number(document, "nodes", 26, 1, 10_000);
     let agent_count = number(document, "agents", 5.min(node_count), 1, node_count);
@@ -1470,11 +1479,7 @@ fn accept_result(state: &Rc<RefCell<AppState>>, result: ResultData) {
             "runTitle",
             &format!(
                 "{} · {} · {}",
-                if c.algorithm == "drop" {
-                    "Drop and Freeze"
-                } else {
-                    "Help by Scouts"
-                },
+                algorithm_label(&c.algorithm),
                 c.family,
                 termination(result.termination_code)
             ),
@@ -1678,15 +1683,7 @@ fn run(state: &Rc<RefCell<AppState>>) {
     set_text(
         &document,
         "runTitle",
-        &format!(
-            "{} · {}",
-            if config.algorithm == "drop" {
-                "Drop and Freeze"
-            } else {
-                "Help by Scouts"
-            },
-            config.family
-        ),
+        &format!("{} · {}", algorithm_label(&config.algorithm), config.family),
     );
     say(&document, "Preparing graph and starting Rust…", "busy");
     create_worker(state);

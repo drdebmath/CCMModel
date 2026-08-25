@@ -44,7 +44,9 @@ self.onmessage = async ({ data }) => {
     self.postMessage({ type: 'progress', value: 0, message: 'Starting Rust simulation…' });
     const algorithm = data.algorithm === 'help'
       ? wasm.AlgorithmSelector.HelpByScouts
-      : wasm.AlgorithmSelector.DropAndFreeze;
+      : data.algorithm === 'p1tree'
+        ? wasm.AlgorithmSelector.P1Tree
+        : wasm.AlgorithmSelector.DropAndFreeze;
     const traceMode = data.traceMode === 'full'
       ? wasm.TraceMode.Full
       : data.traceMode === 'bounded' ? wasm.TraceMode.Bounded : wasm.TraceMode.Off;

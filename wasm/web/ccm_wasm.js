@@ -59,11 +59,12 @@ function takeFromExternrefTable0(idx) {
 }
 /**
  * Algorithm selector shared by native and browser callers.
- * @enum {0 | 1}
+ * @enum {0 | 1 | 2}
  */
 export const AlgorithmSelector = Object.freeze({
     HelpByScouts: 0, "0": "HelpByScouts",
     DropAndFreeze: 1, "1": "DropAndFreeze",
+    P1Tree: 2, "2": "P1Tree",
 });
 /**
  * Trace policy. `Bounded` uses the supplied record and sampling limits.

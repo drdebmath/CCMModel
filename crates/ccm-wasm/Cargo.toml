@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 ccm-core = { path = "../ccm-core" }
 ccm-trace = { path = "../ccm-trace" }
 ccm-help-scouts = { path = "../ccm-help-scouts" }
+ccm-p1tree = { path = "../ccm-p1tree" }
 ccm-algorithms = { path = "../ccm-algorithms" }
 js-sys = "=0.3.77"
 wasm-bindgen = "=0.2.100"

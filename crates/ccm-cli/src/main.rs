@@ -182,6 +182,7 @@ fn parse_algorithm(value: &str) -> Result<Algorithm, CliError> {
     match value {
         "drop-and-freeze" | "drop_and_freeze" => Ok(Algorithm::DropAndFreeze),
         "help-by-scouts" | "help_by_scouts" => Ok(Algorithm::HelpByScouts),
+        "p1tree" | "p1-tree" | "dfs-p1tree" => Ok(Algorithm::P1Tree),
         _ => Err(CliError::Parse(format!("unknown algorithm {value:?}"))),
     }
 }
@@ -271,6 +272,6 @@ where
 
 fn print_help() {
     println!(
-        "ccm commands:\n  validate [options]  generate and validate one deterministic run\n  run [options]       execute one run and emit CSV\n  sweep [options]     execute independent runs and emit CSV\n\noptions:\n  --algorithm drop-and-freeze|help-by-scouts\n  --graph path|cycle|star|complete|tree[:branching]|grid[:columns]|random-connected:extra|random-bounded:max-degree\n  --nodes N[,N...] --agents A[,A...] --seed S[,S...]\n  --ports canonical|random|adversarial\n  --placement single[:node]|uniform:K|clustered:n,n|explicit:n,n\n  --round-limit R --workers W"
+        "ccm commands:\n  validate [options]  generate and validate one deterministic run\n  run [options]       execute one run and emit CSV\n  sweep [options]     execute independent runs and emit CSV\n\noptions:\n  --algorithm drop-and-freeze|help-by-scouts|p1tree\n  --graph path|cycle|star|complete|tree[:branching]|grid[:columns]|random-connected:extra|random-bounded:max-degree\n  --nodes N[,N...] --agents A[,A...] --seed S[,S...]\n  --ports canonical|random|adversarial\n  --placement single[:node]|uniform:K|clustered:n,n|explicit:n,n\n  --round-limit R --workers W"
     );
 }

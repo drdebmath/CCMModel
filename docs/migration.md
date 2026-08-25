@@ -36,6 +36,9 @@ one Rust simulation core shared by native and browser consumers.
   dependency-free static server in the workspace.
 - Added CI covering format, lints, and tests, and failing if the committed
   `wasm/web` package does not match a fresh build of the current source.
+- Added P1Tree dispersion (`ccm-p1tree`), implemented from Pattanayak et al.
+  rather than from prior code in this repository, and a control-panel glossary
+  describing each algorithm.
 
 ## Compatibility decisions
 
