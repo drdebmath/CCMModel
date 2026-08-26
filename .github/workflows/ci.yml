@@ -34,6 +34,24 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+  docs-are-current:
+    # docs/algorithm-flowcharts.md quotes the code of the functions it charts,
+    # so it goes stale the moment one of them changes. The generator needs no
+    # toolchain, so regenerating and diffing is cheap.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Regenerate the flowcharts
+        run: ./scripts/gen-flowcharts.sh
+
+      - name: Fail if the generated document is stale
+        run: |
+          if ! git diff --exit-code -- docs/algorithm-flowcharts.md; then
+            echo "::error::docs/algorithm-flowcharts.md is out of date. Run ./scripts/gen-flowcharts.sh and commit the result."
+            exit 1
+          fi
+
   wasm-is-current:
     # wasm/web is committed and GitHub Pages serves it directly, so a forgotten
     # ./scripts/build-wasm.sh silently ships stale code with no error anywhere.

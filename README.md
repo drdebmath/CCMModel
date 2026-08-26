@@ -165,6 +165,10 @@ tree; it is retained as the record of why the migration was undertaken.
 - `ccm-help-scouts`: Help-by-Scouts.
 - `ccm-p1tree`: P1Tree dispersion, from Pattanayak et al. See
   [docs/p1tree.md](docs/p1tree.md).
+
+For how each algorithm actually runs, [docs/algorithm-flowcharts.md](docs/algorithm-flowcharts.md)
+has a flowchart per algorithm with the code of every function it names, pulled
+from the crates so the two cannot drift.
 - `ccm-trace`: shared `NoTrace`, `FullTrace`, and deterministic bounded trace.
 - `ccm-experiments`: graph/port/placement families and parallel sweeps.
 - `ccm-cli`: native CSV command line.
