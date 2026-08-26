@@ -1551,7 +1551,14 @@ mod tests {
         let mut rounds = Vec::new();
         for nodes in [60_usize, 240] {
             let edges: Vec<(u32, u32)> = (0..nodes)
-                .flat_map(|a| ((a + 1)..nodes).map(move |b| (a as u32, b as u32)))
+                .flat_map(|a| {
+                    ((a + 1)..nodes).map(move |b| {
+                        (
+                            u32::try_from(a).expect("test size fits"),
+                            u32::try_from(b).expect("test size fits"),
+                        )
+                    })
+                })
                 .collect();
             let g = graph(&edges, nodes);
             let (_, metrics, _) = simulate(
