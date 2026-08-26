@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Dispersion cost across agent counts and graph classes, computed client-side in Rust/WASM">
+  <title>CCM Dispersion Dashboard</title>
+  <link rel="stylesheet" href="./app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">◈</span><span>CCM Dashboard</span><small>Cost sweep</small></div>
+    <div class="top-actions"><a class="text-link" href="./index.html">Simulator</a><span id="engineState" class="engine-state" role="status">Checking WASM…</span><button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme">☀</button><button id="panelToggle" class="icon-button mobile-only" type="button" aria-label="Open controls">☰</button></div>
+  </header>
+
+  <div class="app-shell">
+    <aside id="controlPanel" class="controls" aria-label="Sweep controls">
+      <div class="panel-heading"><div><p class="eyebrow">EXPERIMENT</p><h1>Cost of dispersion</h1></div><button id="closePanel" class="icon-button mobile-only" type="button" aria-label="Close controls">×</button></div>
+
+      <section class="control-section"><h2>Model</h2>
+        <label>Algorithm<select id="algorithm"><option value="drop">Drop and Freeze</option><option value="help">Help by Scouts</option><option value="p1tree">P1Tree (DFS)</option></select></label>
+        <label>Cost measured<select id="metric"><option value="rounds">Rounds</option><option value="moves">Agent moves</option><option value="probes">Port probes</option></select></label>
+        <div class="two-col"><label>Nodes<input id="nodes" type="number" min="2" max="2000" value="40" inputmode="numeric"></label><label>Seed<input id="seed" type="number" min="0" max="4294967295" value="42" inputmode="numeric"></label></div>
+        <p id="algorithmNote" class="help-note">All agents start at node 0, so the classes are compared on the same placement.</p>
+      </section>
+
+      <section class="control-section"><h2>Agent range</h2>
+        <div class="two-col"><label>From<input id="agentFrom" type="number" min="1" max="2000" value="2" inputmode="numeric"></label><label>To<input id="agentTo" type="number" min="1" max="2000" value="40" inputmode="numeric"></label></div>
+        <div class="two-col"><label>Step<input id="agentStep" type="number" min="1" max="1000" value="4" inputmode="numeric"></label><label>Round limit<input id="roundLimit" type="number" min="1" max="5000000" value="20000" inputmode="numeric"></label></div>
+      </section>
+
+      <section class="control-section"><h2>Graph classes</h2>
+        <div class="checks">
+          <label><input id="famPath" type="checkbox" checked> Path</label>
+          <label><input id="famCycle" type="checkbox" checked> Cycle</label>
+          <label><input id="famStar" type="checkbox" checked> Star</label>
+          <label><input id="famComplete" type="checkbox"> Complete</label>
+          <label><input id="famTree" type="checkbox" checked> Balanced tree</label>
+          <label><input id="famGrid" type="checkbox"> Grid</label>
+          <label><input id="famRandom" type="checkbox"> Random connected</label>
+        </div>
+        <div class="two-col"><label>Grid columns<input id="gridColumns" type="number" min="1" max="1000" value="6"></label><label>Tree branching<input id="treeBranching" type="number" min="2" max="16" value="2"></label></div>
+      </section>
+
+      <div class="run-actions"><button id="run" class="primary" type="button">Run sweep</button><button id="exportCsv" class="secondary" type="button">Export CSV</button></div>
+      <p id="message" class="message" role="status">Choose an algorithm and graph classes, then run.</p>
+      <p class="help-note">Every point is one simulation with tracing off, run locally in a Web Worker. A wide range over many classes is a lot of simulations.</p>
+    </aside>
+
+    <main class="workspace">
+      <div class="workspace-head">
+        <div><p class="eyebrow">RESULTS</p><h2 id="runTitle">No sweep yet</h2></div>
+      </div>
+
+      <div id="chartWrap" class="canvas-wrap chart-wrap">
+        <canvas id="chartCanvas" aria-label="Dispersion cost against number of agents, one line per graph class" tabindex="0"></canvas>
+        <div id="emptyState" class="empty-state"><span class="empty-icon">◌</span><h3>No results yet</h3><p>Run a sweep to plot the cost of dispersion against the number of agents.</p></div>
+      </div>
+
+      <div id="chartLegend" class="chart-legend" aria-label="Graph classes"></div>
+
+      <div class="results-scroll">
+        <div id="resultsTable" class="results-table"></div>
+      </div>
+    </main>
+  </div>
+  <div id="panelScrim" class="panel-scrim" aria-hidden="true"></div>
+  <footer>CCM Network Lab · one Rust implementation, native and WASM · <a href="https://github.com/drdebmath/CCMModel">source</a></footer>
+  <script type="module">
+    const engine = document.getElementById('engineState');
+    const message = document.getElementById('message');
+    try {
+      const response = await fetch('./wasm/web/manifest.json', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`manifest returned ${response.status}`);
+      const { buildId } = await response.json();
+      if (!buildId) throw new Error('manifest has no build id');
+      await import(`./dashboard.js?v=${encodeURIComponent(buildId)}`);
+    } catch (error) {
+      engine.textContent = 'WASM unavailable';
+      engine.className = 'engine-state error';
+      message.textContent =
+        `Could not start the engine (${error.message}). Build the browser package with ` +
+        `./scripts/build-wasm.sh, then serve over HTTP with: cargo run -p ccm-serve`;
+      message.className = 'message error';
+    }
+  </script>
+</body>
+</html>

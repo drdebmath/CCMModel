@@ -39,6 +39,8 @@ one Rust simulation core shared by native and browser consumers.
 - Added P1Tree dispersion (`ccm-p1tree`), implemented from Pattanayak et al.
   rather than from prior code in this repository, and a control-panel glossary
   describing each algorithm.
+- Added a dashboard page that sweeps agent counts per graph class and plots the
+  cost of dispersion, sharing the simulator's shell, worker and theme.
 
 ## Compatibility decisions
 

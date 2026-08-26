@@ -4,6 +4,8 @@
 //! input generation, trace decoding, playback, JSON interchange, and Canvas
 //! rendering.  Simulation transitions are provided only by `ccm-wasm`.
 
+mod dashboard;
+
 use js_sys::{Array, Int32Array, Object, Reflect, Uint32Array, Uint8Array};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -343,6 +345,42 @@ pub fn make_graph_full(
 }
 
 /// Display name for an algorithm selector value.
+/// Applies the theme the viewer last chose. Shared by both pages so a toggle on
+/// one is honoured by the other.
+fn restore_theme(document: &Document) {
+    if let Ok(Some(storage)) = web_sys::window().expect("window").local_storage() {
+        if let Ok(Some(theme)) = storage.get_item("ccm-theme") {
+            if let Some(root) = document.document_element() {
+                let _ = root.set_attribute("data-theme", &theme);
+            }
+        }
+    }
+}
+
+/// Wires the theme button, calling `after` once the attribute has flipped so a
+/// canvas can repaint against the new tokens.
+fn hook_theme_toggle<F: FnMut() + 'static>(document: &Document, mut after: F) {
+    let owned = document.clone();
+    let closure = Closure::<dyn FnMut()>::new(move || {
+        let Some(root) = owned.document_element() else {
+            return;
+        };
+        let dark = root
+            .get_attribute("data-theme")
+            .unwrap_or_else(|| "dark".into())
+            == "dark";
+        let theme = if dark { "light" } else { "dark" };
+        let _ = root.set_attribute("data-theme", theme);
+        if let Ok(Some(storage)) = web_sys::window().expect("window").local_storage() {
+            let _ = storage.set_item("ccm-theme", theme);
+        }
+        after();
+    });
+    let _ = element::<HtmlElement>(document, "themeToggle")
+        .add_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
+    closure.forget();
+}
+
 fn algorithm_label(value: &str) -> &'static str {
     match value {
         "help" => "Help by Scouts",

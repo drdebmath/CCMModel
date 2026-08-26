@@ -37,6 +37,43 @@ self.onmessage = async ({ data }) => {
     self.postMessage({ type: wasm ? 'ready' : 'error', message: loadError?.message });
     return;
   }
+  if (data.type === 'sweep') {
+    if (!wasm) await load();
+    if (!wasm) return;
+    // The dashboard asks for many small runs at once. Looping here keeps the
+    // main thread free and avoids a postMessage round trip per data point.
+    try {
+      const algorithm = data.algorithm === 'help'
+        ? wasm.AlgorithmSelector.HelpByScouts
+        : data.algorithm === 'p1tree'
+          ? wasm.AlgorithmSelector.P1Tree
+          : wasm.AlgorithmSelector.DropAndFreeze;
+      const results = [];
+      for (let i = 0; i < data.jobs.length; i++) {
+        const job = data.jobs[i];
+        const simulation = new wasm.WasmSimulation(
+          job.nodeCount, new Uint32Array(job.edges), new Uint32Array(job.starts),
+          algorithm, wasm.TraceMode.Off, BigInt(job.roundLimit), 0, 1,
+        );
+        const output = simulation.run();
+        results.push({
+          rounds: Number(output.rounds()),
+          moves: Number(output.moves()),
+          probes: Number(output.probes()),
+          completed: output.termination_code() === 0,
+        });
+        output.free();
+        simulation.free();
+        if ((i + 1) % 8 === 0 || i + 1 === data.jobs.length) {
+          self.postMessage({ type: 'sweep-progress', done: i + 1, total: data.jobs.length });
+        }
+      }
+      self.postMessage({ type: 'sweep-result', results });
+    } catch (error) {
+      self.postMessage({ type: 'error', phase: 'sweep', message: error?.message || String(error) });
+    }
+    return;
+  }
   if (data.type !== 'run') return;
   if (!wasm) await load();
   if (!wasm) return;

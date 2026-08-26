@@ -104,6 +104,20 @@ content-derived `manifest.json`. The page and worker load both generated modules
 and their `.wasm` binaries with that build ID, preventing mixed cached builds
 without accumulating manually numbered package directories.
 
+## Dashboard
+
+[`dashboard.html`](dashboard.html), linked from the simulator's header, answers a
+different question from the simulator: not what one execution looks like, but how
+the cost of dispersion grows. Pick one algorithm and a cost counter — rounds,
+agent moves or port probes — give an agent range and a set of graph classes, and
+it runs one traced-off simulation per (class, agent count) pair in the worker and
+plots one line per class, with a table of the same numbers and a CSV export.
+
+Every agent starts at node 0, so the classes are compared on the same placement;
+P1Tree requires that rooted start in any case. A run that hits its round limit
+did not disperse, so its point is drawn hollow and its table cell marked: that
+number is a floor, not a cost.
+
 `ccm-serve` is a dependency-free static file server in this workspace. The page
 loads ES modules, spawns a Web Worker, and instantiates WASM, none of which work
 from `file://`, so the app has to be served over HTTP; `ccm-serve` makes that a
