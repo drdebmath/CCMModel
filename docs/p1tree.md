@@ -80,22 +80,49 @@ paper writes it `psi(x)`.
 - **Parallel probe** (Section 4.2). The scouts fan out over the head's ports
   together: ports are handed out in increasing agent-ID order, every scout steps
   onto a different neighbour in the same round, and they all return in the next
-  one, each reporting `<port, edge type, node type, psi>`. With at least as many
-  scouts as ports the whole search is two rounds whatever the degree. With fewer,
-  the assignment repeats until every port has been probed. The parent port is
+  one, each reporting `<port, edge type, node type, psi>`. The parent port is
   skipped: the parent is known to be occupied and is reached by backtracking.
+- **The search stops as soon as it finds somewhere to go.** Remark 1 bounds it
+  at "k-1 ports at the root node and k-2 ports at a non-root node" — by the
+  agent count, not the degree — because at most `k` nodes are ever occupied, so
+  while any agent is unsettled some probed neighbour must be empty. Only when a
+  batch finds nothing does the search go on to the remaining ports, which is
+  exactly the case that has to rule out an empty neighbour before a node can be
+  called finished.
 - On reaching an unvisited node the highest-ID unsettled agent settles there,
   which is the dispersion.
 - When no candidate edge is left the DFS backtracks along the parent port.
 
-Termination is Algorithm 2's own: the root is popped when everything reachable
-is `fullyVisited`. Dispersion happens strictly earlier — once the last agent
-settles — and `P1Result::dispersed_at_step` records when. The run continues past
-it because it is the walk back to the root that reconfigures the remaining
-`partiallyVisited` nodes; stopping at dispersion leaves a tree that is not yet a
-P1Tree. Once no unsettled agent remains, the settled agent at each node performs
-its own neighbourhood search, and the DFS head moves as a logical locus rather
-than relocating an agent that has already settled.
+## Where it stops
+
+Section 5: "The process continues until no unsettled agents remain." Once the
+tree has `k` vertices the construction is done and Retrace follows. That is
+[`Stop::AtDispersion`], and it is what [`run`] and [`simulate`] do.
+
+**The tree at that moment is not promised to be a P1Tree.** A node parked as
+`partiallyVisited` may still hold a `tpq` parent edge, waiting for a port-1
+neighbour the run no longer has any reason to visit. That is fine: dispersion is
+the goal, and the reconfiguration only has to happen if the construction
+continues. Definition 1 and Theorem 1 describe a completed `DFS_P1Tree` run.
+
+[`Stop::AtFullTree`], reached through [`run_to_full_tree`], keeps going to
+Algorithm 2's own termination — the root popped, every node `fullyVisited` — so
+the result is a real P1Tree. It exists so the property can be tested and studied.
+It is not the dispersion algorithm and it costs more, sharply so when the degree
+far exceeds the agent count, because the walk continues with no unsettled agents
+left to make a neighbourhood search cheap.
+
+`P1Result::dispersed_at_step` records the moment the last agent settled under
+either rule.
+
+### Why the bound is O(k) and not O(n)
+
+Both halves matter, and getting either wrong costs the bound. Scanning every
+port instead of stopping at the first find made cost scale with degree; walking
+on past dispersion made it scale with `n`. With 40 agents on a 4000-node
+complete graph that was 32,357 rounds against 155 DFS visits. Corrected, the
+same case is 267 rounds, and identical at n = 1000, 2000 and 4000. Across
+`k = 10 … 160` on `K4000`, rounds per agent stay flat at about 6.7.
 
 ### Vacating
 
@@ -146,7 +173,9 @@ The construction, the parallel probe, vacating and retrace are all implemented.
 What is not:
 
 **Asynchrony.** This repository's scheduler is synchronous, so the `O(k)`
-*epoch* bound of `RootedAsync()` is not what these round counters measure.
+*epoch* bound of `RootedAsync()` is not literally what these round counters
+measure, even though they do now scale with `k` rather than with `n` or the
+degree.
 
 The tree produced is the same. The round counts are not the paper's bound, so
 they are not evidence about it. `docs/complexity-metrics.md` applies as usual:

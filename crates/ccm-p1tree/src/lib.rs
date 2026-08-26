@@ -141,6 +141,28 @@ pub enum NodeState {
     Vacated,
 }
 
+/// When the construction stops.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Stop {
+    /// Section 5: "The process continues until no unsettled agents remain."
+    /// This is the dispersion algorithm, and the default.
+    ///
+    /// The tree that exists at that moment spans the settled nodes but is not
+    /// promised to be a `P1Tree`: a node parked as `partiallyVisited` may still
+    /// be holding a `tpq` parent edge, waiting for a port-1 neighbour that the
+    /// run no longer needs to visit.
+    AtDispersion,
+    /// Keep going until the root is popped, so every node is `fullyVisited` and
+    /// Definition 1 holds.
+    ///
+    /// This is Algorithm 2's own termination, not the dispersion algorithm's.
+    /// It exists so the `P1Tree` property can be tested and studied; it costs
+    /// more, and on a graph whose degree far exceeds the agent count it costs a
+    /// great deal more, because the walk continues with no unsettled agents
+    /// left to make a neighbourhood search cheap.
+    AtFullTree,
+}
+
 /// One entry of a neighbourhood search: the 4-tuple of Section 4,
 /// `<p_xy, type({x,y}), type(y), psi(y)>`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -301,6 +323,28 @@ pub fn run(graph: &PortGraph, starts: &[NodeId], round_limit: u64) -> Result<P1R
     Ok(result)
 }
 
+/// Runs the construction to Algorithm 2's own termination rather than stopping
+/// at dispersion, so the result is a full `P1Tree`.
+///
+/// # Errors
+///
+/// As [`run`].
+pub fn run_to_full_tree(
+    graph: &PortGraph,
+    starts: &[NodeId],
+    round_limit: u64,
+) -> Result<P1Result, P1Error> {
+    let (result, _, _) = simulate_with_stop(
+        graph,
+        starts,
+        round_limit,
+        Stop::AtFullTree,
+        ComplexityMetrics::default(),
+        NoTrace,
+    )?;
+    Ok(result)
+}
+
 /// Runs `DFS_P1Tree` with caller-supplied metrics and recorder.
 ///
 /// # Errors
@@ -314,7 +358,30 @@ pub fn simulate<M: Metrics, R: Recorder>(
     metrics: M,
     recorder: R,
 ) -> Result<(P1Result, M, R), P1Error> {
-    Simulation::new(graph, starts, round_limit, metrics, recorder)?.run()
+    simulate_with_stop(
+        graph,
+        starts,
+        round_limit,
+        Stop::AtDispersion,
+        metrics,
+        recorder,
+    )
+}
+
+/// As [`simulate`], with an explicit stopping rule.
+///
+/// # Errors
+///
+/// As [`simulate`].
+pub fn simulate_with_stop<M: Metrics, R: Recorder>(
+    graph: &PortGraph,
+    starts: &[NodeId],
+    round_limit: u64,
+    stop: Stop,
+    metrics: M,
+    recorder: R,
+) -> Result<(P1Result, M, R), P1Error> {
+    Simulation::new(graph, starts, round_limit, stop, metrics, recorder)?.run()
 }
 
 struct Simulation<'a, M: Metrics, R: Recorder> {
@@ -331,6 +398,9 @@ struct Simulation<'a, M: Metrics, R: Recorder> {
     /// Whether a node already has a port-1 incident tree edge.
     port_one_tree_edge: Vec<bool>,
     head: NodeId,
+    /// The node the run started from. Retrace walks the tree from here.
+    root: NodeId,
+    stop: Stop,
     round_limit: u64,
     step: u64,
     dispersed_at_step: Option<u64>,
@@ -343,6 +413,7 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
         graph: &'a PortGraph,
         starts: &[NodeId],
         round_limit: u64,
+        stop: Stop,
         metrics: M,
         recorder: R,
     ) -> Result<Self, P1Error> {
@@ -381,6 +452,8 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
             parent: vec![None; node_count],
             port_one_tree_edge: vec![false; node_count],
             head: root,
+            root,
+            stop,
             round_limit,
             step: 0,
             dispersed_at_step: None,
@@ -435,6 +508,15 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
         let mut rounds = 0_u64;
         loop {
             self.note_dispersion();
+            // Section 5: "The process continues until no unsettled agents
+            // remain." Once the tree has k vertices the construction is done,
+            // and Retrace follows. Walking on past this point to finish the
+            // whole spanning tree is not what the algorithm does, and on a graph
+            // whose degree far exceeds the agent count that walk is what made
+            // the cost scale with n instead of k.
+            if self.stop == Stop::AtDispersion && self.dispersed_at_step.is_some() {
+                return Ok(Termination::Completed);
+            }
             if rounds >= self.round_limit {
                 return Ok(Termination::RoundLimitReached {
                     limit: self.round_limit,
@@ -443,11 +525,11 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
             rounds += 1;
             self.metrics.macro_round();
 
-            let results = self.neighbourhood_search()?;
             // With no unsettled agent left there is nobody to settle at an
             // unvisited node, so those neighbours are not candidates. The head
             // can still enter a partiallyVisited node to reconfigure it.
             let can_settle = self.unsettled_count() > 0;
+            let results = self.neighbourhood_search(can_settle)?;
             let next = Self::choose_next_edge(&results, can_settle);
 
             if let Some(chosen) = next {
@@ -524,7 +606,7 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
     /// has left it to travel as a scout. This implementation does not vacate
     /// (Section 4.1), so a node without a settled agent present is always empty
     /// and rule (R1) decides every case on its own.
-    fn neighbourhood_search(&mut self) -> Result<Vec<ProbeResult>, P1Error> {
+    fn neighbourhood_search(&mut self, can_settle: bool) -> Result<Vec<ProbeResult>, P1Error> {
         let head = self.head;
         let degree = self.graph.degree(head).unwrap_or(0);
         let parent_port = self.parent[head.index()].map(|(_, port, _)| port);
@@ -590,6 +672,23 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
             }
             self.metrics.agent_moves(moved);
             self.checkpoint(Phase::ProbeBack);
+
+            // Stop as soon as a batch has turned up somewhere to go. Remark 1
+            // of the paper bounds the search at "k-1 ports at the root node and
+            // k-2 ports at a non-root node", not at the degree, and the reason
+            // is pigeonhole: at most k nodes are ever occupied, so while any
+            // agent is still unsettled some probed neighbour must be empty.
+            //
+            // Scanning every port instead made the cost scale with the degree
+            // rather than with the agent count: 40 agents on a 4000-node
+            // complete graph took 32357 rounds, where the DFS itself only made
+            // 155 visits. The remaining ports are only worth probing when
+            // nothing has been found, which is exactly the case that has to
+            // rule out an empty neighbour before a node can be declared
+            // finished.
+            if Self::choose_next_edge(&results, can_settle).is_some() {
+                break;
+            }
         }
 
         if let Some(agent) = self.settled_at[head.index()] {
@@ -907,9 +1006,8 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
             }
         }
 
-        let root = self.head;
         let mut order = Vec::new();
-        Self::post_order(root, &children, &mut order);
+        Self::post_order(self.root, &children, &mut order);
 
         for node in order {
             self.metrics.logical_rounds(RoundKind::Retrace, 1);
@@ -1131,8 +1229,9 @@ mod tests {
 
     #[test]
     fn result_satisfies_definition_one() {
-        // Definition 1: every vertex of the tree carries an incident tree edge
-        // of type tp1, t11 or t1q.
+        // Definition 1 describes the finished construction, so it is checked
+        // against Stop::AtFullTree. The dispersion algorithm stops earlier, at
+        // the moment the last agent settles, and may leave a node parked.
         let cases = vec![
             graph(&[(0, 1), (1, 2), (2, 3), (3, 0)], 4),
             graph(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], 4),
@@ -1141,7 +1240,7 @@ mod tests {
         ];
         for (index, g) in cases.into_iter().enumerate() {
             let n = g.node_count();
-            let result = run(&g, &rooted(n), 10_000).unwrap();
+            let result = run_to_full_tree(&g, &rooted(n), 10_000).unwrap();
             assert!(
                 result.satisfies_definition_one(),
                 "case {index} violates Definition 1"
@@ -1278,13 +1377,15 @@ mod tests {
             let expected: Vec<u32> = (0..u32::try_from(n).unwrap()).collect();
             assert_eq!(homes, expected, "seed {seed}");
 
-            // Definition 1, and nothing left waiting.
+            // Definition 1 belongs to the finished construction, so it is
+            // checked on a second run that does not stop at dispersion.
+            let full = run_to_full_tree(&g, &vec![NodeId(0); n], 100_000).unwrap();
             assert!(
-                !result.has_partially_visited(),
+                !full.has_partially_visited(),
                 "seed {seed} finished with a partiallyVisited node"
             );
             assert!(
-                result.satisfies_definition_one(),
+                full.satisfies_definition_one(),
                 "seed {seed} violates Definition 1"
             );
 
@@ -1329,16 +1430,29 @@ mod tests {
 
     #[test]
     fn definition_one_needs_the_walk_back_to_the_root() {
-        // K4 with canonical ports: node 3 is discovered through a tpq edge and
-        // has no empty neighbours, so stopping at that point would leave it with
-        // only a tpq tree edge. It is the tail of the traversal that repairs it.
+        // K4 with canonical ports is the case that separates the two stopping
+        // rules. Node 3 is discovered through a tpq edge and has no empty
+        // neighbours, so it is parked; only the continued walk brings its port-1
+        // neighbour past to reconfigure it.
         let g = graph(&[(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)], 4);
-        let full = run(&g, &rooted(4), 10_000).unwrap();
+
+        let dispersed = run(&g, &rooted(4), 10_000).unwrap();
+        assert_eq!(dispersed.termination, Termination::Completed);
+        // Dispersion is achieved either way: one agent per node.
+        let mut homes: Vec<u32> = dispersed
+            .agents
+            .iter()
+            .map(|agent| agent.home.expect("settled").0)
+            .collect();
+        homes.sort_unstable();
+        assert_eq!(homes, vec![0, 1, 2, 3]);
+
+        let full = run_to_full_tree(&g, &rooted(4), 10_000).unwrap();
         assert!(full.satisfies_definition_one());
-        assert!(full.dispersed_at_step.is_some());
+        assert!(!full.has_partially_visited());
         assert!(
-            full.dispersed_at_step.unwrap() < full.logical_steps,
-            "the construction continues after the last agent settles"
+            full.logical_steps > dispersed.logical_steps,
+            "finishing the tree costs more than dispersing"
         );
     }
 
@@ -1394,16 +1508,67 @@ mod tests {
     }
 
     #[test]
-    fn fewer_scouts_than_ports_repeat_the_assignment() {
-        // Same star, but only two scouts remain after one settles at the root,
-        // so the five ports take three batches.
+    fn probing_stops_at_the_first_batch_that_finds_a_target() {
+        // Two scouts and five ports. The first batch already finds somewhere to
+        // go, so the other three ports are never probed: the search is bounded
+        // by what it is looking for, not by the degree.
         let g = graph(&[(0, 1), (0, 2), (0, 3), (0, 4), (0, 5)], 6);
         let (_, metrics, _) =
             simulate(&g, &rooted(3), 1, ComplexityMetrics::default(), NoTrace).unwrap();
-        assert_eq!(metrics.port_probes, 5);
-        assert_eq!(
-            metrics.probe_rounds, 6,
-            "ceil(5 / 2) batches, two rounds each"
+        assert_eq!(metrics.port_probes, 2, "only the first batch is probed");
+        assert_eq!(metrics.probe_rounds, 2, "one batch, out and back");
+    }
+
+    #[test]
+    fn probing_scans_on_when_a_batch_finds_nothing() {
+        // With every neighbour already settled there is nothing to find, and the
+        // search has to look at every port before it can call the node
+        // finished. One scout, so one port per batch.
+        let g = graph(&[(0, 1), (0, 2), (0, 3), (1, 2), (2, 3)], 4);
+        let (result, metrics, _) = simulate(
+            &g,
+            &rooted(4),
+            10_000,
+            ComplexityMetrics::default(),
+            NoTrace,
+        )
+        .unwrap();
+        assert_eq!(result.termination, Termination::Completed);
+        // Reaching "no candidate anywhere" at least once means a full scan
+        // happened; the cheap early exit must not have suppressed it.
+        assert!(
+            metrics.port_probes >= 5,
+            "a node was declared finished without ruling out every port"
+        );
+    }
+
+    #[test]
+    fn cost_scales_with_the_agent_count_not_the_degree() {
+        // The regression this guards: a search that scanned every port made a
+        // dense graph cost O(n) rounds instead of O(k). Quadrupling the degree
+        // with the agent count fixed must not move the round count much.
+        let agents = 8;
+        let mut rounds = Vec::new();
+        for nodes in [60_usize, 240] {
+            let edges: Vec<(u32, u32)> = (0..nodes)
+                .flat_map(|a| ((a + 1)..nodes).map(move |b| (a as u32, b as u32)))
+                .collect();
+            let g = graph(&edges, nodes);
+            let (_, metrics, _) = simulate(
+                &g,
+                &rooted(agents),
+                1_000_000,
+                ComplexityMetrics::default(),
+                NoTrace,
+            )
+            .unwrap();
+            rounds.push(metrics.rounds);
+        }
+        let (small, large) = (rounds[0], rounds[1]);
+        assert!(
+            large <= small * 2,
+            "degree grew 4x and rounds went {small} -> {large}: the search is \
+             still scanning the whole neighbourhood"
         );
     }
 
