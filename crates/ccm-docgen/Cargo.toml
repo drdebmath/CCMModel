@@ -1,0 +1,15 @@
+[package]
+name = "ccm-docgen"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+description = "Generates the interactive flowchart documentation page"
+repository.workspace = true
+
+[[bin]]
+name = "ccm-docgen"
+path = "src/main.rs"
+
+[lints]
+workspace = true

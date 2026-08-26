@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Flowcharts of the CCM dispersion algorithms, with the source of every function">
+  <title>CCM Algorithm Flowcharts</title>
+  <link rel="stylesheet" href="./app.css">
+</head>
+<body class="docs-body">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">◈</span><span>CCM Flowcharts</span><small>How each algorithm runs</small></div>
+    <div class="top-actions"><a class="text-link" href="./index.html">Simulator</a><a class="text-link" href="./dashboard.html">Dashboard</a><button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme">☀</button></div>
+  </header>
+
+  <main class="docs-shell">
+    <div class="docs-bar">
+      <div class="chart-tabs" role="tablist"><!--NAV--></div>
+      <div class="zoom-controls">
+        <button id="zoomOut" class="icon-button" type="button" aria-label="Zoom out">−</button>
+        <output id="zoomLevel" class="zoom-level">100%</output>
+        <button id="zoomIn" class="icon-button" type="button" aria-label="Zoom in">+</button>
+        <button id="zoomFit" class="secondary" type="button">Fit</button>
+      </div>
+    </div>
+
+    <p class="docs-hint">Click any solid-bordered box to read the function it stands for. Drag to pan, scroll to zoom.</p>
+
+    <div class="docs-main">
+      <div id="charts" class="charts"><!--SECTIONS--></div>
+
+      <aside id="codePane" class="code-pane" aria-live="polite">
+        <div class="code-head">
+          <div><p class="eyebrow">FUNCTION</p><h2 id="codeTitle">Pick a box</h2></div>
+          <button id="codeClose" class="icon-button" type="button" aria-label="Close">×</button>
+        </div>
+        <p id="codeSource" class="code-source"></p>
+        <pre id="codeBody" class="code-body"><code>Boxes with a solid border carry code. Click one and it appears here, exactly as it is in the crate.</code></pre>
+      </aside>
+    </div>
+  </main>
+
+  <footer>Generated from the crates by <code>scripts/gen-docs.sh</code> · <a href="https://github.com/drdebmath/CCMModel">source</a></footer>
+
+  <div id="codeStore" hidden><!--CODE--></div>
+
+  <script type="module">
+    const engine = document.getElementById('codeTitle');
+    try {
+      const response = await fetch('./wasm/web/manifest.json', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`manifest returned ${response.status}`);
+      const { buildId } = await response.json();
+      if (!buildId) throw new Error('manifest has no build id');
+      await import(`./docs.js?v=${encodeURIComponent(buildId)}`);
+    } catch (error) {
+      engine.textContent = 'Interactivity unavailable';
+      document.getElementById('codeBody').textContent =
+        `Could not start the page controller (${error.message}). Build the browser package ` +
+        `with ./scripts/build-wasm.sh, then serve over HTTP with: cargo run -p ccm-serve. ` +
+        `The diagrams below are plain SVG and are readable without it.`;
+      document.querySelector('.chart-panel')?.classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>

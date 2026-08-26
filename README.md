@@ -167,7 +167,10 @@ tree; it is retained as the record of why the migration was undertaken.
   [docs/p1tree.md](docs/p1tree.md).
 
 All documentation is indexed in [docs/README.md](docs/README.md). For how each
-algorithm actually runs, [docs/algorithm-flowcharts.md](docs/algorithm-flowcharts.md)
+algorithm actually runs, [`docs.html`](docs.html) — linked from either app
+page's header — has the three flowcharts as a page you can pan and zoom, where
+clicking a box opens the source of the function it stands for. The same charts
+in markdown are in [docs/algorithm-flowcharts.md](docs/algorithm-flowcharts.md)
 has a flowchart per algorithm with the code of every function it names, pulled
 from the crates so the two cannot drift. Read the flowcharts on GitHub: the copy
 GitHub Pages serves does not render mermaid, and shows the diagram source

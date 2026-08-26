@@ -4,6 +4,10 @@ Start here.
 
 ## How the algorithms work
 
+- **[The interactive flowcharts](https://drdebmath.github.io/CCMModel/docs.html)** —
+  the same three charts as a page you can pan and zoom, where clicking any box
+  opens the source of the function it stands for. Served alongside the
+  simulator; also reachable from either app page's header.
 - **[algorithm-flowcharts.md](algorithm-flowcharts.md)** — one flowchart per
   algorithm, with the source of every function each chart names. The best place
   to start if you want to know what actually runs.
@@ -36,6 +40,13 @@ Wall-clock time is never a complexity result. The counters are.
 
 ## A note on the diagrams
 
-The flowcharts are [mermaid](https://mermaid.js.org) blocks. GitHub renders them
-inline; the copy served by GitHub Pages does not, and shows the diagram source
-as a code block instead. Read them here on GitHub.
+There are two versions of the flowcharts, and they are generated from the same
+crates by different means.
+
+`algorithm-flowcharts.md` uses [mermaid](https://mermaid.js.org) blocks. GitHub
+renders them inline; the copy GitHub Pages serves does not, and shows the
+diagram source as a code block instead. Read that one here on GitHub.
+
+`docs.html` draws its own SVG against the application's theme tokens, so it
+follows the light/dark toggle and needs no renderer at all. That is the one to
+open in a browser.

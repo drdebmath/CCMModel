@@ -5,6 +5,7 @@
 //! rendering.  Simulation transitions are provided only by `ccm-wasm`.
 
 mod dashboard;
+mod docs;
 
 use js_sys::{Array, Int32Array, Object, Reflect, Uint32Array, Uint8Array};
 use serde::{Deserialize, Serialize};

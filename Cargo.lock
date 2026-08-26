@@ -47,6 +47,10 @@ name = "ccm-core"
 version = "0.1.0"
 
 [[package]]
+name = "ccm-docgen"
+version = "0.1.0"
+
+[[package]]
 name = "ccm-experiments"
 version = "0.1.0"
 dependencies = [

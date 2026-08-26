@@ -1,0 +1,1355 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Flowcharts of the CCM dispersion algorithms, with the source of every function">
+  <title>CCM Algorithm Flowcharts</title>
+  <link rel="stylesheet" href="./app.css">
+</head>
+<body class="docs-body">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">◈</span><span>CCM Flowcharts</span><small>How each algorithm runs</small></div>
+    <div class="top-actions"><a class="text-link" href="./index.html">Simulator</a><a class="text-link" href="./dashboard.html">Dashboard</a><button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme">☀</button></div>
+  </header>
+
+  <main class="docs-shell">
+    <div class="docs-bar">
+      <div class="chart-tabs" role="tablist"><button class="chart-tab" type="button" data-chart="drop">Drop and Freeze</button><button class="chart-tab" type="button" data-chart="help">Help by Scouts</button><button class="chart-tab" type="button" data-chart="p1tree">P1Tree</button></div>
+      <div class="zoom-controls">
+        <button id="zoomOut" class="icon-button" type="button" aria-label="Zoom out">−</button>
+        <output id="zoomLevel" class="zoom-level">100%</output>
+        <button id="zoomIn" class="icon-button" type="button" aria-label="Zoom in">+</button>
+        <button id="zoomFit" class="secondary" type="button">Fit</button>
+      </div>
+    </div>
+
+    <p class="docs-hint">Click any solid-bordered box to read the function it stands for. Drag to pan, scroll to zoom.</p>
+
+    <div class="docs-main">
+      <div id="charts" class="charts"><section class="chart-panel hidden" id="panel-drop" data-crate="ccm-algorithms">
+<p class="chart-blurb">Three phases per round. Unsettled agents fan out one per port, come back carrying one bit — was the neighbour occupied — and then one settles while the rest move on together through a port a probe reported empty. When no empty port is left the group backtracks along the port it arrived by.</p>
+<div class="chart-frame"><div class="chart-stage"><svg class="chart" viewBox="-564 -63 1141 770" role="img" aria-label="Drop and Freeze flowchart" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="arrow-drop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>
+<g class="edges">
+<path class="edge" d="M 0.0 23.0 L 0.0 69.0" marker-end="url(#arrow-drop)"/>
+<path class="edge" d="M 0.0 115.0 L 0.0 153.0" marker-end="url(#arrow-drop)"/>
+<path class="edge" d="M -112.0 184.0 L -195.0 184.0" marker-end="url(#arrow-drop)"/><text class="edge-label" x="-153.5" y="184.0">yes</text>
+<path class="edge" d="M 0.0 215.0 L 0.0 245.0" marker-end="url(#arrow-drop)"/><text class="edge-label" x="0.0" y="230.0">no</text>
+<path class="edge" d="M -112.0 276.0 L -195.0 276.0" marker-end="url(#arrow-drop)"/><text class="edge-label" x="-153.5" y="276.0">no</text>
+<path class="edge" d="M 0.0 307.0 L 0.0 345.0" marker-end="url(#arrow-drop)"/><text class="edge-label" x="0.0" y="326.0">yes</text>
+<path class="edge" d="M 0.0 391.0 L 0.0 437.0" marker-end="url(#arrow-drop)"/>
+<path class="edge" d="M 0.0 483.0 L 0.0 529.0" marker-end="url(#arrow-drop)"/>
+<path class="edge" d="M 0.0 575.0 L 0.0 621.0" marker-end="url(#arrow-drop)"/>
+<path class="edge" d="M 104.0 644.0 L 195.2 644.0 L 195.2 184.0 L 112.0 184.0" marker-end="url(#arrow-drop)"/><text class="edge-label" x="195.2" y="414.0">next round</text>
+<path class="edge aside" d="M 104.0 368.0 L 208.0 368.0" marker-end="url(#arrow-drop)"/><text class="edge-label" x="156.0" y="368.0">port order</text>
+<path class="edge aside" d="M 104.0 552.0 L 208.0 552.0" marker-end="url(#arrow-drop)"/><text class="edge-label" x="156.0" y="552.0">group size</text>
+</g>
+<g class="nodes">
+<g id="drop-start" class="node entry has-code" data-fn="simulate_with" tabindex="0" role="button"><rect x="-104" y="-23" width="208" height="46" rx="23"/><text x="0.0" y="0.0">simulate_with()</text></g>
+<g id="drop-canon" class="node step has-code" data-fn="canonicalize_ports" tabindex="0" role="button"><rect x="-104" y="69" width="208" height="46" rx="9"/><text x="0.0" y="92.0">canonicalize_ports()</text></g>
+<g id="drop-settled" class="node decision"><polygon points="0,153 112,184 0,215 -112,184"/><text x="0.0" y="184.0">all_settled()?</text></g>
+<g id="drop-done" class="node terminal"><rect x="-403" y="161" width="208" height="46" rx="23"/><text x="-299.0" y="184.0">Completed</text></g>
+<g id="drop-limit" class="node decision"><polygon points="0,245 112,276 0,307 -112,276"/><text x="0.0" y="276.0">round &lt; limit?</text></g>
+<g id="drop-capped" class="node terminal"><rect x="-403" y="253" width="208" height="46" rx="23"/><text x="-299.0" y="276.0">RoundLimitReached</text></g>
+<g id="drop-pout" class="node step has-code" data-fn="probe_out" tabindex="0" role="button"><rect x="-104" y="345" width="208" height="46" rx="9"/><text x="0.0" y="368.0">probe_out()</text></g>
+<g id="drop-pback" class="node step has-code" data-fn="probe_back" tabindex="0" role="button"><rect x="-104" y="437" width="208" height="46" rx="9"/><text x="0.0" y="460.0">probe_back()</text></g>
+<g id="drop-mout" class="node step has-code" data-fn="move_out" tabindex="0" role="button"><rect x="-104" y="529" width="208" height="46" rx="9"/><text x="0.0" y="552.0">move_out()</text></g>
+<g id="drop-valid" class="node step"><rect x="-104" y="621" width="208" height="46" rx="9"/><text x="0.0" y="644.0">validate_state()</text></g>
+<g id="drop-ports" class="node aside has-code" data-fn="ordered_ports" tabindex="0" role="button"><rect x="208" y="345" width="208" height="46" rx="9"/><text x="312.0" y="368.0">ordered_ports()</text></g>
+<g id="drop-scouts" class="node aside has-code" data-fn="scouts_for_count" tabindex="0" role="button"><rect x="208" y="529" width="208" height="46" rx="9"/><text x="312.0" y="552.0">scouts_for_count()</text></g>
+</g>
+</svg>
+</div></div>
+</section>
+<section class="chart-panel hidden" id="panel-help" data-crate="ccm-help-scouts">
+<p class="chart-blurb">Also a DFS, but settled agents help. One whose node can spare it vacates and travels with the group as a scout, so several ports are probed in the same round. Scouts later retrace the tree in post-order and drop back onto the nodes they own.</p>
+<div class="chart-frame"><div class="chart-stage"><svg class="chart" viewBox="-629 -63 1245 862" role="img" aria-label="Help by Scouts flowchart" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="arrow-help" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>
+<g class="edges">
+<path class="edge" d="M 0.0 23.0 L 0.0 69.0" marker-end="url(#arrow-help)"/>
+<path class="edge" d="M 0.0 115.0 L 0.0 153.0" marker-end="url(#arrow-help)"/>
+<path class="edge" d="M -112.0 193.9 L -298.5 253.0" marker-end="url(#arrow-help)"/><text class="edge-label" x="-205.2" y="223.5">no</text>
+<path class="edge" d="M 0.0 215.0 L 0.0 253.0" marker-end="url(#arrow-help)"/><text class="edge-label" x="0.0" y="234.0">yes</text>
+<path class="edge" d="M 0.0 299.0 L 0.0 337.0" marker-end="url(#arrow-help)"/>
+<path class="edge" d="M 112.0 368.0 L 221.0 368.0" marker-end="url(#arrow-help)"/><text class="edge-label" x="166.5" y="368.0">settledScout</text>
+<path class="edge" d="M 0.0 399.0 L 0.0 437.0" marker-end="url(#arrow-help)"/><text class="edge-label" x="0.0" y="418.0">settled</text>
+<path class="edge" d="M 266.5 391.0 L 58.5 437.0" marker-end="url(#arrow-help)"/>
+<path class="edge" d="M 0.0 483.0 L 0.0 521.0" marker-end="url(#arrow-help)"/>
+<path class="edge" d="M -2.3 583.0 L -10.7 621.0" marker-end="url(#arrow-help)"/><text class="edge-label" x="-6.5" y="602.0">port</text>
+<path class="edge" d="M 112.0 562.3 L 287.8 621.0" marker-end="url(#arrow-help)"/><text class="edge-label" x="199.9" y="591.6">none</text>
+<path class="edge" d="M -10.7 667.0 L -2.3 713.0" marker-end="url(#arrow-help)"/>
+<path class="edge" d="M 351.0 667.0 L 351.0 690.0 L 0.0 690.0 L 0.0 713.0" marker-end="url(#arrow-help)"/>
+<path class="edge" d="M 104.0 736.0 L 195.2 736.0 L 195.2 184.0 L 112.0 184.0" marker-end="url(#arrow-help)"/><text class="edge-label" x="195.2" y="460.0">next</text>
+<path class="edge" d="M -364.0 299.0 L -364.0 345.0" marker-end="url(#arrow-help)"/>
+<path class="edge" d="M -364.0 391.0 L -364.0 437.0" marker-end="url(#arrow-help)"/>
+<path class="edge aside" d="M 104.0 460.0 L 221.0 460.0" marker-end="url(#arrow-help)"/><text class="edge-label" x="162.5" y="460.0">classify</text>
+</g>
+<g class="nodes">
+<g id="help-start" class="node entry"><rect x="-104" y="-23" width="208" height="46" rx="23"/><text x="0.0" y="0.0">run() / simulate()</text></g>
+<g id="help-trans" class="node step has-code" data-fn="run_transitions" tabindex="0" role="button"><rect x="-104" y="69" width="208" height="46" rx="9"/><text x="0.0" y="92.0">run_transitions()</text></g>
+<g id="help-left" class="node decision"><polygon points="0,153 112,184 0,215 -112,184"/><text x="0.0" y="184.0">unsettled left?</text></g>
+<g id="help-settle" class="node step"><rect x="-104" y="253" width="208" height="46" rx="9"/><text x="0.0" y="276.0">settle() highest ID</text></g>
+<g id="help-vacate" class="node decision has-code" data-fn="can_vacate" tabindex="0" role="button"><polygon points="0,337 112,368 0,399 -112,368"/><text x="0.0" y="368.0">can_vacate()</text></g>
+<g id="help-pool" class="node aside"><rect x="221" y="345" width="208" height="46" rx="9"/><text x="325.0" y="368.0">joins scout pool</text></g>
+<g id="help-probe" class="node step has-code" data-fn="parallel_probe" tabindex="0" role="button"><rect x="-104" y="437" width="208" height="46" rx="9"/><text x="0.0" y="460.0">parallel_probe()</text></g>
+<g id="help-rank" class="node decision has-code" data-fn="candidate_rank" tabindex="0" role="button"><polygon points="0,521 112,552 0,583 -112,552"/><text x="0.0" y="552.0">candidate_rank()</text></g>
+<g id="help-fwd" class="node step has-code" data-fn="move_group" tabindex="0" role="button"><rect x="-117" y="621" width="208" height="46" rx="9"/><text x="-13.0" y="644.0">move_group() forward</text></g>
+<g id="help-back" class="node step"><rect x="247" y="621" width="208" height="46" rx="9"/><text x="351.0" y="644.0">move_group() to parent</text></g>
+<g id="help-update" class="node step"><rect x="-104" y="713" width="208" height="46" rx="9"/><text x="0.0" y="736.0">update_node_type()</text></g>
+<g id="help-retrace" class="node step has-code" data-fn="retrace" tabindex="0" role="button"><rect x="-468" y="253" width="208" height="46" rx="9"/><text x="-364.0" y="276.0">retrace()</text></g>
+<g id="help-home" class="node step"><rect x="-468" y="345" width="208" height="46" rx="9"/><text x="-364.0" y="368.0">settle_vacated_at()</text></g>
+<g id="help-final" class="node terminal"><rect x="-468" y="437" width="208" height="46" rx="23"/><text x="-364.0" y="460.0">validate_final()</text></g>
+<g id="help-etype" class="node aside"><rect x="221" y="437" width="208" height="46" rx="9"/><text x="325.0" y="460.0">edge_type()</text></g>
+</g>
+</svg>
+</div></div>
+</section>
+<section class="chart-panel hidden" id="panel-p1tree" data-crate="ccm-p1tree">
+<p class="chart-blurb">A DFS that builds a port-one tree: every vertex ends up with an incident tree edge carrying port 1 at one of its ends. Two things carry the O(k) bound — the search stops at the first batch that finds somewhere to go, and the traversal stops at dispersion rather than finishing the tree.</p>
+<div class="chart-frame"><div class="chart-stage"><svg class="chart" viewBox="-663 -63 1287 1138" role="img" aria-label="P1Tree flowchart" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="arrow-p1tree" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>
+<g class="edges">
+<path class="edge" d="M 0.0 23.0 L 0.0 69.0" marker-end="url(#arrow-p1tree)"/>
+<path class="edge" d="M 0.0 115.0 L 0.0 161.0" marker-end="url(#arrow-p1tree)"/>
+<path class="edge" d="M 0.0 207.0 L 0.0 245.0" marker-end="url(#arrow-p1tree)"/>
+<path class="edge" d="M -112.0 276.0 L -286.0 276.0" marker-end="url(#arrow-p1tree)"/><text class="edge-label" x="-199.0" y="276.0">yes</text>
+<path class="edge" d="M 0.0 307.0 L 0.0 345.0" marker-end="url(#arrow-p1tree)"/><text class="edge-label" x="0.0" y="326.0">no</text>
+<path class="edge" d="M -390.0 299.0 L -390.0 345.0" marker-end="url(#arrow-p1tree)"/>
+<path class="edge" d="M -390.0 391.0 L -390.0 437.0" marker-end="url(#arrow-p1tree)"/>
+<path class="edge" d="M 0.0 391.0 L 0.0 437.0" marker-end="url(#arrow-p1tree)"/>
+<path class="edge" d="M 0.0 483.0 L 0.0 529.0" marker-end="url(#arrow-p1tree)"/>
+<path class="edge" d="M 0.0 575.0 L 0.0 613.0" marker-end="url(#arrow-p1tree)"/>
+<path class="edge" d="M 112.0 644.0 L 153.6 644.0 L 153.6 460.0 L 104.0 460.0" marker-end="url(#arrow-p1tree)"/><text class="edge-label" x="153.6" y="552.0">no, ports left</text>
+<path class="edge" d="M 112.0 654.3 L 239.0 725.7" marker-end="url(#arrow-p1tree)"/><text class="edge-label" x="175.5" y="690.0">found</text>
+<path class="edge" d="M -112.0 653.2 L -278.0 726.8" marker-end="url(#arrow-p1tree)"/><text class="edge-label" x="-195.0" y="690.0">exhausted</text>
+<path class="edge" d="M 239.0 745.2 L 31.2 805.0" marker-end="url(#arrow-p1tree)"/><text class="edge-label" x="135.1" y="775.1">yes</text>
+<path class="edge" d="M 351.0 767.0 L 351.0 805.0" marker-end="url(#arrow-p1tree)"/><text class="edge-label" x="351.0" y="786.0">no</text>
+<path class="edge" d="M -278.0 746.3 L -102.2 805.0" marker-end="url(#arrow-p1tree)"/><text class="edge-label" x="-190.1" y="775.6">yes</text>
+<path class="edge" d="M -390.0 767.0 L -390.0 805.0" marker-end="url(#arrow-p1tree)"/><text class="edge-label" x="-390.0" y="786.0">no</text>
+<path class="edge" d="M 351.0 851.0 L 351.0 897.0" marker-end="url(#arrow-p1tree)"/>
+<path class="edge" d="M 351.0 943.0 L 351.0 989.0" marker-end="url(#arrow-p1tree)"/>
+<path class="edge" d="M 455.0 1012.0 L 587.8 1012.0 L 587.8 276.0 L 112.0 276.0" marker-end="url(#arrow-p1tree)"/><text class="edge-label" x="587.8" y="644.0">next</text>
+<path class="edge" d="M -69.4 851.0 L -177.6 943.0" marker-end="url(#arrow-p1tree)"/>
+<path class="edge" d="M -357.2 851.0 L -240.8 943.0" marker-end="url(#arrow-p1tree)"/>
+<path class="edge" d="M -312.0 966.0 L -403.2 966.0 L -403.2 276.0 L -112.0 276.0" marker-end="url(#arrow-p1tree)"/><text class="edge-label" x="-403.2" y="621.0">popped</text>
+</g>
+<g class="nodes">
+<g id="p1tree-start" class="node entry"><rect x="-104" y="-23" width="208" height="46" rx="23"/><text x="0.0" y="0.0">run() / simulate()</text></g>
+<g id="p1tree-root" class="node step has-code" data-fn="settle_highest_at" tabindex="0" role="button"><rect x="-104" y="69" width="208" height="46" rx="9"/><text x="0.0" y="92.0">settle_highest_at(root)</text></g>
+<g id="p1tree-trav" class="node step has-code" data-fn="traverse" tabindex="0" role="button"><rect x="-104" y="161" width="208" height="46" rx="9"/><text x="0.0" y="184.0">traverse()</text></g>
+<g id="p1tree-disp" class="node decision has-code" data-fn="note_dispersion" tabindex="0" role="button"><polygon points="0,245 112,276 0,307 -112,276"/><text x="0.0" y="276.0">dispersed?</text></g>
+<g id="p1tree-retrace" class="node step has-code" data-fn="retrace" tabindex="0" role="button"><rect x="-494" y="253" width="208" height="46" rx="9"/><text x="-390.0" y="276.0">retrace()</text></g>
+<g id="p1tree-post" class="node step"><rect x="-494" y="345" width="208" height="46" rx="9"/><text x="-390.0" y="368.0">post_order() walk</text></g>
+<g id="p1tree-done" class="node terminal"><rect x="-494" y="437" width="208" height="46" rx="23"/><text x="-390.0" y="460.0">Completed</text></g>
+<g id="p1tree-search" class="node step has-code" data-fn="neighbourhood_search" tabindex="0" role="button"><rect x="-104" y="345" width="208" height="46" rx="9"/><text x="0.0" y="368.0">neighbourhood_search()</text></g>
+<g id="p1tree-party" class="node step has-code" data-fn="probe_party" tabindex="0" role="button"><rect x="-104" y="437" width="208" height="46" rx="9"/><text x="0.0" y="460.0">probe_party()</text></g>
+<g id="p1tree-state" class="node step has-code" data-fn="probe_detour" tabindex="0" role="button"><rect x="-104" y="529" width="208" height="46" rx="9"/><text x="0.0" y="552.0">state_of() / probe_detour()</text></g>
+<g id="p1tree-choose" class="node decision has-code" data-fn="choose_next_edge" tabindex="0" role="button"><polygon points="0,613 112,644 0,675 -112,644"/><text x="0.0" y="644.0">choose_next_edge()?</text></g>
+<g id="p1tree-defer" class="node decision has-code" data-fn="must_defer" tabindex="0" role="button"><polygon points="351,705 463,736 351,767 239,736"/><text x="351.0" y="736.0">must_defer()?</text></g>
+<g id="p1tree-await" class="node decision has-code" data-fn="awaits_port_one" tabindex="0" role="button"><polygon points="-390,705 -278,736 -390,767 -502,736"/><text x="-390.0" y="736.0">awaits_port_one()?</text></g>
+<g id="p1tree-partial" class="node step"><rect x="-143" y="805" width="208" height="46" rx="9"/><text x="-39.0" y="828.0">mark partiallyVisited</text></g>
+<g id="p1tree-full" class="node step"><rect x="-494" y="805" width="208" height="46" rx="9"/><text x="-390.0" y="828.0">mark fullyVisited</text></g>
+<g id="p1tree-advance" class="node step has-code" data-fn="advance" tabindex="0" role="button"><rect x="247" y="805" width="208" height="46" rx="9"/><text x="351.0" y="828.0">advance()</text></g>
+<g id="p1tree-canvac" class="node step has-code" data-fn="apply_can_vacate" tabindex="0" role="button"><rect x="247" y="897" width="208" height="46" rx="9"/><text x="351.0" y="920.0">apply_can_vacate()</text></g>
+<g id="p1tree-parvac" class="node step has-code" data-fn="apply_parent_vacate" tabindex="0" role="button"><rect x="247" y="989" width="208" height="46" rx="9"/><text x="351.0" y="1012.0">apply_parent_vacate()</text></g>
+<g id="p1tree-backtrack" class="node step has-code" data-fn="backtrack" tabindex="0" role="button"><rect x="-312" y="943" width="208" height="46" rx="9"/><text x="-208.0" y="966.0">backtrack()</text></g>
+</g>
+</svg>
+</div></div>
+</section>
+</div>
+
+      <aside id="codePane" class="code-pane" aria-live="polite">
+        <div class="code-head">
+          <div><p class="eyebrow">FUNCTION</p><h2 id="codeTitle">Pick a box</h2></div>
+          <button id="codeClose" class="icon-button" type="button" aria-label="Close">×</button>
+        </div>
+        <p id="codeSource" class="code-source"></p>
+        <pre id="codeBody" class="code-body"><code>Boxes with a solid border carry code. Click one and it appears here, exactly as it is in the crate.</code></pre>
+      </aside>
+    </div>
+  </main>
+
+  <footer>Generated from the crates by <code>scripts/gen-docs.sh</code> · <a href="https://github.com/drdebmath/CCMModel">source</a></footer>
+
+  <div id="codeStore" hidden><template data-code="simulate_with" data-source="crates/ccm-algorithms/src/lib.rs">/// Runs Drop-and-Freeze while allowing callers to provide a metrics sink and
+/// recorder.  The algorithm itself never depends on either observer.
+///
+/// # Errors
+///
+/// Returns an error when the graph is invalid, a start node is outside the
+/// graph, or an invariant fails during a transition.
+pub fn simulate_with&lt;M: Metrics, R: Recorder&gt;(
+    graph: &amp;PortGraph,
+    starts: &amp;[NodeId],
+    round_limit: u64,
+    metrics: &amp;mut M,
+    mut recorder: R,
+) -&gt; Result&lt;SimulationRun&lt;R::Output&gt;, DropAndFreezeError&gt; {
+    if starts.len() &gt; u32::MAX as usize {
+        return Err(DropAndFreezeError::TooManyAgents(starts.len()));
+    }
+    for &amp;node in starts {
+        if node.index() &gt;= graph.node_count() {
+            return Err(DropAndFreezeError::InvalidStart(node));
+        }
+    }
+
+    // Python `_init_ports` replaces any supplied local labels with canonical
+    // sorted-neighbor ports.  Normalize before executing the transition rules.
+    let graph = canonicalize_ports(graph)?;
+    let mut state = SimulationState {
+        agents: starts
+            .iter()
+            .copied()
+            .map(DropAgentState::unsettled)
+            .collect(),
+        settled_agent_at: vec![None; graph.node_count()],
+        node_status: vec![DropNodeStatus::Empty; graph.node_count()],
+    };
+
+    validate_state(&amp;graph, &amp;state)?;
+    observe(metrics, &amp;state);
+    recorder.record(FrameLabel::Start, &amp;state);
+
+    let metadata = SimulationMetadata {
+        node_count: graph.node_count(),
+        agent_count: state.agents.len(),
+        round_limit,
+    };
+
+    let mut completed = all_settled(&amp;state);
+    for round in 1..=round_limit {
+        if completed {
+            break;
+        }
+        metrics.macro_round();
+        metrics.logical_rounds(RoundKind::ProbeOut, 1);
+        probe_out(&amp;graph, &amp;mut state, metrics);
+        validate_state(&amp;graph, &amp;state)?;
+        observe(metrics, &amp;state);
+        recorder.record(FrameLabel::ProbeOut { round }, &amp;state);
+
+        metrics.logical_rounds(RoundKind::ProbeBack, 1);
+        probe_back(&amp;graph, &amp;mut state, metrics)?;
+        validate_state(&amp;graph, &amp;state)?;
+        observe(metrics, &amp;state);
+        recorder.record(FrameLabel::ProbeBack { round }, &amp;state);
+
+        metrics.logical_rounds(RoundKind::Movement, 1);
+        move_out(&amp;graph, &amp;mut state, metrics)?;
+        validate_state(&amp;graph, &amp;state)?;
+        observe(metrics, &amp;state);
+        recorder.record(FrameLabel::MoveOut { round }, &amp;state);
+
+        completed = all_settled(&amp;state);
+    }
+
+    let termination = if completed {
+        Termination::Completed
+    } else {
+        Termination::RoundLimitReached { limit: round_limit }
+    };
+    Ok(SimulationRun {
+        metadata,
+        final_state: state,
+        termination,
+        trace: recorder.finish(),
+    })
+}</template><template data-code="canonicalize_ports" data-source="crates/ccm-algorithms/src/lib.rs">fn canonicalize_ports(graph: &amp;PortGraph) -&gt; Result&lt;PortGraph, GraphError&gt; {
+    let mut edges = Vec::with_capacity(graph.edge_count());
+    for source_index in 0..graph.node_count() {
+        let source = NodeId(u32::try_from(source_index).expect(&quot;PortGraph node IDs fit in u32&quot;));
+        for (_, edge) in graph.ports(source) {
+            if source &lt; edge.neighbor {
+                edges.push((source, edge.neighbor));
+            }
+        }
+    }
+    PortGraph::from_undirected_edges(graph.node_count(), &amp;edges)
+}</template><template data-code="probe_out" data-source="crates/ccm-algorithms/src/lib.rs">fn probe_out&lt;M: Metrics&gt;(graph: &amp;PortGraph, state: &amp;mut SimulationState, metrics: &amp;mut M) {
+    let (buckets, active) = occupancy(state);
+    let mut moves = Vec::new();
+    for node in active {
+        let settled = state.settled_agent_at[node.index()];
+        let mut unsettled: Vec&lt;_&gt; = buckets[node.index()]
+            .iter()
+            .copied()
+            .filter(|&amp;agent| {
+                Some(agent) != settled
+                    &amp;&amp; state.agents[agent.index()].status == DropStatus::Unsettled
+            })
+            .collect();
+        if unsettled.is_empty() {
+            continue;
+        }
+        for &amp;agent in &amp;unsettled {
+            let value = &amp;mut state.agents[agent.index()];
+            value.probe_home = None;
+            value.probe_port = None;
+            value.probe_result_empty = None;
+        }
+        if settled.is_none() &amp;&amp; unsettled.len() == 1 {
+            continue;
+        }
+        let ports = ordered_ports(graph, node);
+        if ports.is_empty() {
+            continue;
+        }
+        let start = settled.map_or(0, |agent| state.agents[agent.index()].next_port_to_try);
+        if start &gt;= ports.len() {
+            continue;
+        }
+        unsettled.sort_unstable();
+        for (agent, &amp;port) in unsettled.iter().zip(ports[start..].iter()) {
+            let Some(edge) = graph.traverse(node, port) else {
+                continue;
+            };
+            let value = &amp;mut state.agents[agent.index()];
+            value.probe_home = Some(node);
+            value.probe_port = Some(port);
+            value.probe_result_empty = None;
+            value.status = DropStatus::SettledWaiting;
+            metrics.port_probe();
+            metrics.probe_out_traversal();
+            metrics.agent_moves(1);
+            moves.push(ProbeMove {
+                agent: *agent,
+                destination: edge.neighbor,
+            });
+        }
+    }
+    for movement in moves {
+        state.agents[movement.agent.index()].node = movement.destination;
+    }
+}</template><template data-code="probe_back" data-source="crates/ccm-algorithms/src/lib.rs">fn probe_back&lt;M: Metrics&gt;(
+    graph: &amp;PortGraph,
+    state: &amp;mut SimulationState,
+    metrics: &amp;mut M,
+) -&gt; Result&lt;(), DropAndFreezeError&gt; {
+    let mut moves = Vec::new();
+    for index in 0..state.agents.len() {
+        let agent =
+            ccm_core::AgentId(u32::try_from(index).expect(&quot;agent IDs fit in the dense u32 domain&quot;));
+        if state.agents[index].status != DropStatus::SettledWaiting {
+            continue;
+        }
+        let source = state.agents[index].node;
+        state.agents[index].probe_result_empty =
+            Some(state.settled_agent_at[source.index()].is_none());
+        state.agents[index].status = DropStatus::Unsettled;
+        if let Some(home) = state.agents[index].probe_home {
+            let Some(port) = local_port_to(graph, source, home) else {
+                return Err(DropAndFreezeError::Invariant(
+                    InvariantViolation::InvalidTraversal,
+                ));
+            };
+            metrics.probe_back_traversal();
+            metrics.agent_moves(1);
+            moves.push((agent, home, port));
+        }
+    }
+    for (agent, destination, _incoming_port) in moves {
+        state.agents[agent.index()].node = destination;
+    }
+    Ok(())
+}</template><template data-code="move_out" data-source="crates/ccm-algorithms/src/lib.rs">#[allow(clippy::too_many_lines)]
+fn move_out&lt;M: Metrics&gt;(
+    graph: &amp;PortGraph,
+    state: &amp;mut SimulationState,
+    metrics: &amp;mut M,
+) -&gt; Result&lt;(), DropAndFreezeError&gt; {
+    let (buckets, active) = occupancy(state);
+    let mut movers_by_node = vec![Vec::new(); state.node_status.len()];
+    let mut active_with_movers = Vec::new();
+    for node in active {
+        let settled = state.settled_agent_at[node.index()];
+        let movers: Vec&lt;_&gt; = buckets[node.index()]
+            .iter()
+            .copied()
+            .filter(|&amp;agent| {
+                Some(agent) != settled
+                    &amp;&amp; state.agents[agent.index()].status == DropStatus::Unsettled
+            })
+            .collect();
+        if !movers.is_empty() {
+            active_with_movers.push(node);
+            movers_by_node[node.index()] = movers;
+        }
+    }
+
+    let mut newly_settled = vec![false; state.node_status.len()];
+    for &amp;node in &amp;active_with_movers {
+        if state.settled_agent_at[node.index()].is_some() {
+            continue;
+        }
+        let agent = movers_by_node[node.index()].remove(0);
+        let entry_pin = state.agents[agent.index()].entry_pin;
+        let parent_port = entry_pin.filter(|&amp;port| graph.traverse(node, port).is_some());
+        state.agents[agent.index()].status = DropStatus::Settled;
+        state.agents[agent.index()].parent_port = parent_port;
+        state.agents[agent.index()].next_port_to_try = 0;
+        state.settled_agent_at[node.index()] = Some(agent);
+        state.node_status[node.index()] = DropNodeStatus::Occupied;
+        newly_settled[node.index()] = true;
+        metrics.settlement();
+    }
+
+    let mut planned = Vec::new();
+    for &amp;node in &amp;active_with_movers {
+        let movers = &amp;movers_by_node[node.index()];
+        if movers.is_empty() {
+            continue;
+        }
+        let Some(settled) = state.settled_agent_at[node.index()] else {
+            continue;
+        };
+        let ports = ordered_ports(graph, node);
+        if ports.is_empty() {
+            continue;
+        }
+        let cursor = state.agents[settled.index()].next_port_to_try;
+        let mut scouts = movers.clone();
+        if newly_settled[node.index()] {
+            scouts.push(settled);
+        }
+        let mut empty_ports = Vec::new();
+        for agent in scouts {
+            let value = state.agents[agent.index()];
+            if value.probe_home != Some(node) || value.probe_result_empty != Some(true) {
+                continue;
+            }
+            let Some(port) = value.probe_port else {
+                continue;
+            };
+            if graph.traverse(node, port).is_some() &amp;&amp; !empty_ports.contains(&amp;port) {
+                empty_ports.push(port);
+            }
+        }
+        empty_ports.sort_by_key(|port| {
+            ports
+                .iter()
+                .position(|candidate| candidate == port)
+                .unwrap_or(usize::MAX)
+        });
+
+        let chosen = empty_ports.iter().copied().find(|port| {
+            ports
+                .iter()
+                .position(|candidate| candidate == port)
+                .is_some_and(|index| index &gt;= cursor)
+        });
+        if let Some(port) = chosen {
+            let index = ports
+                .iter()
+                .position(|candidate| candidate == &amp;port)
+                .ok_or(DropAndFreezeError::Invariant(
+                    InvariantViolation::InvalidTraversal,
+                ))?;
+            let edge = graph
+                .traverse(node, port)
+                .ok_or(DropAndFreezeError::Invariant(
+                    InvariantViolation::InvalidTraversal,
+                ))?;
+            state.agents[settled.index()].next_port_to_try = index + 1;
+            planned.push(MoveGroup {
+                agents: movers.clone(),
+                from: node,
+                port,
+                destination: edge.neighbor,
+                backtrack: false,
+            });
+            continue;
+        }
+
+        let probed_count =
+            scouts_for_count(state, node, movers, newly_settled[node.index()], settled);
+        state.agents[settled.index()].next_port_to_try =
+            core::cmp::min(ports.len(), cursor.saturating_add(probed_count));
+        if state.agents[settled.index()].next_port_to_try &lt; ports.len() {
+            continue;
+        }
+        let Some(parent_port) = state.agents[settled.index()].parent_port else {
+            continue;
+        };
+        let Some(edge) = graph.traverse(node, parent_port) else {
+            continue;
+        };
+        state.agents[settled.index()].next_port_to_try = ports.len();
+        planned.push(MoveGroup {
+            agents: movers.clone(),
+            from: node,
+            port: parent_port,
+            destination: edge.neighbor,
+            backtrack: true,
+        });
+    }
+
+    for group in planned {
+        metrics.group_move(group.agents.len());
+        if group.backtrack {
+            metrics.backtrack();
+        }
+        metrics.agent_moves(group.agents.len() as u64);
+        for agent in group.agents {
+            let value = &amp;mut state.agents[agent.index()];
+            value.node = group.destination;
+            let incoming = local_port_to(graph, group.destination, group.from).ok_or(
+                DropAndFreezeError::Invariant(InvariantViolation::InvalidTraversal),
+            )?;
+            value.pin = Some(incoming);
+            value.entry_pin = Some(incoming);
+            value.probe_home = None;
+            value.probe_port = None;
+            value.probe_result_empty = None;
+        }
+    }
+    Ok(())
+}</template><template data-code="ordered_ports" data-source="crates/ccm-algorithms/src/lib.rs">fn ordered_ports(graph: &amp;PortGraph, node: NodeId) -&gt; Vec&lt;PortId&gt; {
+    let mut ports: Vec&lt;(PortId, PortEdge)&gt; = graph.ports(node).collect();
+    ports.sort_by_key(|(port, edge)| {
+        if port.0 != 0 &amp;&amp; edge.remote_port.0 == 0 {
+            (0_u8, port.0)
+        } else if port.0 == 0 {
+            (1_u8, port.0)
+        } else {
+            (2_u8, port.0)
+        }
+    });
+    ports.into_iter().map(|(port, _)| port).collect()
+}</template><template data-code="scouts_for_count" data-source="crates/ccm-algorithms/src/lib.rs">fn scouts_for_count(
+    state: &amp;SimulationState,
+    node: NodeId,
+    movers: &amp;[ccm_core::AgentId],
+    include_settled: bool,
+    settled: ccm_core::AgentId,
+) -&gt; usize {
+    let mut ports = Vec::&lt;PortId&gt;::new();
+    for &amp;agent in movers {
+        let value = state.agents[agent.index()];
+        if value.probe_home == Some(node) {
+            if let Some(port) = value.probe_port {
+                if !ports.contains(&amp;port) {
+                    ports.push(port);
+                }
+            }
+        }
+    }
+    if include_settled {
+        let value = state.agents[settled.index()];
+        if value.probe_home == Some(node) {
+            if let Some(port) = value.probe_port {
+                if !ports.contains(&amp;port) {
+                    ports.push(port);
+                }
+            }
+        }
+    }
+    ports.len()
+}</template><template data-code="run_transitions" data-source="crates/ccm-help-scouts/src/lib.rs">    fn run_transitions(&amp;mut self) -&gt; Result&lt;(), HelpError&gt; {
+        self.observe();
+        while self.unsettled.iter().any(|&amp;value| value) {
+            self.metrics.macro_round();
+            let active = self.active_ids();
+            let head = *active
+                .first()
+                .ok_or(HelpError::Invariant(&quot;empty active set&quot;))?;
+            let node = self.agents[head.index()].node;
+            let owner = if let Some(owner) = self.physical_settler(node, None) {
+                owner
+            } else {
+                let to_settle = self.occupants[node.index()]
+                    .iter()
+                    .copied()
+                    .filter(|id| self.unsettled[id.index()])
+                    .max()
+                    .ok_or(HelpError::MissingSettler(node))?;
+                self.settle(to_settle, node, head)?;
+                self.tick(1)?;
+                to_settle
+            };
+            if !self.unsettled.iter().any(|&amp;value| value) {
+                break;
+            }
+            self.agents[head.index()].previous = Some(owner);
+            let scouts = self.active_ids();
+            let next_port = self.parallel_probe(node, owner, &amp;scouts)?;
+            self.observe();
+            self.update_node_type(node, owner)?;
+            let status = self.can_vacate(node, owner)?;
+            self.agents[owner.index()].status = status;
+            match status {
+                HelpStatus::Settled =&gt; self.vacated[owner.index()] = false,
+                HelpStatus::SettledScout =&gt; self.vacated[owner.index()] = true,
+                HelpStatus::Unsettled =&gt; {}
+            }
+            let moving = self.active_ids();
+            if let Some(port) = next_port {
+                self.agents[owner.index()].recent_port = Some(port);
+                self.agents[head.index()].child_port = Some(port);
+                let destination = self.move_group(&amp;moving, node, port)?;
+                self.metrics.logical_rounds(RoundKind::Movement, 1);
+                self.tick(1)?;
+                if let Some(destination_owner) = self.physical_settler(destination, None) {
+                    let arrival = self.agents[head.index()].arrival_port;
+                    if self.agents[destination_owner.index()].node_type
+                        == NodeType::PartiallyVisited
+                        &amp;&amp; arrival == Some(PortId(0))
+                    {
+                        self.agents[destination_owner.index()].parent = Some(owner);
+                        self.agents[destination_owner.index()].port_at_parent = Some(port);
+                        self.agents[destination_owner.index()].parent_port = arrival;
+                        self.agents[destination_owner.index()].node_type = NodeType::Visited;
+                        self.agents[destination_owner.index()].depth =
+                            self.agents[owner.index()].depth.saturating_add(1);
+                    }
+                }
+            } else {
+                let parent_port = self.agents[owner.index()]
+                    .parent_port
+                    .ok_or(HelpError::MissingParent(node))?;
+                self.agents[head.index()].child_port = None;
+                self.agents[owner.index()].recent_port = Some(parent_port);
+                self.move_group(&amp;moving, node, parent_port)?;
+                self.metrics.backtrack();
+                self.metrics.logical_rounds(RoundKind::Movement, 1);
+                self.tick(1)?;
+            }
+        }
+        self.retrace()?;
+        Ok(())
+    }</template><template data-code="can_vacate" data-source="crates/ccm-help-scouts/src/lib.rs">    fn can_vacate(&amp;mut self, node: NodeId, owner: AgentId) -&gt; Result&lt;HelpStatus, HelpError&gt; {
+        self.metrics.vacate();
+        self.metrics.logical_rounds(RoundKind::Vacate, 2);
+        self.tick(2)?;
+        let state = self.agents[owner.index()].clone();
+        if state.parent_port.is_none() {
+            return Ok(HelpStatus::Settled);
+        }
+        if state.node_type == NodeType::Visited
+            || (state.node_type == NodeType::FullyVisited &amp;&amp; !state.vacated_neighbor)
+        {
+            let destination = self.move_agent(owner, node, PortId(0))?;
+            let other = self.physical_settler(destination, Some(owner));
+            if let Some(other) = other {
+                self.agents[other.index()].vacated_neighbor = true;
+            }
+            let return_port =
+                self.agents[owner.index()]
+                    .arrival_port
+                    .ok_or(HelpError::InvalidPort {
+                        node: destination,
+                        port: PortId(0),
+                    })?;
+            self.move_agent(owner, destination, return_port)?;
+            self.metrics.logical_rounds(RoundKind::Vacate, 2);
+            self.tick(2)?;
+            return Ok(if other.is_some() {
+                HelpStatus::SettledScout
+            } else {
+                HelpStatus::Settled
+            });
+        }
+        if state.node_type == NodeType::PartiallyVisited {
+            return Ok(HelpStatus::SettledScout);
+        }
+        if state.port_at_parent == Some(PortId(0)) {
+            let parent_port = state.parent_port.ok_or(HelpError::MissingParent(node))?;
+            let parent_node = self.move_agent(owner, node, parent_port)?;
+            let parent_owner = self.physical_settler(parent_node, Some(owner));
+            if let Some(parent_owner) = parent_owner {
+                if self.agents[parent_owner.index()].vacated_neighbor {
+                    self.move_agent(owner, parent_node, PortId(0))?;
+                } else {
+                    self.agents[parent_owner.index()].status = HelpStatus::SettledScout;
+                    self.vacated[parent_owner.index()] = true;
+                    let ids = [owner, parent_owner];
+                    self.move_group(&amp;ids, parent_node, PortId(0))?;
+                    self.agents[owner.index()].vacated_neighbor = true;
+                }
+            } else {
+                self.move_agent(owner, parent_node, PortId(0))?;
+            }
+            self.metrics.logical_rounds(RoundKind::Vacate, 2);
+            self.tick(2)?;
+        }
+        Ok(HelpStatus::Settled)
+    }</template><template data-code="parallel_probe" data-source="crates/ccm-help-scouts/src/lib.rs">    fn parallel_probe(
+        &amp;mut self,
+        node: NodeId,
+        owner: AgentId,
+        scouts: &amp;[AgentId],
+    ) -&gt; Result&lt;Option&lt;PortId&gt;, HelpError&gt; {
+        let parent_port = self.agents[owner.index()].parent_port;
+        let ports: Vec&lt;PortId&gt; = self
+            .graph
+            .ports(node)
+            .map(|(port, _)| port)
+            .filter(|&amp;port| Some(port) != parent_port)
+            .collect();
+        self.agents[owner.index()].probe_results.clear();
+        if !ports.is_empty() &amp;&amp; scouts.is_empty() {
+            return Err(HelpError::Invariant(&quot;no scouts available for probe&quot;));
+        }
+        for batch in ports.chunks(scouts.len().max(1)) {
+            for (index, &amp;port) in batch.iter().enumerate() {
+                let scout = scouts[index];
+                let edge_type = self.edge_type(node, port)?;
+                let destination = self.move_agent(scout, node, port)?;
+                self.metrics.port_probe();
+                self.metrics.scout_operation();
+                self.metrics.probe_out_traversal();
+                let owner_at_destination = self.home_owner[destination.index()];
+                let node_type = owner_at_destination
+                    .map_or(NodeType::Unvisited, |id| self.agents[id.index()].node_type);
+                let return_port =
+                    self.agents[scout.index()]
+                        .arrival_port
+                        .ok_or(HelpError::InvalidPort {
+                            node: destination,
+                            port,
+                        })?;
+                self.move_agent(scout, destination, return_port)?;
+                self.metrics.probe_back_traversal();
+                self.agents[owner.index()].probe_results.push(ProbeResult {
+                    port,
+                    edge_type,
+                    node_type,
+                    owner: owner_at_destination,
+                });
+            }
+            self.metrics.logical_rounds(RoundKind::Scout, 2);
+            self.tick(2)?;
+        }
+        self.agents[owner.index()]
+            .probe_results
+            .sort_unstable_by_key(|result| result.port);
+        self.recorder.record_event(
+            self.steps,
+            SimulationEvent::PhaseStarted {
+                phase: Phase::Scout,
+            },
+        );
+        Ok(self.agents[owner.index()]
+            .probe_results
+            .iter()
+            .copied()
+            .min_by_key(|result| Self::candidate_rank(*result))
+            .filter(|result| Self::candidate_rank(*result).0 != 99)
+            .map(|result| result.port))
+    }</template><template data-code="candidate_rank" data-source="crates/ccm-help-scouts/src/lib.rs">    fn candidate_rank(result: ProbeResult) -&gt; (u8, u8, u16) {
+        let node_rank = match result.node_type {
+            NodeType::Unvisited =&gt; 0,
+            NodeType::PartiallyVisited
+                if matches!(result.edge_type, EdgeType::OtherOne | EdgeType::OneOne) =&gt;
+            {
+                1
+            }
+            _ =&gt; 99,
+        };
+        let edge_rank = match result.edge_type {
+            EdgeType::OtherOne =&gt; 0,
+            EdgeType::OneOne | EdgeType::OneOther =&gt; 1,
+            EdgeType::OtherOther =&gt; 2,
+        };
+        (node_rank, edge_rank, result.port.0)
+    }</template><template data-code="move_group" data-source="crates/ccm-help-scouts/src/lib.rs">    fn move_group(
+        &amp;mut self,
+        ids: &amp;[AgentId],
+        from: NodeId,
+        port: PortId,
+    ) -&gt; Result&lt;NodeId, HelpError&gt; {
+        let to = self
+            .graph
+            .traverse(from, port)
+            .ok_or(HelpError::InvalidPort { node: from, port })?
+            .neighbor;
+        for &amp;id in ids {
+            self.move_agent(id, from, port)?;
+        }
+        self.metrics.group_move(ids.len());
+        self.recorder.record_event(
+            self.steps,
+            SimulationEvent::GroupMoved {
+                agents: ids.to_vec(),
+                from,
+                to,
+                out_port: port,
+            },
+        );
+        Ok(to)
+    }</template><template data-code="retrace" data-source="crates/ccm-help-scouts/src/lib.rs">    fn retrace(&amp;mut self) -&gt; Result&lt;(), HelpError&gt; {
+        self.metrics.retrace();
+        let mut vacated = self.active_ids();
+        vacated.retain(|id| self.vacated[id.index()]);
+        if vacated.is_empty() {
+            return Ok(());
+        }
+        let mut tree = vec![Vec::&lt;(NodeId, PortId)&gt;::new(); self.graph.node_count()];
+        for agent in &amp;self.agents {
+            if let (Some(home), Some(parent), Some(parent_port), Some(port_at_parent)) = (
+                agent.home,
+                agent.parent,
+                agent.parent_port,
+                agent.port_at_parent,
+            ) {
+                let parent_home = self.agents[parent.index()]
+                    .home
+                    .ok_or(HelpError::MissingParent(home))?;
+                tree[home.index()].push((parent_home, parent_port));
+                tree[parent_home.index()].push((home, port_at_parent));
+            }
+        }
+        let start = self.agents[vacated[0].index()].node;
+        let mut visited = vec![false; self.graph.node_count()];
+        let mut stack = vec![(start, 0usize)];
+        visited[start.index()] = true;
+        self.settle_vacated_at(start);
+        while !stack.is_empty() &amp;&amp; self.vacated.iter().any(|&amp;value| value) {
+            let (node, index) = *stack.last().expect(&quot;stack non-empty&quot;);
+            let next = tree[node.index()]
+                .iter()
+                .copied()
+                .enumerate()
+                .skip(index)
+                .find(|(_, (neighbor, _))| !visited[neighbor.index()]);
+            if let Some((edge_index, (neighbor, port))) = next {
+                stack.last_mut().expect(&quot;stack non-empty&quot;).1 = edge_index + 1;
+                let group = self.vacated_ids();
+                self.move_group(&amp;group, node, port)?;
+                self.metrics.logical_rounds(RoundKind::Retrace, 1);
+                self.tick(1)?;
+                visited[neighbor.index()] = true;
+                self.settle_vacated_at(neighbor);
+                stack.push((neighbor, 0));
+            } else {
+                stack.pop();
+                if let Some(&amp;(parent, _)) = stack.last() {
+                    let port = tree[node.index()]
+                        .iter()
+                        .find(|(neighbor, _)| *neighbor == parent)
+                        .map(|(_, port)| *port)
+                        .ok_or(HelpError::MissingParent(node))?;
+                    let group = self.vacated_ids();
+                    self.move_group(&amp;group, node, port)?;
+                    self.metrics.logical_rounds(RoundKind::Retrace, 1);
+                    self.tick(1)?;
+                }
+            }
+        }
+        if self.vacated.iter().any(|&amp;value| value) {
+            return Err(HelpError::Invariant(&quot;retrace left vacated settlers&quot;));
+        }
+        Ok(())
+    }</template><template data-code="settle_highest_at" data-source="crates/ccm-p1tree/src/lib.rs">    /// Section 4: &quot;the agent with the highest ID among the unsettled agents at
+    /// v settles&quot;.
+    fn settle_highest_at(&amp;mut self, node: NodeId) {
+        let candidate = self
+            .agents
+            .iter()
+            .enumerate()
+            .filter(|(_, agent)| agent.status == P1Status::Unsettled &amp;&amp; agent.node == node)
+            .map(|(index, _)| index)
+            .next_back();
+        let Some(index) = candidate else {
+            return;
+        };
+        let agent = &amp;mut self.agents[index];
+        agent.status = P1Status::Settled;
+        agent.home = Some(node);
+        agent.node_type = NodeType::Visited;
+        agent.port_one_tree_edge = self.port_one_tree_edge[node.index()];
+        self.settled_at[node.index()] = Some(AgentId(
+            u32::try_from(index).expect(&quot;agent count fits the dense ID domain&quot;),
+        ));
+        self.metrics.settlement();
+    }</template><template data-code="traverse" data-source="crates/ccm-p1tree/src/lib.rs">    /// The `while S != {}` loop of Algorithm 2, with the stack realised by the
+    /// parent pointers the settled agents hold.
+    ///
+    /// The loop runs until the root is popped, which is Algorithm 2's own
+    /// termination. Stopping earlier, as soon as every agent had settled, left
+    /// nodes `partiallyVisited` with a `tpq` parent edge and so broke
+    /// Definition 1: it is exactly the walk back to the root that reconfigures
+    /// them.
+    fn traverse(&amp;mut self) -&gt; Result&lt;Termination, P1Error&gt; {
+        let mut rounds = 0_u64;
+        loop {
+            self.note_dispersion();
+            // Section 5: &quot;The process continues until no unsettled agents
+            // remain.&quot; Once the tree has k vertices the construction is done,
+            // and Retrace follows. Walking on past this point to finish the
+            // whole spanning tree is not what the algorithm does, and on a graph
+            // whose degree far exceeds the agent count that walk is what made
+            // the cost scale with n instead of k.
+            if self.stop == Stop::AtDispersion &amp;&amp; self.dispersed_at_step.is_some() {
+                return Ok(Termination::Completed);
+            }
+            if rounds &gt;= self.round_limit {
+                return Ok(Termination::RoundLimitReached {
+                    limit: self.round_limit,
+                });
+            }
+            rounds += 1;
+            self.metrics.macro_round();
+
+            // With no unsettled agent left there is nobody to settle at an
+            // unvisited node, so those neighbours are not candidates. The head
+            // can still enter a partiallyVisited node to reconfigure it.
+            let can_settle = self.unsettled_count() &gt; 0;
+            let results = self.neighbourhood_search(can_settle)?;
+            let next = Self::choose_next_edge(&amp;results, can_settle);
+
+            if let Some(chosen) = next {
+                if self.must_defer(chosen) {
+                    // Algorithm 2, lines 21-23: taking a tpq edge would
+                    // leave this node with no port-1 incident tree edge, so
+                    // it waits to be claimed by its port-1 neighbour.
+                    self.node_type[self.head.index()] = NodeType::PartiallyVisited;
+                    self.sync_node_type(self.head);
+                    self.apply_can_vacate(self.head);
+                    self.checkpoint(Phase::Movement);
+                    if !self.backtrack()? {
+                        return Ok(Termination::Completed);
+                    }
+                } else {
+                    self.advance(chosen)?;
+                }
+            } else {
+                // Algorithm 2, line 29 marks a node with no candidate edge
+                // fullyVisited. That alone is not enough: a node discovered
+                // through a tpq edge that happens to have no empty
+                // neighbours would finish with only a tpq tree edge and
+                // break Definition 1. Claim 3 of the paper is explicit that
+                // such a vertex &quot;is immediately marked partiallyVisited and
+                // DFS backtracks&quot;, so that its port-1 neighbour can reach it
+                // later and reconfigure it. A node therefore only becomes
+                // fullyVisited once it holds a port-1 incident tree edge.
+                self.node_type[self.head.index()] = if self.awaits_port_one() {
+                    NodeType::PartiallyVisited
+                } else {
+                    NodeType::FullyVisited
+                };
+                self.sync_node_type(self.head);
+                self.apply_can_vacate(self.head);
+                self.checkpoint(Phase::Movement);
+                if !self.backtrack()? {
+                    return Ok(Termination::Completed);
+                }
+            }
+        }
+    }</template><template data-code="note_dispersion" data-source="crates/ccm-p1tree/src/lib.rs">    fn note_dispersion(&amp;mut self) {
+        if self.dispersed_at_step.is_none() &amp;&amp; self.unsettled_count() == 0 {
+            self.dispersed_at_step = Some(self.step);
+        }
+    }</template><template data-code="retrace" data-source="crates/ccm-p1tree/src/lib.rs">    /// Section 5.1. A post-order walk of the finished tree that puts every
+    /// travelling scout back on the node it owns.
+    ///
+    /// The scouts are all standing wherever the head finished, so the walk
+    /// visits the tree bottom-up and drops each one as its home comes past.
+    fn retrace(&amp;mut self) {
+        let mut travelling: Vec&lt;usize&gt; = self
+            .agents
+            .iter()
+            .enumerate()
+            .filter(|(_, agent)| agent.status == P1Status::SettledScout)
+            .map(|(index, _)| index)
+            .collect();
+        if travelling.is_empty() {
+            return;
+        }
+
+        // Children of each node, in the order the DFS added them, so the walk
+        // below is the same post-order the construction took.
+        let mut children: Vec&lt;Vec&lt;NodeId&gt;&gt; = vec![Vec::new(); self.graph.node_count()];
+        for index in 0..self.graph.node_count() {
+            if let Some((parent, _, _)) = self.parent[index] {
+                children[parent.index()].push(NodeId(
+                    u32::try_from(index).expect(&quot;node count fits the dense ID domain&quot;),
+                ));
+            }
+        }
+
+        let mut order = Vec::new();
+        Self::post_order(self.root, &amp;children, &amp;mut order);
+
+        for node in order {
+            self.metrics.logical_rounds(RoundKind::Retrace, 1);
+            self.metrics.retrace();
+            self.metrics.agent_moves(travelling.len() as u64);
+            for &amp;index in &amp;travelling {
+                self.agents[index].node = node;
+            }
+            self.head = node;
+            if let Some(owner) = self.settled_at[node.index()] {
+                if let Some(position) = travelling.iter().position(|&amp;i| i == owner.index()) {
+                    travelling.remove(position);
+                    self.agents[owner.index()].status = P1Status::Settled;
+                    self.agents[owner.index()].node = node;
+                }
+            }
+            self.checkpoint(Phase::Retrace);
+            if travelling.is_empty() {
+                break;
+            }
+        }
+    }</template><template data-code="neighbourhood_search" data-source="crates/ccm-p1tree/src/lib.rs">    /// Section 4.2's parallel probe: the scouts fan out over the head's ports
+    /// together and come back reporting what they saw.
+    ///
+    /// Ports are handed to scouts in increasing agent-ID order. When there are
+    /// at least as many scouts as ports the whole search is two rounds, out and
+    /// back, which is the `O(1)`-epoch neighbourhood search the paper's bound
+    /// rests on; with fewer scouts the assignment repeats until every port has
+    /// been probed. The parent port is skipped, as in the paper: the parent is
+    /// known to be occupied and is reached by backtracking, not by probing.
+    ///
+    /// The paper's rules (R1)-(R3) exist to tell an *empty* neighbour from a
+    /// *vacated* one, which is ambiguous because a vacated node's settled agent
+    /// has left it to travel as a scout. This implementation does not vacate
+    /// (Section 4.1), so a node without a settled agent present is always empty
+    /// and rule (R1) decides every case on its own.
+    fn neighbourhood_search(&amp;mut self, can_settle: bool) -&gt; Result&lt;Vec&lt;ProbeResult&gt;, P1Error&gt; {
+        let head = self.head;
+        let degree = self.graph.degree(head).unwrap_or(0);
+        let parent_port = self.parent[head.index()].map(|(_, port, _)| port);
+        let ports: Vec&lt;PortId&gt; = (0..degree)
+            .map(PortId)
+            .filter(|port| Some(*port) != parent_port)
+            .collect();
+        let scouts = self.probe_party();
+        let mut results = Vec::with_capacity(ports.len());
+        if ports.is_empty() || scouts.is_empty() {
+            return Ok(results);
+        }
+
+        for batch in ports.chunks(scouts.len()) {
+            let moved = batch.len() as u64;
+
+            self.metrics.logical_rounds(RoundKind::ProbeOut, 1);
+            for (&amp;port, &amp;scout) in batch.iter().zip(scouts.iter()) {
+                let edge = self
+                    .graph
+                    .traverse(head, port)
+                    .ok_or(P1Error::InvalidPort { node: head, port })?;
+                self.metrics.port_probe();
+                self.metrics.probe_out_traversal();
+                self.metrics.scout_operation();
+                self.agents[scout].node = edge.neighbor;
+                let state = self.state_of(edge.neighbor);
+                // Rules (R2) and (R3): a scout that finds nobody home cannot yet
+                // tell empty from vacated, and walks on to the port-1 neighbour
+                // (and sometimes one further) to settle the question. The answer
+                // is Lemma 5's, which is what the ownership index already holds,
+                // but the walk is real and is charged here.
+                let detour = self.probe_detour(edge.neighbor, edge.remote_port, state);
+                for _ in 0..detour {
+                    self.metrics.probe_out_traversal();
+                    self.metrics.agent_moves(1);
+                }
+                results.push(ProbeResult {
+                    port,
+                    edge_type: EdgeType::of(port, edge.remote_port),
+                    node_type: self.node_type[edge.neighbor.index()],
+                    node_state: state,
+                    owner: self.settled_at[edge.neighbor.index()],
+                });
+            }
+            self.metrics.agent_moves(moved);
+            self.checkpoint(Phase::ProbeOut);
+
+            self.metrics.logical_rounds(RoundKind::ProbeBack, 1);
+            for (&amp;port, &amp;scout) in batch.iter().zip(scouts.iter()) {
+                let steps = self.graph.traverse(head, port).map_or(1, |edge| {
+                    1 + self.probe_detour(
+                        edge.neighbor,
+                        edge.remote_port,
+                        self.state_of(edge.neighbor),
+                    )
+                });
+                for _ in 0..steps {
+                    self.metrics.probe_back_traversal();
+                }
+                self.metrics.agent_moves(steps.saturating_sub(1));
+                self.agents[scout].node = head;
+            }
+            self.metrics.agent_moves(moved);
+            self.checkpoint(Phase::ProbeBack);
+
+            // Stop as soon as a batch has turned up somewhere to go. Remark 1
+            // of the paper bounds the search at &quot;k-1 ports at the root node and
+            // k-2 ports at a non-root node&quot;, not at the degree, and the reason
+            // is pigeonhole: at most k nodes are ever occupied, so while any
+            // agent is still unsettled some probed neighbour must be empty.
+            //
+            // Scanning every port instead made the cost scale with the degree
+            // rather than with the agent count: 40 agents on a 4000-node
+            // complete graph took 32357 rounds, where the DFS itself only made
+            // 155 visits. The remaining ports are only worth probing when
+            // nothing has been found, which is exactly the case that has to
+            // rule out an empty neighbour before a node can be declared
+            // finished.
+            if Self::choose_next_edge(&amp;results, can_settle).is_some() {
+                break;
+            }
+        }
+
+        if let Some(agent) = self.settled_at[head.index()] {
+            self.agents[agent.index()]
+                .probe_results
+                .clone_from(&amp;results);
+        }
+        Ok(results)
+    }</template><template data-code="probe_party" data-source="crates/ccm-p1tree/src/lib.rs">    /// The agents that travel to perform a neighbourhood search.
+    ///
+    /// Once every agent has settled there is no travelling group left, and
+    /// Section 4 has the node's own settled agent do the search. The head then
+    /// moves between nodes as a logical locus: the tree pointers already exist
+    /// and each node's agent does its own local work, so no agent has to
+    /// abandon the node it is settled at.
+    fn probe_party(&amp;self) -&gt; Vec&lt;usize&gt; {
+        let travelling: Vec&lt;usize&gt; = self
+            .agents
+            .iter()
+            .enumerate()
+            .filter(|(_, agent)| {
+                matches!(agent.status, P1Status::Unsettled | P1Status::SettledScout)
+            })
+            .map(|(index, _)| index)
+            .collect();
+        if !travelling.is_empty() {
+            return travelling;
+        }
+        // Nothing is travelling: the node's own settled agent probes for itself.
+        self.settled_at[self.head.index()]
+            .map(|agent| vec![agent.index()])
+            .unwrap_or_default()
+    }</template><template data-code="probe_detour" data-source="crates/ccm-p1tree/src/lib.rs">    /// How many extra edges a scout walks past the neighbour before it can
+    /// answer, following rules (R1)-(R3).
+    ///
+    /// (R1) somebody is home, so no detour. (R2) nobody is home and the scout
+    /// arrived on port 1, so the node is empty and no detour. (R3) otherwise the
+    /// scout steps to the port-1 neighbour, and once more if that one is also
+    /// deserted.
+    fn probe_detour(&amp;self, neighbor: NodeId, arrival_port: PortId, state: NodeState) -&gt; u64 {
+        if state == NodeState::Occupied || arrival_port == PORT_ONE {
+            return 0;
+        }
+        let Some(first) = self.graph.traverse(neighbor, PORT_ONE) else {
+            return 0;
+        };
+        if self.state_of(first.neighbor) == NodeState::Occupied || first.remote_port == PORT_ONE {
+            return 1;
+        }
+        2
+    }</template><template data-code="choose_next_edge" data-source="crates/ccm-p1tree/src/lib.rs">    /// Algorithm 2, lines 8-17: the highest-priority incident edge leading to a
+    /// node the head may enter.
+    ///
+    /// A `PartiallyVisited` neighbour counts as empty exactly when this edge
+    /// carries port 1 at that neighbour, which is rule (D4).
+    fn choose_next_edge(results: &amp;[ProbeResult], can_settle: bool) -&gt; Option&lt;ProbeResult&gt; {
+        let mut ordered: Vec&lt;&amp;ProbeResult&gt; = results.iter().collect();
+        ordered.sort_by_key(|result| (result.edge_type.priority(), result.port.0));
+        ordered
+            .into_iter()
+            .find(|result| match result.node_type {
+                NodeType::Unvisited =&gt; can_settle,
+                NodeType::PartiallyVisited =&gt; {
+                    matches!(result.edge_type, EdgeType::OtherOne | EdgeType::OneOne)
+                }
+                NodeType::Visited | NodeType::FullyVisited =&gt; false,
+            })
+            .copied()
+    }</template><template data-code="must_defer" data-source="crates/ccm-p1tree/src/lib.rs">    /// Algorithm 2, line 21: the candidate and the parent edge are both `tpq`
+    /// and this node has no port-1 incident tree edge to fall back on.
+    fn must_defer(&amp;self, chosen: ProbeResult) -&gt; bool {
+        if chosen.edge_type.is_port_one_incident() {
+            return false;
+        }
+        let Some((_, _, parent_type)) = self.parent[self.head.index()] else {
+            // The root has no parent edge, so the rule cannot apply to it.
+            return false;
+        };
+        !parent_type.is_port_one_incident() &amp;&amp; !self.port_one_tree_edge[self.head.index()]
+    }</template><template data-code="awaits_port_one" data-source="crates/ccm-p1tree/src/lib.rs">    /// Whether this node still needs its port-1 neighbour to come and
+    /// reconfigure it: it was reached through a `tpq` edge and no tree edge at
+    /// it carries port 1. Observation 1 guarantees such a neighbour exists.
+    fn awaits_port_one(&amp;self) -&gt; bool {
+        let Some((_, _, parent_type)) = self.parent[self.head.index()] else {
+            // The root's first tree edge is always port-1 incident, since at
+            // that moment every higher-priority edge still leads somewhere
+            // unvisited.
+            return false;
+        };
+        !parent_type.is_port_one_incident() &amp;&amp; !self.port_one_tree_edge[self.head.index()]
+    }</template><template data-code="advance" data-source="crates/ccm-p1tree/src/lib.rs">    /// Algorithm 2, lines 25-27: take the edge, and settle or reconfigure at the
+    /// far end.
+    fn advance(&amp;mut self, chosen: ProbeResult) -&gt; Result&lt;(), P1Error&gt; {
+        let from = self.head;
+        let edge = self
+            .graph
+            .traverse(from, chosen.port)
+            .ok_or(P1Error::InvalidPort {
+                node: from,
+                port: chosen.port,
+            })?;
+        let target = edge.neighbor;
+        let was = self.node_type[target.index()];
+
+        self.metrics.logical_rounds(RoundKind::Movement, 1);
+        self.metrics.group_move(self.unsettled_count());
+        self.metrics.agent_moves(self.unsettled_count() as u64);
+        self.move_unsettled_to(target);
+        self.head = target;
+
+        // The edge as seen from the target, which is the direction Definition 1
+        // and the parent pointers are stated in.
+        let from_target = EdgeType::of(edge.remote_port, chosen.port);
+
+        match was {
+            NodeType::Unvisited =&gt; {
+                // Settle before recording the parent edge: the settled agent is
+                // where the node's parent pointers live, so writing them first
+                // wrote them nowhere.
+                self.settle_highest_at(target);
+                self.node_type[target.index()] = NodeType::Visited;
+            }
+            NodeType::PartiallyVisited =&gt; {
+                // Reconfiguration (rule (D4)): the old tpq parent edge is
+                // dropped in set_parent above and this port-1 edge takes its
+                // place, which makes the node visited.
+                self.node_type[target.index()] = NodeType::Visited;
+            }
+            NodeType::Visited | NodeType::FullyVisited =&gt; {}
+        }
+        self.set_parent(target, from, edge.remote_port, chosen.port, from_target);
+        self.sync_node_type(target);
+        // Rules V2 and V5 look at the node just left and at the new node's
+        // parent, both of which are only settled now that the move is recorded.
+        self.apply_can_vacate(from);
+        self.apply_parent_vacate(target);
+        self.checkpoint(Phase::Movement);
+        Ok(())
+    }</template><template data-code="apply_can_vacate" data-source="crates/ccm-p1tree/src/lib.rs">    /// Algorithm 3, `Can_Vacate()`. Decides whether the agent settled at `node`
+    /// may leave and travel with the head as a scout.
+    ///
+    /// The point of vacating is supply: a node only ever holds one settled
+    /// agent, so without releasing some of them the head runs out of scouts as
+    /// soon as the last agent settles, and the parallel probe has nobody to
+    /// probe with. Lemma 4 is what this buys — at least a third of the tree is
+    /// vacated at any moment.
+    fn apply_can_vacate(&amp;mut self, node: NodeId) {
+        let Some(owner) = self.settled_at[node.index()] else {
+            return;
+        };
+        if self.agents[owner.index()].status != P1Status::Settled {
+            return;
+        }
+        // (V1) the root is always occupied.
+        if self.parent[node.index()].is_none() {
+            return;
+        }
+        let node_type = self.node_type[node.index()];
+        let vacated_neighbor = self.agents[owner.index()].vacated_neighbor;
+
+        match node_type {
+            // (V2) a visited node vacates when its port-1 neighbour is occupied.
+            // The head steps there to record that this node leaned on it.
+            NodeType::Visited =&gt; {
+                let Some(edge) = self.graph.traverse(node, PORT_ONE) else {
+                    return;
+                };
+                if self.state_of(edge.neighbor) != NodeState::Occupied {
+                    return;
+                }
+                if let Some(neighbor_owner) = self.settled_at[edge.neighbor.index()] {
+                    self.agents[neighbor_owner.index()].vacated_neighbor = true;
+                }
+                // Algorithm 3 lines 4-8: visit the port-1 neighbour and return.
+                self.metrics.agent_moves(2);
+                self.metrics.vacate();
+                self.agents[owner.index()].status = P1Status::SettledScout;
+            }
+            // (V3) a fullyVisited node vacates unless a neighbour is leaning on
+            // it, and (V4) a partiallyVisited node always vacates.
+            NodeType::FullyVisited if !vacated_neighbor =&gt; {
+                self.metrics.vacate();
+                self.agents[owner.index()].status = P1Status::SettledScout;
+            }
+            NodeType::PartiallyVisited =&gt; {
+                self.metrics.vacate();
+                self.agents[owner.index()].status = P1Status::SettledScout;
+            }
+            _ =&gt; {}
+        }
+    }</template><template data-code="apply_parent_vacate" data-source="crates/ccm-p1tree/src/lib.rs">    /// (V5) Algorithm 3, lines 15-25. When this node's port at the parent is
+    /// port 1, the parent may vacate instead, provided nothing already leans on
+    /// it.
+    fn apply_parent_vacate(&amp;mut self, node: NodeId) {
+        let Some((parent, _, _)) = self.parent[node.index()] else {
+            return;
+        };
+        let Some(owner) = self.settled_at[node.index()] else {
+            return;
+        };
+        if self.agents[owner.index()].port_at_parent != Some(PORT_ONE) {
+            return;
+        }
+        // The root never vacates (V1).
+        if self.parent[parent.index()].is_none() {
+            return;
+        }
+        let Some(parent_owner) = self.settled_at[parent.index()] else {
+            return;
+        };
+        if self.agents[parent_owner.index()].status != P1Status::Settled
+            || self.agents[parent_owner.index()].vacated_neighbor
+        {
+            return;
+        }
+        // Algorithm 3 lines 16-21: visit the parent and return.
+        self.metrics.agent_moves(2);
+        self.metrics.vacate();
+        self.agents[parent_owner.index()].status = P1Status::SettledScout;
+        self.agents[owner.index()].vacated_neighbor = true;
+    }</template><template data-code="backtrack" data-source="crates/ccm-p1tree/src/lib.rs">    /// Moves the DFS head to the parent of the current node. Returns false when
+    /// the root is popped, which empties the stack and ends the traversal.
+    fn backtrack(&amp;mut self) -&gt; Result&lt;bool, P1Error&gt; {
+        let Some((parent, port, _)) = self.parent[self.head.index()] else {
+            return Ok(false);
+        };
+        let edge = self
+            .graph
+            .traverse(self.head, port)
+            .ok_or(P1Error::BrokenTree(self.head))?;
+        if edge.neighbor != parent {
+            return Err(P1Error::BrokenTree(self.head));
+        }
+        self.metrics.logical_rounds(RoundKind::Movement, 1);
+        self.metrics.backtrack();
+        self.metrics.group_move(self.unsettled_count());
+        self.metrics.agent_moves(self.unsettled_count() as u64);
+        self.move_unsettled_to(parent);
+        self.head = parent;
+        self.checkpoint(Phase::Movement);
+        Ok(true)
+    }</template></div>
+
+  <script type="module">
+    const engine = document.getElementById('codeTitle');
+    try {
+      const response = await fetch('./wasm/web/manifest.json', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`manifest returned ${response.status}`);
+      const { buildId } = await response.json();
+      if (!buildId) throw new Error('manifest has no build id');
+      await import(`./docs.js?v=${encodeURIComponent(buildId)}`);
+    } catch (error) {
+      engine.textContent = 'Interactivity unavailable';
+      document.getElementById('codeBody').textContent =
+        `Could not start the page controller (${error.message}). Build the browser package ` +
+        `with ./scripts/build-wasm.sh, then serve over HTTP with: cargo run -p ccm-serve. ` +
+        `The diagrams below are plain SVG and are readable without it.`;
+      document.querySelector('.chart-panel')?.classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>

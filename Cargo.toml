@@ -3,6 +3,7 @@ members = [
     "crates/ccm-algorithms",
     "crates/ccm-bench",
     "crates/ccm-core",
+    "crates/ccm-docgen",
     "crates/ccm-cli",
     "crates/ccm-compat",
     "crates/ccm-experiments",

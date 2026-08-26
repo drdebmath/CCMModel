@@ -52,6 +52,18 @@ jobs:
             exit 1
           fi
 
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Regenerate the interactive page
+        run: ./scripts/gen-docs.sh
+
+      - name: Fail if docs.html is stale
+        run: |
+          if ! git diff --exit-code -- docs.html; then
+            echo "::error::docs.html is out of date. Run ./scripts/gen-docs.sh and commit the result."
+            exit 1
+          fi
+
   wasm-is-current:
     # wasm/web is committed and GitHub Pages serves it directly, so a forgotten
     # ./scripts/build-wasm.sh silently ships stale code with no error anywhere.

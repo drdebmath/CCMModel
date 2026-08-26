@@ -511,6 +511,317 @@ input[type=range] {
     min-height: min(300px, 46vh);
   }
 }
+/* ---------------------------------------------------------- docs page --- */
+
+.docs-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: clamp(14px, 2.2vw, 26px);
+}
+
+.docs-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chart-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chart-tab {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.chart-tab:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.chart-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zoom-level {
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.docs-hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.docs-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0fr);
+  /* Bounds the row: without it the code pane's content sets the row height and
+     the chart, which is sized to the row, grows with it. */
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  transition: grid-template-columns .18s ease;
+}
+
+/* The code pane takes its share only once something is being read. */
+.docs-main:has(.code-pane.open) {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 460px);
+  gap: 14px;
+}
+
+.charts {
+  position: relative;
+  min-width: 0;
+  min-height: min(620px, 68vh);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--canvas);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  cursor: grab;
+}
+
+.charts:active {
+  cursor: grabbing;
+}
+
+.chart-panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-blurb {
+  margin: 0;
+  padding: 14px 18px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  position: relative;
+  z-index: 1;
+}
+
+.chart-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The stage fills the frame and the SVG's viewBox does the fitting, so a scale
+   of 1 already shows the whole chart as large as it will go. Zoom is then
+   purely the reader's, not a correction for a badly sized diagram. */
+.chart-stage {
+  width: 100%;
+  height: 100%;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.chart {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* --- diagram marks. Written against the theme tokens so the charts follow
+   the light/dark toggle instead of baking one theme in. --- */
+
+.chart .edge {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1.6;
+}
+
+.chart .edge.aside {
+  stroke-dasharray: 4 4;
+  opacity: .75;
+}
+
+.chart marker path {
+  fill: var(--border);
+}
+
+.chart .edge-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: var(--canvas);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.chart .node text {
+  fill: var(--text);
+  font-size: 12.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+.chart .node rect,
+.chart .node polygon {
+  fill: var(--panel-2);
+  stroke: var(--border);
+  stroke-width: 1.4;
+}
+
+.chart .entry rect {
+  fill: color-mix(in srgb, var(--accent) 22%, var(--panel-2));
+  stroke: var(--accent);
+}
+
+.chart .terminal rect {
+  fill: color-mix(in srgb, var(--accent-2) 18%, var(--panel-2));
+  stroke: var(--accent-2);
+}
+
+.chart .aside rect {
+  fill: transparent;
+  stroke-dasharray: 5 4;
+}
+
+.chart .aside text {
+  fill: var(--muted);
+  font-size: 11.5px;
+}
+
+/* A box that carries code invites a click. */
+.chart .has-code {
+  cursor: pointer;
+}
+
+.chart .has-code:hover rect,
+.chart .has-code:hover polygon,
+.chart .has-code:focus-visible rect,
+.chart .has-code:focus-visible polygon {
+  stroke: var(--accent);
+  stroke-width: 2.2;
+}
+
+.chart .has-code:focus-visible {
+  outline: none;
+}
+
+.chart .selected rect,
+.chart .selected polygon {
+  stroke: var(--accent);
+  stroke-width: 2.6;
+  fill: color-mix(in srgb, var(--accent) 16%, var(--panel-2));
+}
+
+/* --- the code pane --- */
+
+.code-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: none;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.code-pane.open {
+  display: flex;
+}
+
+.code-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 6px;
+}
+
+.code-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.code-source {
+  margin: 0;
+  padding: 0 16px 10px;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  border-bottom: 1px solid var(--border);
+}
+
+.code-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text);
+  tab-size: 4;
+  white-space: pre;
+}
+
+@media (max-width: 900px) {
+  /* One column, so the two panes stack and the page scrolls instead of each
+     pane scrolling inside a fixed shell. */
+  body:has(.docs-shell) {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .docs-main,
+  .docs-main:has(.code-pane.open) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 14px;
+  }
+
+  .charts {
+    min-height: min(460px, 56vh);
+  }
+
+  .code-pane {
+    max-height: 70vh;
+  }
+}
 
 /* ----------------------------------------------------------- glossary --- */
 
