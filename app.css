@@ -591,6 +591,20 @@ input[type=range] {
   opacity: .82;
 }
 
+/* Links out to the documentation. They sit inside muted note text, so they
+   carry the accent to stay findable without shouting. */
+.glossary a,
+.help-note a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.glossary a:hover,
+.help-note a:hover {
+  border-bottom-color: currentColor;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .glossary summary::before {
     transition: none;

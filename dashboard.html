@@ -10,7 +10,7 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark" aria-hidden="true">◈</span><span>CCM Dashboard</span><small>Cost sweep</small></div>
-    <div class="top-actions"><a class="text-link" href="./index.html">Simulator</a><span id="engineState" class="engine-state" role="status">Checking WASM…</span><button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme">☀</button><button id="panelToggle" class="icon-button mobile-only" type="button" aria-label="Open controls">☰</button></div>
+    <div class="top-actions"><a class="text-link" href="./index.html">Simulator</a><a class="text-link" href="https://github.com/drdebmath/CCMModel/tree/main/docs" target="_blank" rel="noopener noreferrer">Docs</a><span id="engineState" class="engine-state" role="status">Checking WASM…</span><button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme">☀</button><button id="panelToggle" class="icon-button mobile-only" type="button" aria-label="Open controls">☰</button></div>
   </header>
 
   <div class="app-shell">
@@ -44,7 +44,7 @@
 
       <div class="run-actions"><button id="run" class="primary" type="button">Run sweep</button><button id="exportCsv" class="secondary" type="button">Export CSV</button></div>
       <p id="message" class="message" role="status">Choose an algorithm and graph classes, then run.</p>
-      <p class="help-note">Every point is one simulation with tracing off, run locally in a Web Worker. A wide range over many classes is a lot of simulations.</p>
+      <p class="help-note">Every point is one simulation with tracing off, run locally in a Web Worker. A wide range over many classes is a lot of simulations. <a href="https://github.com/drdebmath/CCMModel/blob/main/docs/complexity-metrics.md" target="_blank" rel="noopener noreferrer">What these counters mean</a>.</p>
     </aside>
 
     <main class="workspace">

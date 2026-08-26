@@ -166,9 +166,12 @@ tree; it is retained as the record of why the migration was undertaken.
 - `ccm-p1tree`: P1Tree dispersion, from Pattanayak et al. See
   [docs/p1tree.md](docs/p1tree.md).
 
-For how each algorithm actually runs, [docs/algorithm-flowcharts.md](docs/algorithm-flowcharts.md)
+All documentation is indexed in [docs/README.md](docs/README.md). For how each
+algorithm actually runs, [docs/algorithm-flowcharts.md](docs/algorithm-flowcharts.md)
 has a flowchart per algorithm with the code of every function it names, pulled
-from the crates so the two cannot drift.
+from the crates so the two cannot drift. Read the flowcharts on GitHub: the copy
+GitHub Pages serves does not render mermaid, and shows the diagram source
+instead.
 - `ccm-trace`: shared `NoTrace`, `FullTrace`, and deterministic bounded trace.
 - `ccm-experiments`: graph/port/placement families and parallel sweeps.
 - `ccm-cli`: native CSV command line.
