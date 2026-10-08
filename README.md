@@ -1,19 +1,19 @@
 # CCMModel
 
-CCMModel is a deterministic research simulator and browser visualizer for two
-mobile-agent dispersion algorithms:
+CCMModel is a deterministic research simulator and browser visualizer for
+three mobile-agent dispersion algorithms:
 
-- Drop-and-Freeze;
-- Help-by-Scouts;
+- Drop-and-Freeze (legacy baseline);
+- Help-by-Scouts (legacy baseline);
 - P1Tree (`DFS_P1Tree`).
 
-Both native experiments and browser playback execute the same authoritative
+Native experiments and browser playback execute the same authoritative
 Rust algorithms. The repository is Rust end to end: simulation core, native
 CLI, browser application, and development server. The production browser is client-only Rust/WebAssembly in a
 Web Worker with Canvas 2D rendering—no Python, Pyodide, NetworkX, Cytoscape,
 CDN, or application backend.
 
-> Drop-and-Freeze and Help-by-Scouts preserve the behavior of the historical
+> Drop-and-Freeze and Help-by-Scouts are legacy baselines: they preserve the behavior of the historical
 > Python files they replaced. Their names and transitions are not literal ports
 > of the algorithms in Sudo et al., *Near-linear Time Dispersion of Mobile
 > Agents*. Read [the behavior specification](docs/behavior-spec.md) before
@@ -21,9 +21,10 @@ CDN, or application backend.
 >
 > P1Tree is different in kind: it is written from Pattanayak et al., *Optimal
 > Dispersion Under Asynchrony*, and implements that paper's Definition 1 and
-> Algorithm 2. It implements the sequential neighbourhood search rather than the
-> asynchronous parallel-probe optimisation, so its round counts are not the
-> paper's `O(k)` bound. See [docs/p1tree.md](docs/p1tree.md).
+> Algorithm 2, with the parallel neighbourhood search, vacating and retrace.
+> It runs under this repository's synchronous scheduler rather than an
+> asynchronous one, so its round counts are not the paper's `O(k)` epoch bound.
+> See [docs/p1tree.md](docs/p1tree.md).
 
 ## Quick start: native research runs
 

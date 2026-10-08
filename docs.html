@@ -501,15 +501,7 @@ fn move_out&lt;M: Metrics&gt;(
     Ok(())
 }</template><template data-code="ordered_ports" data-source="crates/ccm-algorithms/src/drop_and_freeze.rs">fn ordered_ports(graph: &amp;PortGraph, node: NodeId) -&gt; Vec&lt;PortId&gt; {
     let mut ports: Vec&lt;(PortId, PortEdge)&gt; = graph.ports(node).collect();
-    ports.sort_by_key(|(port, edge)| {
-        if port.0 != 0 &amp;&amp; edge.remote_port.0 == 0 {
-            (0_u8, port.0)
-        } else if port.0 == 0 {
-            (1_u8, port.0)
-        } else {
-            (2_u8, port.0)
-        }
-    });
+    ports.sort_by_key(|(port, edge)| (EdgeType::of(*port, edge.remote_port).priority(), port.0));
     ports.into_iter().map(|(port, _)| port).collect()
 }</template><template data-code="scouts_for_count" data-source="crates/ccm-algorithms/src/drop_and_freeze.rs">fn scouts_for_count(
     state: &amp;SimulationState,
@@ -741,12 +733,7 @@ fn move_out&lt;M: Metrics&gt;(
             }
             _ =&gt; 99,
         };
-        let edge_rank = match result.edge_type {
-            EdgeType::OtherOne =&gt; 0,
-            EdgeType::OneOne | EdgeType::OneOther =&gt; 1,
-            EdgeType::OtherOther =&gt; 2,
-        };
-        (node_rank, edge_rank, result.port.0)
+        (node_rank, result.edge_type.priority(), result.port.0)
     }</template><template data-code="move_group" data-source="crates/ccm-algorithms/src/help_by_scouts.rs">    fn move_group(
         &amp;mut self,
         ids: &amp;[AgentId],
