@@ -1,10 +1,12 @@
-//! Typed algorithm adapters for the current CCM Python reference behavior.
+//! Drop-and-Freeze: a **legacy baseline**, kept to preserve the behaviour of
+//! the historical Python reference.
 //!
-//! This crate intentionally models the dedicated `agent_drop_freeze.py`
+//! This module intentionally models the dedicated `agent_drop_freeze.py`
 //! transition rules.  It is not a claim that those rules are a literal port
 //! of the rooted algorithm in Sudo et al.; see `docs/behavior-spec.md` and
 //! `docs/complexity-metrics.md` for the distinction.
 
+use crate::common::EdgeType;
 use ccm_core::{
     ComplexityMetrics, GraphError, InvariantViolation, LogicalMemory, Metrics, NodeId, PortEdge,
     PortGraph, PortId, RoundKind, Termination,
@@ -326,15 +328,7 @@ fn canonicalize_ports(graph: &PortGraph) -> Result<PortGraph, GraphError> {
 
 fn ordered_ports(graph: &PortGraph, node: NodeId) -> Vec<PortId> {
     let mut ports: Vec<(PortId, PortEdge)> = graph.ports(node).collect();
-    ports.sort_by_key(|(port, edge)| {
-        if port.0 != 0 && edge.remote_port.0 == 0 {
-            (0_u8, port.0)
-        } else if port.0 == 0 {
-            (1_u8, port.0)
-        } else {
-            (2_u8, port.0)
-        }
-    });
+    ports.sort_by_key(|(port, edge)| (EdgeType::of(*port, edge.remote_port).priority(), port.0));
     ports.into_iter().map(|(port, _)| port).collect()
 }
 

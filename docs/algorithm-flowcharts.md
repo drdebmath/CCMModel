@@ -150,15 +150,7 @@ fn canonicalize_ports(graph: &PortGraph) -> Result<PortGraph, GraphError> {
 ```rust
 fn ordered_ports(graph: &PortGraph, node: NodeId) -> Vec<PortId> {
     let mut ports: Vec<(PortId, PortEdge)> = graph.ports(node).collect();
-    ports.sort_by_key(|(port, edge)| {
-        if port.0 != 0 && edge.remote_port.0 == 0 {
-            (0_u8, port.0)
-        } else if port.0 == 0 {
-            (1_u8, port.0)
-        } else {
-            (2_u8, port.0)
-        }
-    });
+    ports.sort_by_key(|(port, edge)| (EdgeType::of(*port, edge.remote_port).priority(), port.0));
     ports.into_iter().map(|(port, _)| port).collect()
 }
 ```
@@ -599,12 +591,7 @@ flowchart TD
             }
             _ => 99,
         };
-        let edge_rank = match result.edge_type {
-            EdgeType::OtherOne => 0,
-            EdgeType::OneOne | EdgeType::OneOther => 1,
-            EdgeType::OtherOther => 2,
-        };
-        (node_rank, edge_rank, result.port.0)
+        (node_rank, result.edge_type.priority(), result.port.0)
     }
 ```
 

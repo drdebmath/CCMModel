@@ -7,7 +7,7 @@ mobile-agent dispersion algorithms:
 - Help-by-Scouts (legacy baseline);
 - P1Tree (`DFS_P1Tree`), from Pattanayak et al.
 
-Both native experiments and browser playback execute the same authoritative
+Native experiments and browser playback execute the same authoritative
 Rust algorithms. The repository is Rust end to end: simulation core, native
 CLI, browser application, and development server. The production browser is client-only Rust/WebAssembly in a
 Web Worker with Canvas 2D rendering—no Python, Pyodide, NetworkX, Cytoscape,

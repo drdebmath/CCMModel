@@ -1,7 +1,13 @@
-//! Indexed, deterministic port of the repository's Help-by-Scouts behavior.
+//! Help-by-Scouts: a **legacy baseline**, an indexed, deterministic port of the
+//! repository's historical Help-by-Scouts behaviour.
+//!
+//! Like Drop-and-Freeze it is not a literal implementation of Sudo et al.; see
+//! `docs/behavior-spec.md`. It supports rooted placements only.
 
 use ccm_core::{AgentId, AgentStatus, Metrics, NodeId, PortGraph, PortId, RoundKind, Termination};
 use ccm_trace::{Phase, Recorder, SimulationEvent};
+
+pub use crate::common::{EdgeType, NodeType};
 use core::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -9,22 +15,6 @@ pub enum HelpStatus {
     Unsettled,
     Settled,
     SettledScout,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NodeType {
-    Unvisited,
-    Visited,
-    PartiallyVisited,
-    FullyVisited,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EdgeType {
-    OneOne,
-    OtherOne,
-    OneOther,
-    OtherOther,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -266,16 +256,8 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
     }
 
     fn edge_type(&self, node: NodeId, port: PortId) -> Result<EdgeType, HelpError> {
-        let edge = self
-            .graph
-            .traverse(node, port)
-            .ok_or(HelpError::InvalidPort { node, port })?;
-        Ok(match (port == PortId(0), edge.remote_port == PortId(0)) {
-            (true, true) => EdgeType::OneOne,
-            (false, true) => EdgeType::OtherOne,
-            (true, false) => EdgeType::OneOther,
-            (false, false) => EdgeType::OtherOther,
-        })
+        crate::common::edge_type_at(self.graph, node, port)
+            .ok_or(HelpError::InvalidPort { node, port })
     }
 
     fn settle(&mut self, agent: AgentId, node: NodeId, head: AgentId) -> Result<(), HelpError> {
@@ -323,12 +305,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
             }
             _ => 99,
         };
-        let edge_rank = match result.edge_type {
-            EdgeType::OtherOne => 0,
-            EdgeType::OneOne | EdgeType::OneOther => 1,
-            EdgeType::OtherOther => 2,
-        };
-        (node_rank, edge_rank, result.port.0)
+        (node_rank, result.edge_type.priority(), result.port.0)
     }
 
     fn parallel_probe(
