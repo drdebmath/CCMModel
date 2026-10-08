@@ -161,10 +161,10 @@ tree; it is retained as the record of why the migration was undertaken.
 
 - `ccm-core`: dense IDs, reciprocal port graph, deterministic RNG, indexes,
   termination, metrics, and scheduler primitives.
-- `ccm-algorithms`: Drop-and-Freeze.
-- `ccm-help-scouts`: Help-by-Scouts.
-- `ccm-p1tree`: P1Tree dispersion, from Pattanayak et al. See
-  [docs/p1tree.md](docs/p1tree.md).
+- `ccm-algorithms`: the three algorithms, one module each:
+  `drop_and_freeze`, `help_by_scouts`, and `p1tree` (P1Tree dispersion, from
+  Pattanayak et al.; see [docs/p1tree.md](docs/p1tree.md)). Their tests live in
+  `ccm-experiments/tests`.
 
 All documentation is indexed in [docs/README.md](docs/README.md). For how each
 algorithm actually runs, [`docs.html`](docs.html) — linked from either app

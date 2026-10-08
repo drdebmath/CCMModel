@@ -110,7 +110,7 @@ pub static CHARTS: &[Chart] = &[
         id: "drop",
         title: "Drop and Freeze",
         crate_name: "ccm-algorithms",
-        source: "crates/ccm-algorithms/src/lib.rs",
+        source: "crates/ccm-algorithms/src/drop_and_freeze.rs",
         blurb: "Three phases per round. Unsettled agents fan out one per port, come back \
                 carrying one bit — was the neighbour occupied — and then one settles while the \
                 rest move on together through a port a probe reported empty. When no empty port \
@@ -203,8 +203,8 @@ pub static CHARTS: &[Chart] = &[
     Chart {
         id: "help",
         title: "Help by Scouts",
-        crate_name: "ccm-help-scouts",
-        source: "crates/ccm-help-scouts/src/lib.rs",
+        crate_name: "ccm-algorithms",
+        source: "crates/ccm-algorithms/src/help_by_scouts.rs",
         blurb: "Also a DFS, but settled agents help. One whose node can spare it vacates and \
                 travels with the group as a scout, so several ports are probed in the same round. \
                 Scouts later retrace the tree in post-order and drop back onto the nodes they own.",
@@ -304,8 +304,8 @@ pub static CHARTS: &[Chart] = &[
     Chart {
         id: "p1tree",
         title: "P1Tree",
-        crate_name: "ccm-p1tree",
-        source: "crates/ccm-p1tree/src/lib.rs",
+        crate_name: "ccm-algorithms",
+        source: "crates/ccm-algorithms/src/p1tree.rs",
         blurb: "A DFS that builds a port-one tree: every vertex ends up with an incident tree \
                 edge carrying port 1 at one of its ends. Two things carry the O(k) bound — the \
                 search stops at the first batch that finds somewhere to go, and the traversal \

@@ -17,12 +17,12 @@ fn summary<R: Recorder>(
     match algorithm {
         "drop_and_freeze" => {
             let mut metrics = ComplexityMetrics::default();
-            let run = ccm_algorithms::simulate_with(
+            let run = ccm_algorithms::drop_and_freeze::simulate_with(
                 g,
                 starts,
                 1_000,
                 &mut metrics,
-                ccm_algorithms::SharedRecorder::new(recorder),
+                ccm_algorithms::drop_and_freeze::SharedRecorder::new(recorder),
             )
             .unwrap();
             (
@@ -31,15 +31,25 @@ fn summary<R: Recorder>(
             )
         }
         "help_by_scouts" => {
-            let (result, metrics, _) =
-                ccm_help_scouts::simulate(g, starts, 1_000, ComplexityMetrics::default(), recorder)
-                    .unwrap();
+            let (result, metrics, _) = ccm_algorithms::help_by_scouts::simulate(
+                g,
+                starts,
+                1_000,
+                ComplexityMetrics::default(),
+                recorder,
+            )
+            .unwrap();
             (format!("{result:?}"), metrics)
         }
         "p1tree" => {
-            let (result, metrics, _) =
-                ccm_p1tree::simulate(g, starts, 1_000, ComplexityMetrics::default(), recorder)
-                    .unwrap();
+            let (result, metrics, _) = ccm_algorithms::p1tree::simulate(
+                g,
+                starts,
+                1_000,
+                ComplexityMetrics::default(),
+                recorder,
+            )
+            .unwrap();
             (format!("{result:?}"), metrics)
         }
         other => unreachable!("unknown algorithm {other}"),

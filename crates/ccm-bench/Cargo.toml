@@ -10,7 +10,7 @@ publish = false
 [dependencies]
 ccm-algorithms = { path = "../ccm-algorithms" }
 ccm-core = { path = "../ccm-core" }
-ccm-help-scouts = { path = "../ccm-help-scouts" }
+ccm-trace = { path = "../ccm-trace" }
 
 [lints]
 workspace = true

@@ -1,4 +1,5 @@
-use ccm_core::{NodeId, PortGraph};
+use ccm_core::{ComplexityMetrics, NodeId, PortGraph};
+use ccm_trace::NoTrace;
 use std::env;
 use std::hint::black_box;
 use std::time::Instant;
@@ -33,7 +34,7 @@ fn main() {
     for _ in 0..iterations {
         checksum = checksum.wrapping_add(match algorithm.as_str() {
             "drop-and-freeze" => {
-                let result = ccm_algorithms::simulate(&graph, &starts, limit)
+                let result = ccm_algorithms::drop_and_freeze::simulate(&graph, &starts, limit)
                     .expect("Drop-and-Freeze benchmark must complete");
                 result
                     .final_state
@@ -43,8 +44,14 @@ fn main() {
                     .sum::<u64>()
             }
             "help-by-scouts" => {
-                let result = ccm_help_scouts::run(&graph, &starts, limit)
-                    .expect("Help-by-Scouts benchmark must complete");
+                let (result, _, _) = ccm_algorithms::help_by_scouts::simulate(
+                    &graph,
+                    &starts,
+                    limit,
+                    ComplexityMetrics::default(),
+                    NoTrace,
+                )
+                .expect("Help-by-Scouts benchmark must complete");
                 result
                     .agents
                     .iter()

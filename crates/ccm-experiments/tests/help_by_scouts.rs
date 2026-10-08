@@ -2,8 +2,8 @@
 
 mod common;
 
+use ccm_algorithms::help_by_scouts::{simulate, HelpError, HelpResult, HelpStatus};
 use ccm_core::{ComplexityMetrics, NodeId, PortEdge, PortGraph, PortId, Termination};
-use ccm_help_scouts::{simulate, HelpError, HelpResult, HelpStatus};
 use ccm_trace::NoTrace;
 use common::{graph, rooted};
 

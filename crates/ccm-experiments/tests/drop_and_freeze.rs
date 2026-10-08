@@ -2,12 +2,12 @@
 
 mod common;
 
-use ccm_algorithms::{simulate, simulate_with, DropStatus, SharedRecorder};
+use ccm_algorithms::drop_and_freeze::{simulate, simulate_with, DropStatus, SharedRecorder};
 use ccm_core::{ComplexityMetrics, NodeId, PortEdge, PortGraph, PortId, Termination};
 use ccm_trace::{FullTrace, Phase, SimulationEvent};
 use common::graph;
 
-fn statuses(state: &ccm_algorithms::SimulationState) -> Vec<DropStatus> {
+fn statuses(state: &ccm_algorithms::drop_and_freeze::SimulationState) -> Vec<DropStatus> {
     state.agents.iter().map(|agent| agent.status).collect()
 }
 

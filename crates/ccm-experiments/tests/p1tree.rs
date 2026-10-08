@@ -2,10 +2,10 @@
 
 mod common;
 
-use ccm_core::{ComplexityMetrics, NodeId, PortGraph, PortId, Termination};
-use ccm_p1tree::{
+use ccm_algorithms::p1tree::{
     simulate, simulate_with_stop, EdgeType, NodeType, P1Error, P1Result, P1Status, Stop,
 };
+use ccm_core::{ComplexityMetrics, NodeId, PortGraph, PortId, Termination};
 use ccm_trace::NoTrace;
 use common::{graph, random_port_graph, rooted};
 

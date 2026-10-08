@@ -1,6 +1,6 @@
 # P1Tree dispersion
 
-`ccm-p1tree` implements the port-one tree construction of Pattanayak,
+`ccm_algorithms::p1tree` implements the port-one tree construction of Pattanayak,
 Kshemkalyani, Kumar, Molla and Sharma, *Optimal Dispersion Under Asynchrony*
 ([arXiv:2507.01298](https://arxiv.org/abs/2507.01298)). Unlike the other two
 algorithms in this repository, it is written from the paper rather than from a
@@ -30,7 +30,7 @@ a port 1 and it leads somewhere.
 ### Port numbering
 
 The paper numbers ports from 1. This repository numbers them from 0, so the
-paper's port 1 is `PortId(0)` here, exposed as `ccm_p1tree::PORT_ONE`. The UI
+paper's port 1 is `PortId(0)` here, exposed as `ccm_algorithms::p1tree::PORT_ONE`. The UI
 labels ports 0-based for the same reason, and its glossary says so.
 
 ## The construction
@@ -188,7 +188,7 @@ rather than silently run under a different model.
 
 ## Tests
 
-`crates/ccm-p1tree/src/lib.rs` covers edge classification and the priority
+`crates/ccm-experiments/tests/p1tree.rs` covers edge classification and the priority
 order; dispersion across path, cycle, star, complete, tree and grid; Definition
 1 and the absence of leftover `partiallyVisited` nodes; the spanning-tree shape;
 `k < n`; determinism; round limits; and that tracing does not change the result.
