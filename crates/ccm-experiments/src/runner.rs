@@ -278,6 +278,17 @@ pub fn algorithm_label(algorithm: Algorithm) -> &'static str {
     }
 }
 
+/// Whether an algorithm is written from a paper or preserves the behaviour of
+/// this repository's historical code. Kept apart from [`algorithm_label`] so
+/// that the label stays a stable key across result files.
+#[must_use]
+pub fn algorithm_kind(algorithm: Algorithm) -> &'static str {
+    match algorithm {
+        Algorithm::DropAndFreeze | Algorithm::HelpByScouts => "legacy_baseline",
+        Algorithm::P1Tree => "paper",
+    }
+}
+
 #[must_use]
 pub fn termination_label(termination: &Termination) -> &'static str {
     match termination {

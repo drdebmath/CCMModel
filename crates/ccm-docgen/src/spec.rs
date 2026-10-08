@@ -108,7 +108,7 @@ const fn aside(from: &'static str, to: &'static str, label: Option<&'static str>
 pub static CHARTS: &[Chart] = &[
     Chart {
         id: "drop",
-        title: "Drop and Freeze",
+        title: "Drop and Freeze (legacy baseline)",
         crate_name: "ccm-algorithms",
         source: "crates/ccm-algorithms/src/drop_and_freeze.rs",
         blurb: "Three phases per round. Unsettled agents fan out one per port, come back \
@@ -202,7 +202,7 @@ pub static CHARTS: &[Chart] = &[
     },
     Chart {
         id: "help",
-        title: "Help by Scouts",
+        title: "Help by Scouts (legacy baseline)",
         crate_name: "ccm-algorithms",
         source: "crates/ccm-algorithms/src/help_by_scouts.rs",
         blurb: "Also a DFS, but settled agents help. One whose node can spare it vacates and \

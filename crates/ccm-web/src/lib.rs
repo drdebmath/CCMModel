@@ -384,9 +384,9 @@ fn hook_theme_toggle<F: FnMut() + 'static>(document: &Document, mut after: F) {
 
 fn algorithm_label(value: &str) -> &'static str {
     match value {
-        "help" => "Help by Scouts",
+        "help" => "Help by Scouts (legacy baseline)",
         "p1tree" => "P1Tree (DFS)",
-        _ => "Drop and Freeze",
+        _ => "Drop and Freeze (legacy baseline)",
     }
 }
 

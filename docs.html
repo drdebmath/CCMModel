@@ -15,7 +15,7 @@
 
   <main class="docs-shell">
     <div class="docs-bar">
-      <div class="chart-tabs" role="tablist"><button class="chart-tab" type="button" data-chart="drop">Drop and Freeze</button><button class="chart-tab" type="button" data-chart="help">Help by Scouts</button><button class="chart-tab" type="button" data-chart="p1tree">P1Tree</button></div>
+      <div class="chart-tabs" role="tablist"><button class="chart-tab" type="button" data-chart="drop">Drop and Freeze (legacy baseline)</button><button class="chart-tab" type="button" data-chart="help">Help by Scouts (legacy baseline)</button><button class="chart-tab" type="button" data-chart="p1tree">P1Tree</button></div>
       <div class="zoom-controls">
         <button id="zoomOut" class="icon-button" type="button" aria-label="Zoom out">−</button>
         <output id="zoomLevel" class="zoom-level">100%</output>
@@ -29,7 +29,7 @@
     <div class="docs-main">
       <div id="charts" class="charts"><section class="chart-panel hidden" id="panel-drop" data-crate="ccm-algorithms">
 <p class="chart-blurb">Three phases per round. Unsettled agents fan out one per port, come back carrying one bit — was the neighbour occupied — and then one settles while the rest move on together through a port a probe reported empty. When no empty port is left the group backtracks along the port it arrived by.</p>
-<div class="chart-frame"><div class="chart-stage"><svg class="chart" viewBox="-564 -63 1141 770" role="img" aria-label="Drop and Freeze flowchart" xmlns="http://www.w3.org/2000/svg">
+<div class="chart-frame"><div class="chart-stage"><svg class="chart" viewBox="-564 -63 1141 770" role="img" aria-label="Drop and Freeze (legacy baseline) flowchart" xmlns="http://www.w3.org/2000/svg">
 <defs><marker id="arrow-drop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>
 <g class="edges">
 <path class="edge" d="M 0.0 23.0 L 0.0 69.0" marker-end="url(#arrow-drop)"/>
@@ -64,7 +64,7 @@
 </section>
 <section class="chart-panel hidden" id="panel-help" data-crate="ccm-algorithms">
 <p class="chart-blurb">Also a DFS, but settled agents help. One whose node can spare it vacates and travels with the group as a scout, so several ports are probed in the same round. Scouts later retrace the tree in post-order and drop back onto the nodes they own.</p>
-<div class="chart-frame"><div class="chart-stage"><svg class="chart" viewBox="-629 -63 1245 862" role="img" aria-label="Help by Scouts flowchart" xmlns="http://www.w3.org/2000/svg">
+<div class="chart-frame"><div class="chart-stage"><svg class="chart" viewBox="-629 -63 1245 862" role="img" aria-label="Help by Scouts (legacy baseline) flowchart" xmlns="http://www.w3.org/2000/svg">
 <defs><marker id="arrow-help" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>
 <g class="edges">
 <path class="edge" d="M 0.0 23.0 L 0.0 69.0" marker-end="url(#arrow-help)"/>

@@ -1,11 +1,11 @@
 # CCMModel
 
-CCMModel is a deterministic research simulator and browser visualizer for two
+CCMModel is a deterministic research simulator and browser visualizer for three
 mobile-agent dispersion algorithms:
 
-- Drop-and-Freeze;
-- Help-by-Scouts;
-- P1Tree (`DFS_P1Tree`).
+- Drop-and-Freeze (legacy baseline);
+- Help-by-Scouts (legacy baseline);
+- P1Tree (`DFS_P1Tree`), from Pattanayak et al.
 
 Both native experiments and browser playback execute the same authoritative
 Rust algorithms. The repository is Rust end to end: simulation core, native
@@ -13,17 +13,23 @@ CLI, browser application, and development server. The production browser is clie
 Web Worker with Canvas 2D rendering—no Python, Pyodide, NetworkX, Cytoscape,
 CDN, or application backend.
 
-> Drop-and-Freeze and Help-by-Scouts preserve the behavior of the historical
-> Python files they replaced. Their names and transitions are not literal ports
-> of the algorithms in Sudo et al., *Near-linear Time Dispersion of Mobile
-> Agents*. Read [the behavior specification](docs/behavior-spec.md) before
-> relating empirical results to that paper's assumptions or theorems.
+> Drop-and-Freeze and Help-by-Scouts are **legacy baselines**: they preserve the
+> behavior of the historical Python files they replaced. Their names and
+> transitions are not literal ports of the algorithms in Sudo et al.,
+> *Near-linear Time Dispersion of Mobile Agents*. Read
+> [the behavior specification](docs/behavior-spec.md) before relating empirical
+> results to that paper's assumptions or theorems. CSV rows mark them with
+> `algorithm_kind = legacy_baseline`.
 >
 > P1Tree is different in kind: it is written from Pattanayak et al., *Optimal
-> Dispersion Under Asynchrony*, and implements that paper's Definition 1 and
-> Algorithm 2. It implements the sequential neighbourhood search rather than the
-> asynchronous parallel-probe optimisation, so its round counts are not the
-> paper's `O(k)` bound. See [docs/p1tree.md](docs/p1tree.md).
+> Dispersion Under Asynchrony*, and implements that paper's Definition 1,
+> Algorithm 2, the parallel probe (Section 4.2), vacating (Section 4.1) and
+> retrace (Section 5.1). It is not yet the whole of `RootedAsync()`: it runs
+> under the repository's synchronous scheduler, it takes a scout's empty-or-
+> vacated conclusion from the ownership index rather than deriving it locally
+> through rules (R1)-(R3), and it accepts only a rooted start. Its round counts
+> are therefore not the paper's `O(k)` epoch bound. See
+> [docs/p1tree.md](docs/p1tree.md).
 
 ## Quick start: native research runs
 
@@ -87,7 +93,7 @@ cargo install wasm-bindgen-cli --version 0.2.100 --locked
 cargo run -p ccm-serve
 ```
 
-Open <http://127.0.0.1:8000>. The UI supports both algorithms, deterministic
+Open <http://127.0.0.1:8000>. The UI supports all three algorithms, deterministic
 graphs and placement, full/off/bounded traces, run/cancel, timeline playback,
 filters, canonical local port labels, node tooltips with agent positions,
 JSON import/export, responsive controls, and light/dark themes. Random graphs

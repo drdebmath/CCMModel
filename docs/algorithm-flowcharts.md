@@ -14,8 +14,8 @@ before drawing conclusions from any of them.
 
 ## Contents
 
-- [Drop and Freeze](#drop-and-freeze) — `ccm_algorithms::drop_and_freeze`
-- [Help by Scouts](#help-by-scouts) — `ccm_algorithms::help_by_scouts`
+- [Drop and Freeze](#drop-and-freeze) (legacy baseline) — `ccm_algorithms::drop_and_freeze`
+- [Help by Scouts](#help-by-scouts) (legacy baseline) — `ccm_algorithms::help_by_scouts`
 - [P1Tree](#p1tree) — `ccm_algorithms::p1tree`
 
 ---
