@@ -10,15 +10,16 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark" aria-hidden="true">◈</span><span>CCM Dashboard</span><small>Cost sweep</small></div>
-    <div class="top-actions"><a class="text-link" href="./index.html">Simulator</a><a class="text-link" href="./docs.html">Flowcharts</a><a class="text-link" href="https://github.com/drdebmath/CCMModel/tree/main/docs" target="_blank" rel="noopener noreferrer">Docs</a><span id="engineState" class="engine-state" role="status">Checking WASM…</span><button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme">☀</button><button id="panelToggle" class="icon-button mobile-only" type="button" aria-label="Open controls">☰</button></div>
+    <div class="top-actions"><nav class="top-nav" aria-label="Pages"><a class="text-link" href="./index.html">Simulator</a><a class="text-link" href="./docs.html">Flowcharts</a><a class="text-link" href="https://github.com/drdebmath/CCMModel/tree/main/docs" target="_blank" rel="noopener noreferrer">Docs</a></nav><span id="engineState" class="engine-state" role="status">Checking WASM…</span><button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme">☀</button><button id="panelToggle" class="icon-button mobile-only" type="button" aria-label="Open controls">☰</button></div>
   </header>
 
   <div class="app-shell">
     <aside id="controlPanel" class="controls" aria-label="Sweep controls">
       <div class="panel-heading"><div><p class="eyebrow">EXPERIMENT</p><h1>Cost of dispersion</h1></div><button id="closePanel" class="icon-button mobile-only" type="button" aria-label="Close controls">×</button></div>
 
+      <div class="controls-body">
       <section class="control-section"><h2>Model</h2>
-        <label>Algorithm<select id="algorithm"><option value="drop">Drop and Freeze (legacy baseline)</option><option value="help">Help by Scouts (legacy baseline)</option><option value="p1tree">P1Tree (DFS)</option></select></label>
+        <label>Algorithm<select id="algorithm"><option value="drop">Drop and Freeze</option><option value="help">Help by Scouts</option><option value="p1tree">P1Tree</option></select></label>
         <label>Cost measured<select id="metric"><option value="rounds">Rounds</option><option value="moves">Agent moves</option><option value="probes">Port probes</option></select></label>
         <div class="two-col"><label>Nodes<input id="nodes" type="number" min="2" max="2000" value="40" inputmode="numeric"></label><label>Seed<input id="seed" type="number" min="0" max="4294967295" value="42" inputmode="numeric"></label></div>
         <p id="algorithmNote" class="help-note">All agents start at node 0, so the classes are compared on the same placement.</p>
@@ -42,9 +43,13 @@
         <div class="two-col"><label>Grid columns<input id="gridColumns" type="number" min="1" max="1000" value="6"></label><label>Tree branching<input id="treeBranching" type="number" min="2" max="16" value="2"></label></div>
       </section>
 
-      <div class="run-actions"><button id="run" class="primary" type="button">Run sweep</button><button id="exportCsv" class="secondary" type="button">Export CSV</button></div>
-      <p id="message" class="message" role="status">Choose an algorithm and graph classes, then run.</p>
       <p class="help-note">Every point is one simulation with tracing off, run locally in a Web Worker. A wide range over many classes is a lot of simulations. <a href="https://github.com/drdebmath/CCMModel/blob/main/docs/complexity-metrics.md" target="_blank" rel="noopener noreferrer">What these counters mean</a>.</p>
+      </div>
+
+      <div class="run-bar">
+        <div class="run-actions"><button id="run" class="primary" type="button">Run sweep</button><button id="exportCsv" class="secondary" type="button">Export CSV</button></div>
+        <p id="message" class="message" role="status">Choose an algorithm and graph classes, then run.</p>
+      </div>
     </aside>
 
     <main class="workspace">
