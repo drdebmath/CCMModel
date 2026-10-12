@@ -828,6 +828,7 @@ fn phase_code(phase: Phase) -> u8 {
         Phase::Follow => 7,
         Phase::Retrace => 8,
         Phase::Other => 9,
+        Phase::HelperReturn => 10,
     }
 }
 
