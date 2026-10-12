@@ -13,10 +13,11 @@ use ccm_experiments::{
 };
 use std::path::PathBuf;
 
-const ALGORITHMS: [Algorithm; 3] = [
+const ALGORITHMS: [Algorithm; 4] = [
     Algorithm::DropAndFreeze,
     Algorithm::HelpByScouts,
     Algorithm::P1Tree,
+    Algorithm::RootedDisp,
 ];
 
 const FAMILIES: [GraphFamily; 8] = [

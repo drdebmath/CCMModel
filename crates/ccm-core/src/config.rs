@@ -6,6 +6,8 @@ pub enum Algorithm {
     HelpByScouts,
     /// `DFS_P1Tree` dispersion, which builds a port-one tree.
     P1Tree,
+    /// `RootedDisp`, the rooted HEO-DFS of Sudo et al. (Section 3).
+    RootedDisp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
