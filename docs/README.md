@@ -15,6 +15,9 @@ Start here.
   Kshemkalyani, Kumar, Molla and Sharma, *Optimal Dispersion Under Asynchrony*.
   What is implemented, what is not, and the two places where the pseudocode
   needs reading alongside the proofs.
+- [rooted-disp.md](rooted-disp.md) — RootedDisp, the rooted HEO-DFS of Sudo et
+  al., *Near-linear Time Dispersion of Mobile Agents*: its time steps, the
+  decisions taken where Algorithm 1 leaves a choice, and two worked traces.
 - [behavior-spec.md](behavior-spec.md) — Drop-and-Freeze and Help-by-Scouts,
   as they behaved in the Python implementation the Rust ports preserve.
   **Archival**: it cites files this repository no longer contains.
