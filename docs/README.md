@@ -5,7 +5,7 @@ Start here.
 ## How the algorithms work
 
 - **[The interactive flowcharts](https://drdebmath.github.io/CCMModel/docs.html)** —
-  the same three charts as a page you can pan and zoom, where clicking any box
+  the same four charts as a page you can pan and zoom, where clicking any box
   opens the source of the function it stands for. Served alongside the
   simulator; also reachable from either app page's header.
 - **[algorithm-flowcharts.md](algorithm-flowcharts.md)** — one flowchart per

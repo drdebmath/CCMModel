@@ -7,11 +7,12 @@ Section 3 and Algorithm 1. Like P1Tree, and unlike Drop-and-Freeze and
 Help-by-Scouts, it is written from the paper rather than from earlier code in
 this repository.
 
-> **Status.** This document fixes the semantics before any code is written: the
-> model, the time steps, the agreed decisions and two worked traces. The module,
-> its CLI registration and its browser support follow on the
-> `feature/rooted-heo-dfs` branch, and the sections below that name code
-> describe what those commits will contain.
+> **Where it lives.** The algorithm is `crates/ccm-algorithms/src/rooted_disp.rs`
+> and its tests `crates/ccm-experiments/tests/rooted_disp.rs`. The CLI accepts
+> `--algorithm rooted-disp`; CSV rows carry `rooted_disp` and
+> `algorithm_kind = paper`. In the browser it is "RootedDisp (HEO-DFS)": the line
+> under the playback bar names each step's phase, `Probe()` and pass, and the
+> Compare section runs all four algorithms on identical rooted input.
 
 ## The model
 

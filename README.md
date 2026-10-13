@@ -1,11 +1,12 @@
 # CCMModel
 
-CCMModel is a deterministic research simulator and browser visualizer for three
+CCMModel is a deterministic research simulator and browser visualizer for four
 mobile-agent dispersion algorithms:
 
 - Drop-and-Freeze (legacy baseline);
 - Help-by-Scouts (legacy baseline);
-- P1Tree (`DFS_P1Tree`), from Pattanayak et al.
+- P1Tree (`DFS_P1Tree`), from Pattanayak et al.;
+- RootedDisp, the rooted HEO-DFS of Sudo et al.
 
 Native experiments and browser playback execute the same authoritative
 Rust algorithms. The repository is Rust end to end: simulation core, native
@@ -30,6 +31,14 @@ CDN, or application backend.
 > through rules (R1)-(R3), and it accepts only a rooted start. Its round counts
 > are therefore not the paper's `O(k)` epoch bound. See
 > [docs/p1tree.md](docs/p1tree.md).
+>
+> RootedDisp is also written from its paper: Section 3 and Algorithm 1 of Sudo
+> et al., *Near-linear Time Dispersion of Mobile Agents*, the rooted HEO-DFS in
+> which settlers found by a probe come back as helpers so the probers double.
+> Every synchronous step is committed through `ccm_core::apply_move_intents`,
+> and its `rounds` column counts the paper's time steps. It accepts only a rooted
+> start. See [docs/rooted-disp.md](docs/rooted-disp.md) for the time model, the
+> decisions taken where Algorithm 1 leaves a choice, and two worked traces.
 
 ## Quick start: native research runs
 
@@ -93,7 +102,7 @@ cargo install wasm-bindgen-cli --version 0.2.100 --locked
 cargo run -p ccm-serve
 ```
 
-Open <http://127.0.0.1:8000>. The UI supports all three algorithms, deterministic
+Open <http://127.0.0.1:8000>. The UI supports all four algorithms, deterministic
 graphs and placement, full/off/bounded traces, run/cancel, timeline playback,
 filters, canonical local port labels, node tooltips with agent positions,
 JSON import/export, responsive controls, and light/dark themes. Random graphs
@@ -167,14 +176,15 @@ tree; it is retained as the record of why the migration was undertaken.
 
 - `ccm-core`: dense IDs, reciprocal port graph, deterministic RNG, indexes,
   termination, metrics, and scheduler primitives.
-- `ccm-algorithms`: the three algorithms, one module each:
-  `drop_and_freeze`, `help_by_scouts`, and `p1tree` (P1Tree dispersion, from
-  Pattanayak et al.; see [docs/p1tree.md](docs/p1tree.md)). Their tests live in
-  `ccm-experiments/tests`.
+- `ccm-algorithms`: the four algorithms, one module each:
+  `drop_and_freeze`, `help_by_scouts`, `p1tree` (P1Tree dispersion, from
+  Pattanayak et al.; see [docs/p1tree.md](docs/p1tree.md)) and `rooted_disp`
+  (RootedDisp, from Sudo et al.; see [docs/rooted-disp.md](docs/rooted-disp.md)).
+  Their tests live in `ccm-experiments/tests`.
 
 All documentation is indexed in [docs/README.md](docs/README.md). For how each
 algorithm actually runs, [`docs.html`](docs.html) — linked from either app
-page's header — has the three flowcharts as a page you can pan and zoom, where
+page's header — has the four flowcharts as a page you can pan and zoom, where
 clicking a box opens the source of the function it stands for. The same charts
 in markdown are in [docs/algorithm-flowcharts.md](docs/algorithm-flowcharts.md)
 has a flowchart per algorithm with the code of every function it names, pulled
