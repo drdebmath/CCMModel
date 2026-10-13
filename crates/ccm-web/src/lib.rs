@@ -89,6 +89,11 @@ pub struct Frame {
     pub homes: Vec<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<u8>,
+    /// The phase code (`ccm-wasm`'s `phase_code`) of the step this frame
+    /// belongs to. Defaulted so executions exported before phases were kept
+    /// still import cleanly under the same schema version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -159,6 +164,8 @@ struct AppState {
     config: Option<Config>,
     result: Option<ResultData>,
     frames: Vec<Frame>,
+    /// One line per frame from [`frame_notes`], shown under the playback bar.
+    notes: Vec<String>,
     frame: usize,
     timer: Option<i32>,
     layout: Vec<(f64, f64)>,
@@ -386,6 +393,7 @@ fn algorithm_label(value: &str) -> &'static str {
     match value {
         "help" => "Help by Scouts",
         "p1tree" => "P1Tree",
+        "rooted" => "RootedDisp",
         _ => "Drop and Freeze",
     }
 }
@@ -417,6 +425,7 @@ fn initial_frame(starts: &[u32]) -> Frame {
         statuses: vec![1; starts.len()],
         homes: vec![-1; starts.len()],
         label: None,
+        phase: None,
     }
 }
 
@@ -427,7 +436,124 @@ fn final_frame(result: &ResultData) -> Frame {
         statuses: result.statuses.clone(),
         homes: result.homes.clone(),
         label: None,
+        phase: None,
     }
+}
+
+/// Name of a phase code as `ccm-wasm` encodes it.
+fn phase_name(code: u8) -> &'static str {
+    match code {
+        0 => "macro-round",
+        1 => "probe out",
+        2 => "probe back",
+        3 => "movement",
+        4 => "scout",
+        5 => "vacate",
+        6 => "chase",
+        7 => "follow",
+        8 => "retrace",
+        9 => "start",
+        10 => "helpers home",
+        _ => "unknown phase",
+    }
+}
+
+/// `1 helper at node 4`, `3 helpers away from home`, or `no helpers`: the
+/// agents a frame shows as settled but away (status 2).
+fn helper_summary(frame: &Frame) -> String {
+    let away: Vec<u32> = frame
+        .statuses
+        .iter()
+        .zip(&frame.positions)
+        .filter(|(status, _)| **status == 2)
+        .map(|(_, node)| *node)
+        .collect();
+    let plural = if away.len() == 1 { "" } else { "s" };
+    match away.first() {
+        None => "no helpers".to_owned(),
+        Some(node) if away.iter().all(|other| other == node) => {
+            format!("{} helper{plural} at node {node}", away.len())
+        }
+        Some(_) => format!("{} helper{plural} away from home", away.len()),
+    }
+}
+
+/// One note per playback frame naming the step and phase it shows. For
+/// RootedDisp (`algorithm == "rooted"`) it also numbers the `Probe()` calls
+/// and their passes, counts the helpers, and says which DFS move a movement
+/// step was — all read from the frames, never recomputed. A bounded trace
+/// that sampled steps away numbers only the probes it kept.
+pub fn frame_notes(frames: &[Frame], algorithm: &str) -> Vec<String> {
+    let rooted = algorithm == "rooted";
+    let mut notes = vec![String::new(); frames.len()];
+    let (mut probe, mut pass) = (0_u64, 0_u64);
+    let mut previous_phase: Option<u8> = None;
+    let mut previous_end: Option<usize> = None;
+    let mut start = 0;
+    while start < frames.len() {
+        let step = frames[start].step;
+        let mut end = start;
+        while end + 1 < frames.len() && frames[end + 1].step == step {
+            end += 1;
+        }
+        let phase = frames[start..=end].iter().find_map(|frame| frame.phase);
+        let last = &frames[end];
+        let note = match phase {
+            None if step == 0 => "Start".to_owned(),
+            None => format!("Step {step}"),
+            Some(9) => "Start".to_owned(),
+            Some(code) if !rooted => format!("Step {step} · {}", phase_name(code)),
+            Some(1) => {
+                if previous_phase == Some(2) {
+                    pass += 1;
+                } else {
+                    probe += 1;
+                    pass = 1;
+                }
+                format!(
+                    "Step {step} · Probe {probe}, pass {pass} · probe out · {}",
+                    helper_summary(last)
+                )
+            }
+            Some(2) => format!(
+                "Step {step} · Probe {probe}, pass {pass} · probe back · {}",
+                helper_summary(last)
+            ),
+            Some(10) => format!("Step {step} · Probe {probe} · helpers home"),
+            Some(3) => {
+                let before = previous_end.map(|index| &frames[index].statuses);
+                let settled = last.statuses.iter().enumerate().find(|&(agent, status)| {
+                    *status == 0 && before.and_then(|b| b.get(agent)) == Some(&1)
+                });
+                match settled {
+                    Some((agent, _)) => format!(
+                        "Step {step} · forward move · agent {agent} settles at node {}",
+                        last.positions[agent]
+                    ),
+                    None => {
+                        let to = last
+                            .statuses
+                            .iter()
+                            .position(|status| *status == 1)
+                            .map_or_else(String::new, |agent| {
+                                format!(" to node {}", last.positions[agent])
+                            });
+                        format!("Step {step} · backward move{to}")
+                    }
+                }
+            }
+            Some(code) => format!("Step {step} · {}", phase_name(code)),
+        };
+        for slot in &mut notes[start..=end] {
+            slot.clone_from(&note);
+        }
+        if phase.is_some() {
+            previous_phase = phase;
+        }
+        previous_end = Some(end);
+        start = end + 1;
+    }
+    notes
 }
 
 fn same_frame(a: &Frame, b: &Frame) -> bool {
@@ -530,6 +656,7 @@ fn trace_frames(bytes: &[u8], starts: &[u32], result: &ResultData) -> Vec<Frame>
                 statuses,
                 homes: vec![-1; count],
                 label: Some(label),
+                phase: None,
             });
             continue;
         }
@@ -546,7 +673,9 @@ fn trace_frames(bytes: &[u8], starts: &[u32], result: &ResultData) -> Vec<Frame>
                 next.step = step;
                 match event {
                     0 => {
-                        let _ = reader.u8();
+                        if let Some(code) = reader.u8() {
+                            next.phase = Some(code);
+                        }
                     }
                     1 => {
                         let agent = reader.u32();
@@ -640,6 +769,7 @@ fn trace_frames(bytes: &[u8], starts: &[u32], result: &ResultData) -> Vec<Frame>
                     statuses,
                     homes,
                     label: None,
+                    phase: current.phase,
                 };
                 frames.push(current.clone());
             }
@@ -686,6 +816,20 @@ fn update_frame_label(app: &AppState) {
             app.frames.len().saturating_sub(1)
         ),
     );
+    set_text(
+        &app.document,
+        "phaseLabel",
+        app.notes.get(app.frame).map_or("", String::as_str),
+    );
+}
+
+/// Recomputes the per-frame notes after the frames or the algorithm change.
+fn refresh_notes(app: &mut AppState) {
+    let algorithm = app
+        .config
+        .as_ref()
+        .map_or("", |config| config.algorithm.as_str());
+    app.notes = frame_notes(&app.frames, algorithm);
 }
 
 fn set_timeline(app: &AppState) {
@@ -1496,6 +1640,7 @@ fn accept_result(state: &Rc<RefCell<AppState>>, result: ResultData) {
     app.frames = trace_frames(&result.render_bytes, &starts, &result);
     app.frame = 0;
     app.result = Some(result.clone());
+    refresh_notes(&mut app);
     let config = app.config.clone();
     set_text(&app.document, "rounds", &result.rounds.to_string());
     set_text(&app.document, "moves", &result.moves.to_string());
@@ -1714,6 +1859,7 @@ fn run(state: &Rc<RefCell<AppState>>) {
         app.starts = starts.clone();
         app.result = None;
         app.frames.clear();
+        app.notes.clear();
         app.layout.clear();
         app.layout_size = (0.0, 0.0);
         set_disabled(&element::<HtmlElement>(&app.document, "export"), true);
@@ -1895,6 +2041,7 @@ fn import_file(state: &Rc<RefCell<AppState>>, event: Event) {
                 app.result = Some(data.result.clone());
                 app.frames = data.frames;
                 app.frame = 0;
+                refresh_notes(&mut app);
                 app.layout.clear();
                 app.layout_size = (0.0, 0.0);
                 let _ = element::<Element>(&app.document, "emptyState")
@@ -2083,6 +2230,7 @@ pub fn start() -> Result<(), JsValue> {
         config: None,
         result: None,
         frames: Vec::new(),
+        notes: Vec::new(),
         frame: 0,
         timer: None,
         layout: Vec::new(),
@@ -2272,14 +2420,30 @@ fn tooltip(state: &Rc<RefCell<AppState>>, event: MouseEvent) {
         Some(v) => v,
         None => return,
     };
+    let rooted = app
+        .config
+        .as_ref()
+        .is_some_and(|config| config.algorithm == "rooted");
+    // RootedDisp's roles, with its leader marked: the paper makes the
+    // largest ID, the last agent here, a_max.
+    let names = if rooted {
+        ["settler (home)", "explorer", "helper"]
+    } else {
+        ["settled", "unsettled", "waiting"]
+    };
+    let leader = frame.positions.len().saturating_sub(1);
     let agents: Vec<String> = frame
         .positions
         .iter()
         .enumerate()
         .filter(|(_, position)| **position as usize == node)
         .map(|(i, position)| {
-            let status = ["settled", "unsettled", "waiting"]
-                [frame.statuses.get(i).copied().unwrap_or(1) as usize % 3];
+            let status = names[frame.statuses.get(i).copied().unwrap_or(1) as usize % 3];
+            let status = if rooted && i == leader {
+                format!("{status} · leader a_max")
+            } else {
+                status.to_owned()
+            };
             let home = frame
                 .homes
                 .get(i)
@@ -2687,6 +2851,92 @@ mod tests {
             frames.iter().map(|frame| frame.step).collect::<Vec<_>>(),
             vec![0, 1, 2]
         );
+    }
+
+    #[test]
+    fn decoded_frames_keep_the_phase_of_their_step() {
+        // One PhaseStarted(helpers home = 10) event and one checkpoint, both at
+        // step 1, for a single agent at node 0.
+        let mut bytes = vec![1, 2, 0, 0];
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.push(2);
+        bytes.extend_from_slice(&1u64.to_le_bytes());
+        bytes.extend([0, 10]);
+        bytes.push(3);
+        bytes.extend_from_slice(&1u64.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend([0, 1]);
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        let result = ResultData {
+            positions: vec![0],
+            statuses: vec![0],
+            homes: vec![0],
+            termination_code: 0,
+            rounds: 1,
+            moves: 0,
+            probes: 0,
+            render_record_count: 2,
+            render_truncated: false,
+            render_bytes: bytes,
+        };
+        let frames = trace_frames(&result.render_bytes, &[0], &result);
+        let phases: Vec<Option<u8>> = frames.iter().map(|frame| frame.phase).collect();
+        assert_eq!(phases, vec![None, Some(10), Some(10)]);
+    }
+
+    fn frame(step: u64, phase: u8, positions: &[u32], statuses: &[u8]) -> Frame {
+        Frame {
+            step,
+            positions: positions.to_vec(),
+            statuses: statuses.to_vec(),
+            homes: vec![-1; positions.len()],
+            label: None,
+            phase: Some(phase),
+        }
+    }
+
+    #[test]
+    fn rooted_notes_number_probes_passes_and_moves() {
+        // Agents 0 (settler at node 0), 1 (explorer), 2 (a_max).
+        let frames = vec![
+            frame(0, 9, &[0, 0, 0], &[0, 1, 1]),
+            frame(1, 1, &[0, 1, 0], &[0, 1, 1]),
+            frame(2, 2, &[0, 0, 0], &[0, 1, 1]),
+            frame(3, 3, &[0, 1, 1], &[0, 0, 1]),
+            frame(4, 1, &[0, 1, 0], &[0, 0, 1]),
+            frame(5, 2, &[1, 1, 1], &[2, 0, 1]),
+            frame(6, 1, &[1, 1, 2], &[2, 0, 1]),
+            frame(7, 2, &[1, 1, 1], &[2, 0, 1]),
+            frame(8, 10, &[0, 1, 1], &[0, 0, 1]),
+            frame(9, 3, &[0, 1, 0], &[0, 0, 1]),
+        ];
+        let notes = frame_notes(&frames, "rooted");
+        assert_eq!(notes[0], "Start");
+        assert_eq!(
+            notes[1],
+            "Step 1 · Probe 1, pass 1 · probe out · no helpers"
+        );
+        assert_eq!(
+            notes[3],
+            "Step 3 · forward move · agent 1 settles at node 1"
+        );
+        assert_eq!(
+            notes[4],
+            "Step 4 · Probe 2, pass 1 · probe out · no helpers"
+        );
+        assert_eq!(
+            notes[5],
+            "Step 5 · Probe 2, pass 1 · probe back · 1 helper at node 1"
+        );
+        assert_eq!(
+            notes[6],
+            "Step 6 · Probe 2, pass 2 · probe out · 1 helper at node 1"
+        );
+        assert_eq!(notes[8], "Step 8 · Probe 2 · helpers home");
+        assert_eq!(notes[9], "Step 9 · backward move to node 0");
+        // Other algorithms get the phase name only.
+        assert_eq!(frame_notes(&frames, "p1tree")[5], "Step 5 · probe back");
     }
 
     #[test]

@@ -1281,6 +1281,17 @@ input[type=range] {
   margin: 0;
 }
 
+/* One line naming the step and phase of the frame on screen. Kept to its own
+ * row, and reserved even when empty, so the canvas does not jump. */
+.phase-label {
+  flex: 0 0 auto;
+  margin: 0;
+  min-height: 1.4em;
+  font-size: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 .legend {
   flex: 0 0 auto;
   display: flex;
@@ -1367,12 +1378,26 @@ footer a {
   .lab .workspace-head,
   .lab .playback,
   .lab .legend,
-  .lab .view-filters {
+  .lab .view-filters,
+  .lab .phase-label {
     background: var(--float-bg);
     border: 1px solid var(--border);
     border-radius: 12px;
     box-shadow: var(--shadow);
     backdrop-filter: blur(10px);
+  }
+
+  /* RootedDisp's step notes and the comparison table float like the bars
+   * around them; the note shows only once there is a frame to describe. */
+  .lab .phase-label {
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 6px 12px;
+    min-height: 0;
+  }
+
+  .lab .phase-label:empty {
+    display: none;
   }
 
   /* Toolbar: a pill in the top-left corner rather than a full-width bar. */
