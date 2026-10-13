@@ -15,7 +15,7 @@
 
   <main class="docs-shell">
     <div class="docs-bar">
-      <div class="chart-tabs" role="tablist"><button class="chart-tab" type="button" data-chart="drop">Drop and Freeze</button><button class="chart-tab" type="button" data-chart="help">Help by Scouts</button><button class="chart-tab" type="button" data-chart="p1tree">P1Tree</button></div>
+      <div class="chart-tabs" role="tablist"><button class="chart-tab" type="button" data-chart="drop">Drop and Freeze</button><button class="chart-tab" type="button" data-chart="help">Help by Scouts</button><button class="chart-tab" type="button" data-chart="p1tree">P1Tree</button><button class="chart-tab" type="button" data-chart="rooteddisp">RootedDisp</button></div>
       <div class="zoom-controls">
         <button id="zoomOut" class="icon-button" type="button" aria-label="Zoom out">−</button>
         <output id="zoomLevel" class="zoom-level">100%</output>
@@ -154,6 +154,45 @@
 <g id="p1tree-canvac" class="node step has-code" data-fn="apply_can_vacate" tabindex="0" role="button"><rect x="247" y="897" width="208" height="46" rx="9"/><text x="351.0" y="920.0">apply_can_vacate()</text></g>
 <g id="p1tree-parvac" class="node step has-code" data-fn="apply_parent_vacate" tabindex="0" role="button"><rect x="247" y="989" width="208" height="46" rx="9"/><text x="351.0" y="1012.0">apply_parent_vacate()</text></g>
 <g id="p1tree-backtrack" class="node step has-code" data-fn="backtrack" tabindex="0" role="button"><rect x="-312" y="943" width="208" height="46" rx="9"/><text x="-208.0" y="966.0">backtrack()</text></g>
+</g>
+</svg>
+</div></div>
+</section>
+<section class="chart-panel hidden" id="panel-rooteddisp" data-crate="ccm-algorithms">
+<p class="chart-blurb">The rooted HEO-DFS of Sudo et al. The largest ID leads a DFS and the smallest explorer settles at each new node. Before each move, Probe() sends the agents at the node out one port each; settlers they find come back as helpers and probe too, so the probers double each pass, and the helpers walk home before the group moves. Every box is one synchronous step or none.</p>
+<div class="chart-frame"><div class="chart-stage"><svg class="chart" viewBox="-655 -63 1128 954" role="img" aria-label="RootedDisp flowchart" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="arrow-rooteddisp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>
+<g class="edges">
+<path class="edge" d="M 0.0 23.0 L 0.0 69.0" marker-end="url(#arrow-rooteddisp)"/>
+<path class="edge" d="M 0.0 115.0 L 0.0 161.0" marker-end="url(#arrow-rooteddisp)"/>
+<path class="edge" d="M 0.0 207.0 L 0.0 245.0" marker-end="url(#arrow-rooteddisp)"/>
+<path class="edge" d="M -112.0 276.0 L -286.0 276.0" marker-end="url(#arrow-rooteddisp)"/><text class="edge-label" x="-199.0" y="276.0">yes</text>
+<path class="edge" d="M 0.0 307.0 L 0.0 345.0" marker-end="url(#arrow-rooteddisp)"/><text class="edge-label" x="0.0" y="326.0">no</text>
+<path class="edge" d="M 0.0 391.0 L 0.0 437.0" marker-end="url(#arrow-rooteddisp)"/>
+<path class="edge" d="M 0.0 483.0 L 0.0 521.0" marker-end="url(#arrow-rooteddisp)"/>
+<path class="edge" d="M 112.0 552.0 L 153.6 552.0 L 153.6 460.0 L 104.0 460.0" marker-end="url(#arrow-rooteddisp)"/><text class="edge-label" x="153.6" y="506.0">no: twice the probers</text>
+<path class="edge" d="M 0.0 583.0 L 0.0 621.0" marker-end="url(#arrow-rooteddisp)"/><text class="edge-label" x="0.0" y="602.0">yes</text>
+<path class="edge" d="M 0.0 667.0 L 0.0 705.0" marker-end="url(#arrow-rooteddisp)"/>
+<path class="edge" d="M -37.4 767.0 L -170.6 805.0" marker-end="url(#arrow-rooteddisp)"/><text class="edge-label" x="-104.0" y="786.0">yes</text>
+<path class="edge" d="M 37.4 767.0 L 170.6 805.0" marker-end="url(#arrow-rooteddisp)"/><text class="edge-label" x="104.0" y="786.0">no</text>
+<path class="edge" d="M -312.0 828.0 L -403.2 828.0 L -403.2 276.0 L -112.0 276.0" marker-end="url(#arrow-rooteddisp)"/><text class="edge-label" x="-403.2" y="552.0">next step</text>
+<path class="edge" d="M 312.0 828.0 L 395.2 828.0 L 395.2 368.0 L 104.0 368.0" marker-end="url(#arrow-rooteddisp)"/><text class="edge-label" x="395.2" y="598.0">probe the parent</text>
+<path class="edge aside" d="M -104.0 460.0 L -234.0 460.0" marker-end="url(#arrow-rooteddisp)"/><text class="edge-label" x="-169.0" y="460.0">each step</text>
+</g>
+<g class="nodes">
+<g id="rooteddisp-start" class="node entry"><rect x="-104" y="-23" width="208" height="46" rx="23"/><text x="0.0" y="0.0">simulate() / run()</text></g>
+<g id="rooteddisp-root" class="node step"><rect x="-104" y="69" width="208" height="46" rx="9"/><text x="0.0" y="84.0">smallest ID settles</text><text x="0.0" y="100.0">at the root (line 1)</text></g>
+<g id="rooteddisp-loop" class="node step has-code" data-fn="disperse" tabindex="0" role="button"><rect x="-104" y="161" width="208" height="46" rx="9"/><text x="0.0" y="184.0">disperse()</text></g>
+<g id="rooteddisp-leader" class="node decision"><polygon points="0,245 112,276 0,307 -112,276"/><text x="0.0" y="276.0">a_max settled?</text></g>
+<g id="rooteddisp-done" class="node terminal"><rect x="-494" y="253" width="208" height="46" rx="23"/><text x="-390.0" y="276.0">Completed</text></g>
+<g id="rooteddisp-probe" class="node step has-code" data-fn="probe" tabindex="0" role="button"><rect x="-104" y="345" width="208" height="46" rx="9"/><text x="0.0" y="360.0">probe(): reset next</text><text x="0.0" y="376.0">and checked (line 14)</text></g>
+<g id="rooteddisp-pass" class="node step has-code" data-fn="probe_pass" tabindex="0" role="button"><rect x="-104" y="437" width="208" height="46" rx="9"/><text x="0.0" y="452.0">probe_pass(): out, back</text><text x="0.0" y="468.0">(lines 16-21)</text></g>
+<g id="rooteddisp-commit" class="node aside has-code" data-fn="commit" tabindex="0" role="button"><rect x="-442" y="437" width="208" height="46" rx="9"/><text x="-338.0" y="460.0">commit(): one step</text></g>
+<g id="rooteddisp-found" class="node decision"><polygon points="0,521 112,552 0,583 -112,552"/><text x="0.0" y="544.0">unsettled found</text><text x="0.0" y="560.0">or all checked?</text></g>
+<g id="rooteddisp-home" class="node step has-code" data-fn="helpers_home" tabindex="0" role="button"><rect x="-104" y="621" width="208" height="46" rx="9"/><text x="0.0" y="636.0">helpers_home()</text><text x="0.0" y="652.0">(line 22)</text></g>
+<g id="rooteddisp-next" class="node decision"><polygon points="0,705 112,736 0,767 -112,736"/><text x="0.0" y="736.0">next set?</text></g>
+<g id="rooteddisp-fwd" class="node step has-code" data-fn="forward" tabindex="0" role="button"><rect x="-312" y="805" width="208" height="46" rx="9"/><text x="-208.0" y="820.0">forward(): smallest</text><text x="-208.0" y="836.0">explorer settles</text></g>
+<g id="rooteddisp-bwd" class="node step has-code" data-fn="backward" tabindex="0" role="button"><rect x="104" y="805" width="208" height="46" rx="9"/><text x="208.0" y="820.0">backward(): to the</text><text x="208.0" y="836.0">parent (line 11)</text></g>
 </g>
 </svg>
 </div></div>
@@ -1312,6 +1351,259 @@ fn move_out&lt;M: Metrics&gt;(
         self.head = parent;
         self.checkpoint(Phase::Movement);
         Ok(true)
+    }</template><template data-code="disperse" data-source="crates/ccm-algorithms/src/rooted_disp.rs">    /// The main loop, lines 2–11.
+    fn disperse(&amp;mut self) -&gt; Result&lt;(), Halt&gt; {
+        // Line 2: until a_max settles.
+        while !self.memory[self.leader.index()].settled {
+            let w = self.group_node;
+            // Lines 3–5.
+            match self.probe(w)? {
+                Some(port) =&gt; self.forward(w, port)?,
+                None =&gt; self.backward(w)?,
+            }
+        }
+        Ok(())
+    }</template><template data-code="probe" data-source="crates/ccm-algorithms/src/rooted_disp.rs">    /// `Probe()`, lines 12–22: returns `ψ(w).next`.
+    fn probe(&amp;mut self, w: NodeId) -&gt; Result&lt;Option&lt;PortId&gt;, Halt&gt; {
+        let psi = self.settler_at(w)?;
+        let degree = self.graph.degree(w).unwrap_or(0);
+        // Line 14: no cursor survives from an earlier call.
+        self.memory[psi.index()].next = None;
+        self.memory[psi.index()].checked = None;
+        self.stats.probe_calls += 1;
+
+        let mut passes = 0;
+        // Line 15: until every port of w has been checked.
+        loop {
+            let first = self.memory[psi.index()]
+                .checked
+                .map_or(0, |port| port.0 + 1);
+            if first &gt;= degree {
+                break;
+            }
+            passes += 1;
+            if let Some(port) = self.probe_pass(w, psi, first, degree)? {
+                // Lines 18–19.
+                self.memory[psi.index()].next = Some(port);
+                break;
+            }
+        }
+        self.stats.probe_passes += passes;
+        self.stats.max_passes_in_one_probe = self.stats.max_passes_in_one_probe.max(passes);
+
+        // Line 22.
+        self.helpers_home(w)?;
+        Ok(self.memory[psi.index()].next)
+    }</template><template data-code="probe_pass" data-source="crates/ccm-algorithms/src/rooted_disp.rs">    /// One pass of `Probe()`'s while loop, lines 16–21. Returns the port of
+    /// an unsettled neighbour if a prober found one.
+    fn probe_pass(
+        &amp;mut self,
+        w: NodeId,
+        psi: AgentId,
+        first: u16,
+        degree: u16,
+    ) -&gt; Result&lt;Option&lt;PortId&gt;, Halt&gt; {
+        // Line 16: every agent at w but ψ(w), in ascending ID (decision 2),
+        // takes one of the next Δ′ ports. Recruited helpers probe too.
+        self.probers.clear();
+        self.probers.extend_from_slice(&amp;self.explorers);
+        self.probers.extend_from_slice(&amp;self.helpers);
+        self.probers.sort_unstable();
+        let count = self.probers.len().min(usize::from(degree - first));
+        self.assigned.clear();
+        self.intents.clear();
+        for (offset, &amp;agent) in self.probers[..count].iter().enumerate() {
+            let port = PortId(first + u16::try_from(offset).expect(&quot;offset is below the degree&quot;));
+            self.assigned.push((agent, port));
+            self.intents.push(MoveIntent {
+                agent,
+                from: w,
+                port,
+            });
+        }
+        self.commit(Step::ProbeOut)?;
+        for _ in 0..count {
+            self.metrics.port_probe();
+            self.metrics.probe_out_traversal();
+        }
+        self.record(Phase::ProbeOut);
+
+        // Line 17: each prober looks at the agents on the node it stands on.
+        // A settler at home there comes back with it; finding nobody means
+        // the node is unsettled.
+        self.found.clear();
+        self.intents.clear();
+        let mut unsettled: Option&lt;PortId&gt; = None;
+        for index in 0..self.assigned.len() {
+            let (agent, port) = self.assigned[index];
+            let state = *self.state(agent);
+            let back = state
+                .arrival_port
+                .ok_or(broken(InvariantViolation::InvalidTraversal))?;
+            self.intents.push(MoveIntent {
+                agent,
+                from: state.node,
+                port: back,
+            });
+            if let Some(settler) = self.store.settled_agent_at(state.node) {
+                self.found.push((agent, settler));
+                self.intents.push(MoveIntent {
+                    agent: settler,
+                    from: state.node,
+                    port: back,
+                });
+            } else {
+                // Every settler is home when a Probe() starts, and helpers
+                // come only from ports already checked, so an owner that is
+                // away here would mean the model was broken.
+                if self.store.home_owner(state.node).is_some() {
+                    return Err(broken(InvariantViolation::OwnershipIndexMismatch).into());
+                }
+                // Decision 2: the smallest such port wins.
+                unsettled = Some(unsettled.map_or(port, |best: PortId| best.min(port)));
+            }
+        }
+        self.commit(Step::ProbeBack)?;
+        for _ in 0..count {
+            self.metrics.probe_back_traversal();
+        }
+        for index in 0..self.found.len() {
+            let (_, settler) = self.found[index];
+            self.store.vacate_home(settler)?;
+            // The helper's way home is the port it just arrived through.
+            self.memory[settler.index()].return_port = self.state(settler).arrival_port;
+            self.helpers.push(settler);
+            self.stats.helper_recruitments += 1;
+            if self.recorder.enabled() {
+                self.events.push(SimulationEvent::AgentStateChanged {
+                    agent: settler,
+                    from: AgentStatus::Settled,
+                    to: AgentStatus::SettledScout,
+                });
+            }
+        }
+        self.record(Phase::ProbeBack);
+
+        if unsettled.is_some() {
+            return Ok(unsettled);
+        }
+        // Line 21: every prober brought a settler back.
+        let last = first + u16::try_from(count - 1).expect(&quot;count is at most the degree&quot;);
+        self.memory[psi.index()].checked = Some(PortId(last));
+        Ok(None)
+    }</template><template data-code="commit" data-source="crates/ccm-algorithms/src/rooted_disp.rs">    /// One synchronous time step: the moves in `self.intents` are validated
+    /// and committed together, and the step is charged one round.
+    fn commit(&amp;mut self, step: Step) -&gt; Result&lt;(), Halt&gt; {
+        if self.steps &gt;= self.round_limit {
+            return Err(Halt::Limit);
+        }
+        apply_move_intents(
+            self.graph,
+            &amp;mut self.store,
+            &amp;mut self.intents,
+            &amp;mut self.metrics,
+        )?;
+        self.steps += 1;
+        self.metrics.logical_rounds(step.round(), 1);
+        if self.recorder.enabled() {
+            if step.is_group_move() {
+                if let Some(first) = self.intents.first() {
+                    self.events.push(SimulationEvent::GroupMoved {
+                        agents: self.intents.iter().map(|intent| intent.agent).collect(),
+                        from: first.from,
+                        to: self.state(first.agent).node,
+                        out_port: first.port,
+                    });
+                }
+            } else {
+                for index in 0..self.intents.len() {
+                    let intent = self.intents[index];
+                    let state = *self.state(intent.agent);
+                    self.events.push(SimulationEvent::AgentMoved {
+                        agent: intent.agent,
+                        from: intent.from,
+                        to: state.node,
+                        out_port: intent.port,
+                        in_port: state.arrival_port,
+                    });
+                }
+            }
+        }
+        Ok(())
+    }</template><template data-code="helpers_home" data-source="crates/ccm-algorithms/src/rooted_disp.rs">    /// Line 22: every helper walks home through the port it remembered.
+    /// Decision 1: the step is taken only when there is a helper.
+    fn helpers_home(&amp;mut self, w: NodeId) -&gt; Result&lt;(), Halt&gt; {
+        if self.helpers.is_empty() {
+            return Ok(());
+        }
+        self.intents.clear();
+        for index in 0..self.helpers.len() {
+            let helper = self.helpers[index];
+            let port = self.memory[helper.index()]
+                .return_port
+                .ok_or(broken(InvariantViolation::InvalidTraversal))?;
+            self.intents.push(MoveIntent {
+                agent: helper,
+                from: w,
+                port,
+            });
+        }
+        self.commit(Step::HelpersHome)?;
+        for index in 0..self.helpers.len() {
+            let helper = self.helpers[index];
+            let state = *self.state(helper);
+            if state.home != Some(state.node) {
+                return Err(broken(InvariantViolation::InvalidTraversal).into());
+            }
+            self.store.return_home(helper)?;
+            self.memory[helper.index()].return_port = None;
+            if self.recorder.enabled() {
+                self.events.push(SimulationEvent::AgentStateChanged {
+                    agent: helper,
+                    from: AgentStatus::SettledScout,
+                    to: AgentStatus::Settled,
+                });
+            }
+        }
+        self.helpers.clear();
+        self.stats.helper_return_steps += 1;
+        self.record(Phase::HelperReturn);
+        Ok(())
+    }</template><template data-code="forward" data-source="crates/ccm-algorithms/src/rooted_disp.rs">    /// Lines 6–9: the explorers move to the unsettled node `u` through
+    /// `port`, and the smallest ID among them settles there with
+    /// `parent ← a_max.pin`.
+    fn forward(&amp;mut self, w: NodeId, port: PortId) -&gt; Result&lt;(), Halt&gt; {
+        let psi_w = self.settler_at(w)?;
+        self.move_group(w, port, Step::Forward)?;
+        self.stats.forward_moves += 1;
+        let u = self.group_node;
+        let pin = self.state(self.leader).arrival_port;
+        let newcomer = self.explorers.remove(0);
+        self.depth[u.index()] = self.depth[w.index()] + 1;
+        self.settle(newcomer, u, pin)?;
+        if self.recorder.enabled() {
+            self.events.push(SimulationEvent::TreeEdgeAdded {
+                parent: psi_w,
+                child: newcomer,
+                parent_node: w,
+                child_node: u,
+                parent_port: Some(port),
+                child_port: pin,
+            });
+        }
+        self.record(Phase::Movement);
+        Ok(())
+    }</template><template data-code="backward" data-source="crates/ccm-algorithms/src/rooted_disp.rs">    /// Line 11: the explorers move back to `N(w, ψ(w).parent)`.
+    fn backward(&amp;mut self, w: NodeId) -&gt; Result&lt;(), Halt&gt; {
+        let psi = self.settler_at(w)?;
+        let port = self.memory[psi.index()]
+            .parent
+            .ok_or(RootedError::RootExhausted)?;
+        self.move_group(w, port, Step::Backward)?;
+        self.metrics.backtrack();
+        self.stats.backward_moves += 1;
+        self.record(Phase::Movement);
+        Ok(())
     }</template></div>
 
   <script type="module">
