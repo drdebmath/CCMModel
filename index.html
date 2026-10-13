@@ -48,6 +48,11 @@
           <div class="two-col"><label id="traceLimitWrap">Max records<input id="traceLimit" type="number" min="0" max="1000000" value="600"></label><label id="sampleEveryWrap" class="hidden">Sample every<input id="sampleEvery" type="number" min="1" max="1000000" value="4"></label></div>
         </section>
 
+        <section class="control-section"><h2>Compare</h2>
+          <p class="help-note">Runs RootedDisp, Drop and Freeze, Help by Scouts and P1Tree on the same graph, port labels and seed, with every agent at node 0. The preset is the 9-node star of the RootedDisp worked example.</p>
+          <div class="run-actions"><button id="compare" class="secondary" type="button">Compare on these inputs</button><button id="comparePreset" class="secondary" type="button">Star preset</button></div>
+        </section>
+
         <section class="control-section"><h2>Saved executions</h2>
           <div class="file-actions"><button id="export" class="secondary" type="button" disabled>Export JSON</button><label class="file-button secondary">Import JSON<input id="import" type="file" accept="application/json,.json"></label></div>
           <p class="help-note">The simulation runs locally in a Web Worker. No Python, server, or network data is required.</p>
@@ -94,6 +99,8 @@
         <div class="legend"><span><i class="dot settled"></i> settled</span><span><i class="dot waiting"></i> waiting / scout / helper</span><span><i class="dot unsettled"></i> unsettled</span><span id="legendTip" class="legend-tip">Hover a node for details</span></div>
         <div class="view-filters" role="group" aria-label="Display filters"><span class="view-filters-title">Show</span><label><input id="showEdges" type="checkbox" checked> Edges</label><label><input id="showPorts" type="checkbox" checked> Port labels</label><label><input id="showAgents" type="checkbox" checked> Agents</label><label><input id="showSettled" type="checkbox" checked> Settled</label><label><input id="showUnsettled" type="checkbox" checked> Unsettled</label><label><input id="showScout" type="checkbox" checked> Scouts / helpers / waiting</label></div>
       </div>
+
+      <div id="comparePanel" class="results-scroll compare-panel hidden" aria-label="Algorithm comparison"><div id="compareTable" class="results-table"></div></div>
     </main>
   </div>
   <div id="panelScrim" class="panel-scrim" aria-hidden="true"></div>
