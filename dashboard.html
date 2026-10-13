@@ -18,7 +18,7 @@
       <div class="panel-heading"><div><p class="eyebrow">EXPERIMENT</p><h1>Cost of dispersion</h1></div><button id="closePanel" class="icon-button mobile-only" type="button" aria-label="Close controls">×</button></div>
 
       <section class="control-section"><h2>Model</h2>
-        <label>Algorithm<select id="algorithm"><option value="drop">Drop and Freeze (legacy baseline)</option><option value="help">Help by Scouts (legacy baseline)</option><option value="p1tree">P1Tree (DFS)</option></select></label>
+        <label>Algorithm<select id="algorithm"><option value="drop">Drop and Freeze (legacy baseline)</option><option value="help">Help by Scouts (legacy baseline)</option><option value="p1tree">P1Tree (DFS)</option><option value="rooted">RootedDisp (HEO-DFS)</option></select></label>
         <label>Cost measured<select id="metric"><option value="rounds">Rounds</option><option value="moves">Agent moves</option><option value="probes">Port probes</option></select></label>
         <div class="two-col"><label>Nodes<input id="nodes" type="number" min="2" max="2000" value="40" inputmode="numeric"></label><label>Seed<input id="seed" type="number" min="0" max="4294967295" value="42" inputmode="numeric"></label></div>
         <p id="algorithmNote" class="help-note">All agents start at node 0, so the classes are compared on the same placement.</p>
