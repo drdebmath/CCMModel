@@ -166,6 +166,9 @@ struct AppState {
     frames: Vec<Frame>,
     /// One line per frame from [`frame_notes`], shown under the playback bar.
     notes: Vec<String>,
+    /// The last comparison's rows, and which of them is loaded for playback.
+    comparison: Vec<ComparisonRow>,
+    compare_selected: Option<usize>,
     frame: usize,
     timer: Option<i32>,
     layout: Vec<(f64, f64)>,
@@ -802,6 +805,11 @@ fn set_busy(state: &Rc<RefCell<AppState>>, busy: bool) {
     let mut app = state.borrow_mut();
     app.busy = busy;
     set_disabled(&element::<HtmlElement>(&app.document, "run"), busy);
+    set_disabled(&element::<HtmlElement>(&app.document, "compare"), busy);
+    set_disabled(
+        &element::<HtmlElement>(&app.document, "comparePreset"),
+        busy,
+    );
     set_disabled(&element::<HtmlElement>(&app.document, "cancel"), !busy);
     set_disabled(&element::<HtmlElement>(&app.document, "import"), busy);
 }
@@ -1688,14 +1696,26 @@ fn accept_result(state: &Rc<RefCell<AppState>>, result: ResultData) {
     resize(state);
 }
 
+/// Algorithms the comparison runs, RootedDisp first so its row loads first.
+const COMPARED: [&str; 4] = ["rooted", "drop", "help", "p1tree"];
+
+/// Sends one job to the worker: `"run"` for the configured algorithm, or
+/// `"compare"` for every algorithm in `algorithms` on the same inputs.
 fn post_run(
     worker: &Worker,
+    kind: &str,
+    algorithms: &[&str],
     config: &Config,
     graph: &Graph,
     starts: &[u32],
 ) -> Result<(), JsValue> {
     let message = Object::new();
-    Reflect::set(&message, &"type".into(), &"run".into())?;
+    Reflect::set(&message, &"type".into(), &kind.into())?;
+    let names = Array::new();
+    for name in algorithms {
+        names.push(&JsValue::from_str(name));
+    }
+    Reflect::set(&message, &"algorithms".into(), &names)?;
     Reflect::set(
         &message,
         &"algorithm".into(),
@@ -1797,6 +1817,13 @@ fn create_worker(state: &Rc<RefCell<AppState>>) {
                     set_busy(&ready_state, false);
                 }
             }
+        } else if typ == "compare-result" {
+            drop(app);
+            match comparison_from_message(&data) {
+                Ok(rows) => accept_comparison(&ready_state, rows),
+                Err(message) => say(&ready_state.borrow().document, &message, "error"),
+            }
+            set_busy(&ready_state, false);
         }
     });
     worker.set_onmessage(Some(onmessage.as_ref().unchecked_ref()));
@@ -1819,15 +1846,95 @@ fn create_worker(state: &Rc<RefCell<AppState>>) {
 }
 
 fn run(state: &Rc<RefCell<AppState>>) {
+    let Some((config, graph, starts)) = prepare(state, false) else {
+        return;
+    };
     let document = state.borrow().document.clone();
+    set_text(
+        &document,
+        "runTitle",
+        &format!("{} · {}", algorithm_label(&config.algorithm), config.family),
+    );
+    start_job(state, "run", &[], &config, &graph, &starts);
+}
+
+/// Runs every algorithm in [`COMPARED`] on one graph, one set of port labels
+/// and one seed, with every agent on node 0: the rooted start P1Tree and
+/// RootedDisp require, so all four answer the same question.
+fn compare(state: &Rc<RefCell<AppState>>) {
+    let Some((config, graph, starts)) = prepare(state, true) else {
+        return;
+    };
+    let document = state.borrow().document.clone();
+    set_text(
+        &document,
+        "runTitle",
+        &format!("Comparing algorithms · {}", config.family),
+    );
+    start_job(state, "compare", &COMPARED, &config, &graph, &starts);
+}
+
+/// The comparison preset: the 9-node star of the RootedDisp worked example,
+/// nine agents at the hub, full trace, then [`compare`].
+fn compare_preset(state: &Rc<RefCell<AppState>>) {
+    {
+        let app = state.borrow();
+        let document = &app.document;
+        element::<HtmlSelectElement>(document, "algorithm").set_value("rooted");
+        element::<HtmlSelectElement>(document, "family").set_value("star");
+        element::<HtmlSelectElement>(document, "placement").set_value("rooted");
+        element::<HtmlSelectElement>(document, "traceMode").set_value("full");
+        element::<HtmlInputElement>(document, "nodes").set_value("9");
+        element::<HtmlInputElement>(document, "agents").set_value("9");
+        for id in ["gridColumnsWrap", "treeBranchingWrap", "sampleEveryWrap"] {
+            let _ = element::<Element>(document, id)
+                .class_list()
+                .add_1("hidden");
+        }
+        let _ = element::<Element>(document, "traceLimitWrap")
+            .class_list()
+            .remove_1("hidden");
+    }
+    compare(state);
+}
+
+fn start_job(
+    state: &Rc<RefCell<AppState>>,
+    kind: &str,
+    algorithms: &[&str],
+    config: &Config,
+    graph: &Graph,
+    starts: &[u32],
+) {
+    let document = state.borrow().document.clone();
+    set_busy(state, true);
+    say(&document, "Preparing graph and starting Rust…", "busy");
+    create_worker(state);
+    let worker = state.borrow().worker.clone();
+    if let Some(worker) = worker {
+        if post_run(&worker, kind, algorithms, config, graph, starts).is_err() {
+            say(&document, "Unable to start the Rust worker.", "error");
+            set_busy(state, false);
+        }
+    }
+}
+
+/// Reads and checks the controls, builds the graph and starting placement,
+/// and resets the view for a new execution. `rooted` puts every agent on
+/// node 0 whatever the placement control says, and sets the control to match.
+fn prepare(state: &Rc<RefCell<AppState>>, rooted: bool) -> Option<(Config, Graph, Vec<u32>)> {
+    let document = state.borrow().document.clone();
+    if rooted {
+        element::<HtmlSelectElement>(&document, "placement").set_value("rooted");
+    }
     let mut config = read_config(&document);
     if config.agent_count > config.node_count {
         say(&document, "Agents cannot exceed nodes.", "error");
-        return;
+        return None;
     }
     if config.family == "complete" && config.node_count > 500 {
         say(&document, "Complete graphs are capped at 500 nodes in the visualizer; use the native CLI for larger dense cases.", "error");
-        return;
+        return None;
     }
     if config.node_count > 1000 && config.trace_mode == "full" {
         config.trace_mode = "bounded".into();
@@ -1860,25 +1967,124 @@ fn run(state: &Rc<RefCell<AppState>>) {
         app.result = None;
         app.frames.clear();
         app.notes.clear();
+        app.comparison.clear();
+        app.compare_selected = None;
         app.layout.clear();
         app.layout_size = (0.0, 0.0);
         set_disabled(&element::<HtmlElement>(&app.document, "export"), true);
+        let _ = element::<Element>(&app.document, "comparePanel")
+            .class_list()
+            .add_1("hidden");
     }
-    set_busy(state, true);
-    set_text(
-        &document,
-        "runTitle",
-        &format!("{} · {}", algorithm_label(&config.algorithm), config.family),
+    Some((config, graph, starts))
+}
+
+/// One row of a comparison: the algorithm's UI value and its result, or the
+/// error the worker reported for it.
+type ComparisonRow = (String, Result<ResultData, String>);
+
+fn comparison_from_message(data: &JsValue) -> Result<Vec<ComparisonRow>, String> {
+    let rows = Reflect::get(data, &"results".into())
+        .ok()
+        .and_then(|value| value.dyn_into::<Array>().ok())
+        .ok_or_else(|| "worker comparison did not contain results".to_owned())?;
+    rows.iter()
+        .map(|row| {
+            let algorithm = reflected_value(&row, "algorithm")?
+                .as_string()
+                .ok_or_else(|| "worker comparison row has no algorithm".to_owned())?;
+            let result = match reflected_value(&row, "result") {
+                Ok(value) if !value.is_undefined() => result_from_message(&value),
+                _ => Err(reflected_value(&row, "error")?
+                    .as_string()
+                    .unwrap_or_else(|| "failed".to_owned())),
+            };
+            Ok((algorithm, result))
+        })
+        .collect()
+}
+
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Draws the comparison table, marking the row whose playback is loaded.
+fn render_comparison(app: &AppState) {
+    let mut html = String::from(
+        "<table><thead><tr><th>Algorithm</th><th>Result</th><th>Rounds</th>\
+         <th>Moves</th><th>Probes</th><th></th></tr></thead><tbody>",
     );
-    say(&document, "Preparing graph and starting Rust…", "busy");
-    create_worker(state);
-    let worker = state.borrow().worker.clone();
-    if let Some(worker) = worker {
-        if post_run(&worker, &config, &graph, &starts).is_err() {
-            say(&document, "Unable to start the Rust worker.", "error");
-            set_busy(state, false);
+    for (index, (algorithm, result)) in app.comparison.iter().enumerate() {
+        let selected = if app.compare_selected == Some(index) {
+            " class=\"selected\""
+        } else {
+            ""
+        };
+        html.push_str(&format!(
+            "<tr{selected}><th>{}</th>",
+            escape_html(algorithm_label(algorithm))
+        ));
+        match result {
+            Ok(result) => html.push_str(&format!(
+                "<td{}>{}</td><td>{}</td><td>{}</td><td>{}</td>\
+                 <td><button type=\"button\" class=\"row-play\" data-compare=\"{index}\">Play</button></td></tr>",
+                if result.termination_code == 0 { "" } else { " class=\"capped\"" },
+                termination(result.termination_code),
+                result.rounds,
+                result.moves,
+                result.probes,
+            )),
+            Err(message) => html.push_str(&format!(
+                "<td class=\"capped\" colspan=\"5\">{}</td></tr>",
+                escape_html(message)
+            )),
         }
     }
+    html.push_str("</tbody></table>");
+    element::<Element>(&app.document, "compareTable").set_inner_html(&html);
+    let _ = element::<Element>(&app.document, "comparePanel")
+        .class_list()
+        .remove_1("hidden");
+}
+
+/// Loads the playback of comparison row `index` into the main view.
+fn show_comparison(state: &Rc<RefCell<AppState>>, index: usize) {
+    let (algorithm, result) = {
+        let app = state.borrow();
+        match app.comparison.get(index) {
+            Some((algorithm, Ok(result))) => (algorithm.clone(), result.clone()),
+            _ => return,
+        }
+    };
+    {
+        let mut app = state.borrow_mut();
+        app.compare_selected = Some(index);
+        if let Some(config) = app.config.as_mut() {
+            config.algorithm.clone_from(&algorithm);
+        }
+        element::<HtmlSelectElement>(&app.document, "algorithm").set_value(&algorithm);
+        render_comparison(&app);
+    }
+    accept_result(state, result);
+}
+
+fn accept_comparison(state: &Rc<RefCell<AppState>>, rows: Vec<ComparisonRow>) {
+    let first = rows.iter().position(|(_, result)| result.is_ok());
+    let count = rows.len();
+    state.borrow_mut().comparison = rows;
+    match first {
+        Some(index) => show_comparison(state, index),
+        None => render_comparison(&state.borrow()),
+    }
+    let app = state.borrow();
+    say(
+        &app.document,
+        &format!("Compared {count} algorithms on the same graph, ports and seed, every agent at node 0. Choose a row to play it."),
+        "",
+    );
 }
 
 fn cancel(state: &Rc<RefCell<AppState>>) {
@@ -2231,12 +2437,35 @@ pub fn start() -> Result<(), JsValue> {
         result: None,
         frames: Vec::new(),
         notes: Vec::new(),
+        comparison: Vec::new(),
+        compare_selected: None,
         frame: 0,
         timer: None,
         layout: Vec::new(),
         layout_size: (0.0, 0.0),
     }));
     hook_click(&state, "run", run);
+    hook_click(&state, "compare", compare);
+    hook_click(&state, "comparePreset", compare_preset);
+    {
+        // One listener for the whole comparison table: a row's Play button
+        // carries its index in `data-compare`.
+        let state = Rc::clone(&state);
+        let closure = Closure::<dyn FnMut(Event)>::new(move |event: Event| {
+            let index = event
+                .target()
+                .and_then(|target| target.dyn_into::<Element>().ok())
+                .and_then(|target| target.closest("[data-compare]").ok().flatten())
+                .and_then(|button| button.get_attribute("data-compare"))
+                .and_then(|value| value.parse::<usize>().ok());
+            if let Some(index) = index {
+                show_comparison(&state, index);
+            }
+        });
+        let _ = element::<Element>(&document, "compareTable")
+            .add_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
+        closure.forget();
+    }
     hook_click(&state, "cancel", cancel);
     hook_click(&state, "export", export_json);
     hook_click(&state, "prev", |s| {

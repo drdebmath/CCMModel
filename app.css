@@ -506,6 +506,27 @@ input[type=range] {
   border-bottom: 0;
 }
 
+/* The simulator's comparison table: short, under the legend, so the canvas
+   keeps most of the height. The loaded row is marked. */
+.compare-panel {
+  max-height: 28vh;
+}
+
+.results-table tr.selected th,
+.results-table tr.selected td {
+  background: var(--panel-2);
+}
+
+.results-table .row-play {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
 @media (max-width: 900px) {
   .chart-wrap {
     min-height: min(300px, 46vh);
