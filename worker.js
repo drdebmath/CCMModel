@@ -31,6 +31,17 @@ async function load() {
 
 load();
 
+// The UI's algorithm values, mapped to the adapter's selector. Anything
+// unrecognised falls back to Drop-and-Freeze, as it always has.
+function algorithmSelector(name) {
+  switch (name) {
+    case 'help': return wasm.AlgorithmSelector.HelpByScouts;
+    case 'p1tree': return wasm.AlgorithmSelector.P1Tree;
+    case 'rooted': return wasm.AlgorithmSelector.RootedDisp;
+    default: return wasm.AlgorithmSelector.DropAndFreeze;
+  }
+}
+
 self.onmessage = async ({ data }) => {
   if (data.type === 'ping') {
     if (!wasm) await load();
@@ -43,11 +54,7 @@ self.onmessage = async ({ data }) => {
     // The dashboard asks for many small runs at once. Looping here keeps the
     // main thread free and avoids a postMessage round trip per data point.
     try {
-      const algorithm = data.algorithm === 'help'
-        ? wasm.AlgorithmSelector.HelpByScouts
-        : data.algorithm === 'p1tree'
-          ? wasm.AlgorithmSelector.P1Tree
-          : wasm.AlgorithmSelector.DropAndFreeze;
+      const algorithm = algorithmSelector(data.algorithm);
       const results = [];
       for (let i = 0; i < data.jobs.length; i++) {
         const job = data.jobs[i];
@@ -79,11 +86,7 @@ self.onmessage = async ({ data }) => {
   if (!wasm) return;
   try {
     self.postMessage({ type: 'progress', value: 0, message: 'Starting Rust simulation…' });
-    const algorithm = data.algorithm === 'help'
-      ? wasm.AlgorithmSelector.HelpByScouts
-      : data.algorithm === 'p1tree'
-        ? wasm.AlgorithmSelector.P1Tree
-        : wasm.AlgorithmSelector.DropAndFreeze;
+    const algorithm = algorithmSelector(data.algorithm);
     const traceMode = data.traceMode === 'full'
       ? wasm.TraceMode.Full
       : data.traceMode === 'bounded' ? wasm.TraceMode.Bounded : wasm.TraceMode.Off;
