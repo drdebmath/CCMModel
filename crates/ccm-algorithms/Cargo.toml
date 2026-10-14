@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Drop-and-Freeze, Help-by-Scouts and P1Tree dispersion algorithms"
+description = "Drop-and-Freeze, Help-by-Scouts, P1Tree and RootedDisp dispersion algorithms"
 
 [dependencies]
 ccm-core = { path = "../ccm-core" }

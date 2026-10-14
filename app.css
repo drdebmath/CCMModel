@@ -633,6 +633,27 @@ input[type=range] {
   border-bottom: 0;
 }
 
+/* The simulator's comparison table: short, under the legend, so the canvas
+   keeps most of the height. The loaded row is marked. */
+.compare-panel {
+  max-height: 28vh;
+}
+
+.results-table tr.selected th,
+.results-table tr.selected td {
+  background: var(--panel-2);
+}
+
+.results-table .row-play {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
 @media (max-width: 900px) {
   .chart-wrap {
     min-height: min(300px, 46vh);
@@ -1281,6 +1302,17 @@ input[type=range] {
   margin: 0;
 }
 
+/* One line naming the step and phase of the frame on screen. Kept to its own
+ * row, and reserved even when empty, so the canvas does not jump. */
+.phase-label {
+  flex: 0 0 auto;
+  margin: 0;
+  min-height: 1.4em;
+  font-size: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 .legend {
   flex: 0 0 auto;
   display: flex;
@@ -1367,12 +1399,27 @@ footer a {
   .lab .workspace-head,
   .lab .playback,
   .lab .legend,
-  .lab .view-filters {
+  .lab .view-filters,
+  .lab .phase-label,
+  .lab .compare-panel {
     background: var(--float-bg);
     border: 1px solid var(--border);
     border-radius: 12px;
     box-shadow: var(--shadow);
     backdrop-filter: blur(10px);
+  }
+
+  /* RootedDisp's step notes and the comparison table float like the bars
+   * around them; the note shows only once there is a frame to describe. */
+  .lab .phase-label {
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 6px 12px;
+    min-height: 0;
+  }
+
+  .lab .phase-label:empty {
+    display: none;
   }
 
   /* Toolbar: a pill in the top-left corner rather than a full-width bar. */
