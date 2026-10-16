@@ -1,7 +1,8 @@
 use ccm_core::{Algorithm, NodeId, PortAssignment};
 use ccm_experiments::{
-    execute_one, prepare_run, results_to_csv, run_sweep_parallel, BuiltinRunner, GraphFamily,
-    GraphSpec, PlacementSpec, RunRequest, SweepSpec,
+    execute_one, general_disp_transitions, prepare_run, results_to_csv, run_sweep_parallel,
+    transitions_to_csv, BuiltinRunner, GraphFamily, GraphSpec, PlacementSpec, RunRequest,
+    SweepSpec,
 };
 use std::env;
 use std::fmt;
@@ -48,6 +49,7 @@ fn run() -> Result<(), CliError> {
         "validate" => validate(&options),
         "run" => run_plan(&options),
         "sweep" => sweep_plan(&options),
+        "transitions" => transitions_plan(&options),
         _ => Err(CliError::Usage(format!("unknown command {command:?}"))),
     }
 }
@@ -166,6 +168,20 @@ fn sweep_plan(options: &Options) -> Result<(), CliError> {
     Ok(())
 }
 
+/// `GeneralDisp`'s role transitions and merges for one run, as CSV.
+fn transitions_plan(options: &Options) -> Result<(), CliError> {
+    let request = request(
+        options,
+        options.nodes[0],
+        options.agents[0],
+        options.seed[0],
+    );
+    let trace = general_disp_transitions(request)
+        .map_err(|error| CliError::Preparation(error.to_string()))?;
+    print!("{}", transitions_to_csv(&trace));
+    Ok(())
+}
+
 fn request(options: &Options, nodes: usize, agents: usize, seed: u64) -> RunRequest {
     RunRequest {
         algorithm: options.algorithm,
@@ -186,6 +202,7 @@ fn parse_algorithm(value: &str) -> Result<Algorithm, CliError> {
         "rooted-disp" | "rooted_disp" | "rooteddisp" | "heo-dfs" | "rooted-heo-dfs" => {
             Ok(Algorithm::RootedDisp)
         }
+        "general-disp" | "general_disp" | "generaldisp" => Ok(Algorithm::GeneralDisp),
         _ => Err(CliError::Parse(format!("unknown algorithm {value:?}"))),
     }
 }
@@ -275,6 +292,6 @@ where
 
 fn print_help() {
     println!(
-        "ccm commands:\n  validate [options]  generate and validate one deterministic run\n  run [options]       execute one run and emit CSV\n  sweep [options]     execute independent runs and emit CSV\n\noptions:\n  --algorithm drop-and-freeze|help-by-scouts|p1tree|rooted-disp\n  --graph path|cycle|star|complete|tree[:branching]|grid[:columns]|random-connected:extra|random-bounded:max-degree\n  --nodes N[,N...] --agents A[,A...] --seed S[,S...]\n  --ports canonical|random|adversarial\n  --placement single[:node]|uniform:K|clustered:n,n|explicit:n,n\n  --round-limit R --workers W"
+        "ccm commands:\n  validate [options]  generate and validate one deterministic run\n  run [options]       execute one run and emit CSV\n  sweep [options]     execute independent runs and emit CSV\n  transitions [options]  general-disp only: role transitions and merges of one run as CSV\n\noptions:\n  --algorithm drop-and-freeze|help-by-scouts|p1tree|rooted-disp|general-disp\n    help-by-scouts, p1tree and rooted-disp need a single-node placement\n  --graph path|cycle|star|complete|tree[:branching]|grid[:columns]|random-connected:extra|random-bounded:max-degree\n  --nodes N[,N...] --agents A[,A...] --seed S[,S...]\n  --ports canonical|random|adversarial\n  --placement single[:node]|uniform:K|clustered:n,n|explicit:n,n\n  --round-limit R --workers W"
     );
 }
