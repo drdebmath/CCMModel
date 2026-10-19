@@ -36,6 +36,13 @@ pub enum RunError {
     Graph(crate::GraphGenerationError),
     Placement(crate::PlacementError),
     AlgorithmUnavailable(Algorithm),
+    /// The algorithm is defined only for a rooted start, every agent on one
+    /// node, and the placement scattered them. Refused before the run rather
+    /// than run under a model the algorithm was not written for.
+    RequiresRootedStart {
+        algorithm: Algorithm,
+        placement: String,
+    },
     Message(String),
 }
 
@@ -77,8 +84,9 @@ pub struct BuiltinRunner;
 
 impl SimulationRunner for BuiltinRunner {
     fn run(&self, prepared: &PreparedRun) -> Result<RunResult, RunError> {
+        check_placement(prepared)?;
         let limit = prepared.request.round_limit.unwrap_or_else(|| {
-            40_u64.saturating_mul(u64::try_from(prepared.request.agents.max(1)).unwrap_or(u64::MAX))
+            default_round_limit(prepared.request.algorithm, prepared.request.agents)
         });
         let (termination, metrics) = match prepared.request.algorithm {
             Algorithm::DropAndFreeze => {
@@ -114,6 +122,17 @@ impl SimulationRunner for BuiltinRunner {
             }
             Algorithm::RootedDisp => {
                 let (result, metrics, _) = ccm_algorithms::rooted_disp::simulate(
+                    &prepared.graph,
+                    &prepared.starts,
+                    limit,
+                    ComplexityMetrics::default(),
+                    NoTrace,
+                )
+                .map_err(|error| RunError::Message(error.to_string()))?;
+                (result.termination, metrics)
+            }
+            Algorithm::GeneralDisp => {
+                let (result, metrics, _) = ccm_algorithms::general_disp::simulate(
                     &prepared.graph,
                     &prepared.starts,
                     limit,
@@ -280,6 +299,56 @@ pub fn execute_many_parallel<R: SimulationRunner>(
     })
 }
 
+/// Whether an algorithm is defined only for a rooted start. Help-by-Scouts is
+/// a legacy baseline that supports rooted placements only (see its module
+/// documentation); `P1Tree` and `RootedDisp` implement rooted constructions.
+#[must_use]
+pub const fn requires_rooted_start(algorithm: Algorithm) -> bool {
+    matches!(
+        algorithm,
+        Algorithm::HelpByScouts | Algorithm::P1Tree | Algorithm::RootedDisp
+    )
+}
+
+/// Refuses a placement the algorithm is not defined for.
+///
+/// # Errors
+///
+/// Returns [`RunError::RequiresRootedStart`] when a rooted-only algorithm is
+/// given agents on more than one node.
+pub fn check_placement(prepared: &PreparedRun) -> Result<(), RunError> {
+    let algorithm = prepared.request.algorithm;
+    let rooted = prepared.starts.windows(2).all(|pair| pair[0] == pair[1]);
+    if requires_rooted_start(algorithm) && !rooted {
+        return Err(RunError::RequiresRootedStart {
+            algorithm,
+            placement: prepared.request.placement.label(),
+        });
+    }
+    Ok(())
+}
+
+/// The round limit used when a request sets none.
+///
+/// Most algorithms get `40 k` rounds. `GeneralDisp` spends twelve steps per
+/// unit and Theorem 2 bounds its units by `O(k log² k)`, so it gets
+/// `480 k (⌈log2 k⌉ + 1)²` steps: far above any run in its tests, and still
+/// finite.
+#[must_use]
+pub fn default_round_limit(algorithm: Algorithm, agents: usize) -> u64 {
+    let k = u64::try_from(agents.max(1)).unwrap_or(u64::MAX);
+    match algorithm {
+        Algorithm::GeneralDisp => {
+            let log = u64::from(k.next_power_of_two().trailing_zeros()) + 1;
+            480_u64
+                .saturating_mul(k)
+                .saturating_mul(log)
+                .saturating_mul(log)
+        }
+        _ => 40_u64.saturating_mul(k),
+    }
+}
+
 #[must_use]
 pub fn algorithm_label(algorithm: Algorithm) -> &'static str {
     match algorithm {
@@ -287,6 +356,7 @@ pub fn algorithm_label(algorithm: Algorithm) -> &'static str {
         Algorithm::HelpByScouts => "help_by_scouts",
         Algorithm::P1Tree => "p1tree",
         Algorithm::RootedDisp => "rooted_disp",
+        Algorithm::GeneralDisp => "general_disp",
     }
 }
 
@@ -297,7 +367,7 @@ pub fn algorithm_label(algorithm: Algorithm) -> &'static str {
 pub fn algorithm_kind(algorithm: Algorithm) -> &'static str {
     match algorithm {
         Algorithm::DropAndFreeze | Algorithm::HelpByScouts => "legacy_baseline",
-        Algorithm::P1Tree | Algorithm::RootedDisp => "paper",
+        Algorithm::P1Tree | Algorithm::RootedDisp | Algorithm::GeneralDisp => "paper",
     }
 }
 
