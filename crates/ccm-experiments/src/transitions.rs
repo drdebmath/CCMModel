@@ -1,8 +1,4 @@
-//! Role-transition traces for `GeneralDisp`: which agent became a zombie,
-//! settled, joined another group or rose a level, and when.
-//!
-//! A trace is prepared exactly as [`crate::execute_one`] prepares a run, so the
-//! same request gives the same graph, starts and result as a CSV row.
+//! Role-transition traces for `GeneralDisp`, prepared like a CSV run.
 
 use crate::runner::{check_placement, default_round_limit, prepare_run, RunError, RunRequest};
 use ccm_algorithms::general_disp::{self, slot_of, Group, GroupEvent};
@@ -13,16 +9,12 @@ use std::fmt::Write as _;
 /// One row of a role-transition trace.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoleTransition {
-    /// The time step the event happened in.
     pub step: u64,
-    /// Its slot, 1–12.
     pub slot: u8,
-    /// `became_zombie`, `settled`, `incorporated`, `level_up`, `forward`,
-    /// `backward`, `zombie_levels` or `chase`.
     pub kind: &'static str,
     pub agent: u32,
     pub node: u32,
-    /// Event-specific values as `name=value` pairs separated by spaces.
+    /// `name=value` pairs separated by spaces.
     pub detail: String,
 }
 
@@ -34,8 +26,7 @@ pub struct TransitionTrace {
     pub transitions: Vec<RoleTransition>,
 }
 
-/// Keeps the algorithm's own event log on without storing per-step
-/// checkpoints, which a long run does not need here.
+/// Turns the event log on without storing checkpoints.
 struct Listening;
 
 impl Recorder for Listening {
@@ -117,8 +108,6 @@ fn transition(event: GroupEvent) -> RoleTransition {
             location,
             swarm,
         } => {
-            // The event carries no node; the zombie is where it was before
-            // its next move, which the levels do not depend on.
             return RoleTransition {
                 step,
                 slot: slot_of(step),

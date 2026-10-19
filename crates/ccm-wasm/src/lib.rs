@@ -27,6 +27,7 @@ pub enum AlgorithmSelector {
     DropAndFreeze = 1,
     P1Tree = 2,
     RootedDisp = 3,
+    GeneralDisp = 4,
 }
 
 /// Trace policy. `Bounded` uses the supplied record and sampling limits.
@@ -46,6 +47,7 @@ enum AdapterError {
     Drop(String),
     P1Tree(String),
     RootedDisp(String),
+    GeneralDisp(String),
     Trace(String),
 }
 
@@ -58,6 +60,7 @@ impl fmt::Display for AdapterError {
             | Self::Drop(message)
             | Self::P1Tree(message)
             | Self::RootedDisp(message)
+            | Self::GeneralDisp(message)
             | Self::Trace(message) => f.write_str(message),
         }
     }
@@ -235,6 +238,7 @@ impl WasmSimulation {
             AlgorithmSelector::HelpByScouts => self.run_help(),
             AlgorithmSelector::P1Tree => self.run_p1tree(),
             AlgorithmSelector::RootedDisp => self.run_rooted_disp(),
+            AlgorithmSelector::GeneralDisp => self.run_general_disp(),
         }
     }
 
@@ -437,6 +441,55 @@ impl WasmSimulation {
                 .map_err(|error| AdapterError::RootedDisp(error.to_string()))?;
                 let truncated = trace_was_truncated(&recorder);
                 Ok(output_from_rooted_disp(
+                    result,
+                    metrics,
+                    Some(encode_trace(&recorder.into_trace(), truncated)),
+                ))
+            }
+        }
+    }
+
+    fn run_general_disp(&self) -> Result<SimulationOutput, AdapterError> {
+        match self.trace_mode {
+            TraceMode::Off => {
+                let (result, metrics, _) = ccm_algorithms::general_disp::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    NoTrace,
+                )
+                .map_err(|error| AdapterError::GeneralDisp(error.to_string()))?;
+                Ok(output_from_general_disp(result, metrics, None))
+            }
+            TraceMode::Full => {
+                let (result, metrics, recorder) = ccm_algorithms::general_disp::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    FullTrace::new(),
+                )
+                .map_err(|error| AdapterError::GeneralDisp(error.to_string()))?;
+                Ok(output_from_general_disp(
+                    result,
+                    metrics,
+                    Some(encode_trace(&recorder.into_trace(), false)),
+                ))
+            }
+            TraceMode::Bounded => {
+                let recorder = BoundedTrace::new(self.trace_budget())
+                    .map_err(|error| AdapterError::Trace(error.to_string()))?;
+                let (result, metrics, recorder) = ccm_algorithms::general_disp::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    recorder,
+                )
+                .map_err(|error| AdapterError::GeneralDisp(error.to_string()))?;
+                let truncated = trace_was_truncated(&recorder);
+                Ok(output_from_general_disp(
                     result,
                     metrics,
                     Some(encode_trace(&recorder.into_trace(), truncated)),
@@ -723,6 +776,37 @@ fn output_from_rooted_disp(
                 // A helper is a settler away from home, the renderer's third
                 // status.
                 ccm_algorithms::rooted_disp::RootedRole::Helper => 2,
+            })
+            .collect(),
+        homes: result
+            .agents
+            .iter()
+            .map(|agent| agent.home.map_or(-1, |node| node.0 as i32))
+            .collect(),
+        rounds: metrics.rounds,
+        moves: metrics.agent_moves,
+        probes: metrics.port_probes,
+        trace: trace.unwrap_or_else(empty_payload),
+    }
+}
+
+fn output_from_general_disp(
+    result: ccm_algorithms::general_disp::GeneralResult,
+    metrics: ComplexityMetrics,
+    trace: Option<RenderPayload>,
+) -> SimulationOutput {
+    use ccm_algorithms::general_disp::GeneralRole;
+    SimulationOutput {
+        algorithm: AlgorithmSelector::GeneralDisp,
+        termination_code: termination_code(&result.termination),
+        positions: result.agents.iter().map(|agent| agent.node.0).collect(),
+        statuses: result
+            .agents
+            .iter()
+            .map(|agent| match agent.role {
+                GeneralRole::Settler => 0,
+                GeneralRole::ActiveLeader | GeneralRole::WaitingLeader | GeneralRole::Zombie => 1,
+                GeneralRole::Helper => 2,
             })
             .collect(),
         homes: result
@@ -1166,6 +1250,58 @@ mod tests {
             scattered.run_internal(),
             Err(AdapterError::RootedDisp(message)) if message.contains("NonRootedStart")
         ));
+    }
+
+    /// Path of 6 nodes with agents on 0, 0, 0, 0, 3, 3.
+    fn two_groups(mode: TraceMode) -> WasmSimulation {
+        WasmSimulation::new(
+            6,
+            &[0, 1, 1, 2, 2, 3, 3, 4, 4, 5],
+            &[0, 0, 0, 0, 3, 3],
+            AlgorithmSelector::GeneralDisp,
+            mode,
+            100_000,
+            0,
+            1,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn general_disp_runs_a_scattered_start_like_the_native_call() {
+        let mut simulation = two_groups(TraceMode::Off);
+        let output = simulation.run_internal().unwrap();
+        let (native, metrics, _) = ccm_algorithms::general_disp::simulate(
+            &simulation.graph,
+            &simulation.starts,
+            100_000,
+            ComplexityMetrics::default(),
+            NoTrace,
+        )
+        .unwrap();
+        assert_eq!(output.termination_code, 0);
+        assert_eq!(output.rounds, native.steps);
+        assert_eq!(output.moves, metrics.agent_moves);
+        assert_eq!(output.positions, vec![0, 1, 2, 5, 3, 4]);
+        assert_eq!(output.statuses, vec![0, 0, 0, 1, 0, 0]);
+        assert_eq!(output.homes, vec![0, 1, 2, -1, 3, 4]);
+        assert_eq!(output.trace, empty_payload());
+    }
+
+    #[test]
+    fn general_disp_streams_a_well_formed_trace() {
+        let output = two_groups(TraceMode::Full).run_internal().unwrap();
+        assert_eq!(output.termination_code, 0);
+        assert!(output.trace.record_count > 0);
+        assert!(!phase_codes(&output.trace.bytes).is_empty());
+        let bounded = two_groups(TraceMode::Bounded);
+        let mut bounded = WasmSimulation {
+            max_trace_records: 8,
+            ..bounded
+        };
+        let output = bounded.run_internal().unwrap();
+        assert!(output.trace.record_count <= 16);
+        assert!(output.trace.truncated);
     }
 
     #[test]

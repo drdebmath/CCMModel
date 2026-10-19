@@ -1,55 +1,8 @@
-//! `GeneralDisp` dispersion: the general-setting HEO-DFS of Sudo et al.
-//!
-//! Implements Section 4 and Algorithms 2–5 of Sudo, Shibata, Nakamura, Kim
-//! and Masuzawa, *Near-linear Time Dispersion of Mobile Agents*
-//! (arXiv:2310.04376v3): every group of co-located agents runs its own
-//! HEO-DFS, and groups merge through the Zombie method of Shintaku et al.
-//! Line numbers below are those printed in Algorithms 2–5.
-//!
-//! # How it is simulated
-//!
-//! Time steps are grouped into units of twelve slots: step `t` is in slot
-//! `(t mod 12) + 1` (Section 4.2, Table 2). Every step is one call to
-//! [`apply_move_intents`], so each slot takes exactly one step of time even
-//! when nobody moves, and the step count is the paper's measure of time.
-//!
-//! | Slot | Who acts | Lines |
-//! |---|---|---|
-//! | 1 | leaders: leader election | 3–6 |
-//! | 2 | leaders: settle, level up, claim the territory, start probing | 8–21 |
-//! | 3 | settlers with `help` set walk to the probe centre | 61 |
-//! | 4–8 | leaders: `Probe(a)` | 31–59 |
-//! | 9–10 | zombies: chase a leader, weak ones in both slots | 63–68 |
-//! | 11–12 | leaders: forward or backward move, then `parent ← pin` | 23–29 |
-//!
-//! Every decision reads only the agents standing on one node. The agent
-//! store's indexes find those agents and check invariants; they are never
-//! used to learn about a node no deciding agent stands on.
-//!
-//! # Decisions where the pseudocode leaves a choice
-//!
-//! 1. Line 11 settles "one zombie": the one with the smallest ID. Line 13
-//!    picks "a zombie of the same level": again the smallest ID.
-//! 2. Line 33 reads `ψ(a)`; it is taken as `ψ(w)`, the settler at the centre.
-//! 3. Line 49 compares the prober's own `(leader, level)` with the settler's.
-//!    For a zombie prober that is the label of the group it came from, so it
-//!    would almost never match and the leader would walk back and forth
-//!    inside its own territory. The prose ("a settler in the same group",
-//!    Section 4.3) is followed instead: the settler is compared with the
-//!    probing leader's group.
-//! 4. Several probers that find no same-group settler in one pass: the
-//!    smallest port wins (line 57), as in `RootedDisp`.
-//! 5. Probers take ports in ascending agent-ID order (lines 43–47).
-//! 6. Termination. The paper leaves it to global knowledge in this setting
-//!    (Note on termination, Section 1.1). The simulation stops as soon as the
-//!    configuration is legitimate (Definition 1): every agent on its own
-//!    node, no zombie, no settler away from home or still asked to help, and
-//!    no prober out on a trip.
-//!    From such a configuration no agent ever moves again. The agents do not
-//!    detect this themselves; the simulator does.
-//! 7. A zombie on a node with no settler and no leader, or whose settler has
-//!    `next = ⊥`, cannot chase and stays put. The paper's analysis implies
-//!    this does not happen; it is counted in [`GeneralStats::stuck_chases`].
+//! `GeneralDisp`: the general HEO-DFS of Sudo et al., *Near-linear Time
+//! Dispersion of Mobile Agents* (arXiv:2310.04376v3), Section 4 and
+//! Algorithms 2–5. Each group of co-located agents runs its own HEO-DFS in
+//! units of twelve one-step slots, and groups merge through the Zombie method.
+//! The slot schedule and design decisions are in `docs/general-disp.md`.
 
 use ccm_core::{
     apply_move_intents, AgentId, AgentState, AgentStatus, AgentStore, AgentStoreError,
@@ -65,12 +18,10 @@ pub const SLOTS_PER_UNIT: u64 = 12;
 /// The slot, 1–12, that time step `step` belongs to.
 #[must_use]
 pub fn slot_of(step: u64) -> u8 {
-    // The remainder is below 12, so the conversion never fails.
     u8::try_from(step % SLOTS_PER_UNIT).unwrap_or(0) + 1
 }
 
-/// A group identifier `(leader, level)`, ordered as the paper's `≺`: by level
-/// first, then by leader ID.
+/// A group label, ordered by level, then by leader ID.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Group {
     pub level: u32,
@@ -78,17 +29,12 @@ pub struct Group {
 }
 
 /// What an agent remembers: the variables of Algorithms 2–5.
-///
-/// A leader uses `leader`, `level`, `parent` and `init_probe`; a zombie uses
-/// `leader`, `level`, `level_location` and `level_swarm`; a settler uses
-/// `leader`, `level`, `parent`, `next`, `checked`, `help` and `done`.
-#[allow(clippy::struct_excessive_bools)] // the paper's flags, one each
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GeneralMemory {
     /// `a.settled`.
     pub settled: bool,
-    /// `a.leader`: its own ID for a leader, another leader's for a zombie,
-    /// its group's leader for a settler.
+    /// `a.leader`: the leader of the agent's group.
     pub leader: AgentId,
     /// `a.level`.
     pub level: u32,
@@ -96,8 +42,7 @@ pub struct GeneralMemory {
     pub level_location: u32,
     /// `z.levelS`, a zombie's swarm level.
     pub level_swarm: u32,
-    /// A leader's `a.parent` (its incoming port after its last move), or a
-    /// settler's `ψ(u).parent`.
+    /// `a.parent` or `ψ(u).parent`: the port back to the DFS parent.
     pub parent: Option<PortId>,
     /// `a.InitProbe`.
     pub init_probe: bool,
@@ -105,15 +50,13 @@ pub struct GeneralMemory {
     pub next: Option<PortId>,
     /// `ψ(w).checked`; `None` is the paper's −1.
     pub checked: Option<PortId>,
-    /// `s.help`: the port at this settler's home leading to the centre it
-    /// helps.
+    /// `s.help`: the port from home to the centre it helps.
     pub help: Option<PortId>,
     /// `ψ(w).done`.
     pub done: bool,
     /// `a.found`, set by a prober in slot 7.
     pub found: bool,
-    /// A helper's port at the centre leading back to its home, learnt from
-    /// its incoming port on arrival in slot 3.
+    /// A helper's port at the centre leading back home.
     pub return_port: Option<PortId>,
 }
 
@@ -147,15 +90,14 @@ impl GeneralMemory {
 }
 
 /// Persistent words per agent: its ID plus the fields of [`GeneralMemory`].
-/// Section 4.4 counts a constant number of `O(log(k + Δ))`-bit variables.
 pub const MEMORY_WORDS_PER_AGENT: u64 = 14;
 
 /// An agent's role at the end of the run.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GeneralRole {
-    /// A leader that shares its node: it is running its HEO-DFS.
+    /// A leader sharing its node, running its HEO-DFS.
     ActiveLeader,
-    /// A leader alone on its node, waiting for a zombie to catch up.
+    /// A leader alone on its node.
     WaitingLeader,
     Zombie,
     /// A settler on its home.
@@ -174,24 +116,23 @@ pub struct GeneralAgent {
 }
 
 /// Role transitions and merges, recorded only when a recorder is listening.
-/// `step` is the time step in which the event happened.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GroupEvent {
-    /// Line 6: a leader met a stronger leader or settler.
+    /// A leader met a stronger leader or settler.
     BecameZombie {
         step: u64,
         agent: AgentId,
         node: NodeId,
         stronger: Group,
     },
-    /// Line 11: a zombie settled. `group` is the one it joins at line 17.
+    /// A zombie settled into `group`.
     Settled {
         step: u64,
         agent: AgentId,
         node: NodeId,
         group: Group,
     },
-    /// Lines 9 and 17: a weaker group's settler joined this leader's group.
+    /// A weaker group's settler joined a stronger group.
     Incorporated {
         step: u64,
         settler: AgentId,
@@ -199,7 +140,7 @@ pub enum GroupEvent {
         from: Group,
         to: Group,
     },
-    /// Line 14: a leader met a zombie of its own level.
+    /// A leader met a zombie of its own level.
     LevelUp {
         step: u64,
         leader: AgentId,
@@ -207,28 +148,28 @@ pub enum GroupEvent {
         node: NodeId,
         level: u32,
     },
-    /// Line 26, through a port the probe found.
+    /// A leader moved through the port its probe found.
     ForwardMove {
         step: u64,
         leader: AgentId,
         from: NodeId,
         to: NodeId,
     },
-    /// Line 26, back to the parent.
+    /// A leader moved back to its parent.
     BackwardMove {
         step: u64,
         leader: AgentId,
         from: NodeId,
         to: NodeId,
     },
-    /// Lines 63: a zombie's levels changed.
+    /// A zombie's location or swarm level changed.
     ZombieLevels {
         step: u64,
         zombie: AgentId,
         location: u32,
         swarm: u32,
     },
-    /// Lines 65 and 68: a zombie moved to chase a leader.
+    /// A zombie moved to chase a leader.
     Chased {
         step: u64,
         zombie: AgentId,
@@ -241,31 +182,22 @@ pub enum GroupEvent {
 /// Counts that belong to this algorithm and have no shared CSV column.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct GeneralStats {
-    /// Twelve-step units started.
     pub units: u64,
-    /// Leaders that became zombies (line 6).
     pub zombifications: u64,
-    /// Settlers moved into a stronger group (line 9).
     pub incorporations: u64,
-    /// Level-up events (line 14).
     pub level_ups: u64,
-    /// The highest level any agent reached; Lemma 3 bounds it by
-    /// `log2 k + 1`.
+    /// The highest level reached; Lemma 3 bounds it by `log2 k + 1`.
     pub max_level: u32,
-    /// Probes started (line 19).
     pub probe_inits: u64,
-    /// Probing passes, slots 6–7 at one centre (lines 43–54).
     pub probe_passes: u64,
-    /// Settlers asked to help (line 51).
     pub helper_recruitments: u64,
-    /// Helpers that came back home without being asked to again: sent home
-    /// by a stronger leader in slot 4 (line 35).
+    /// Helpers of a weaker group sent home in slot 4.
     pub helpers_dismissed: u64,
+    /// Recruited helpers that another group took over before they arrived.
+    pub stolen_helpers: u64,
     pub forward_moves: u64,
     pub backward_moves: u64,
-    /// Chase moves by weak zombies (slots 9 and 10).
     pub weak_chase_moves: u64,
-    /// Chase moves by strong zombies (slot 10).
     pub strong_chase_moves: u64,
     /// Zombies that should have chased but had no port to follow.
     pub stuck_chases: u64,
@@ -275,10 +207,8 @@ pub struct GeneralStats {
 pub struct GeneralResult {
     pub termination: Termination,
     pub agents: Vec<GeneralAgent>,
-    /// Synchronous time steps executed: the paper's measure of time.
     pub steps: u64,
     pub stats: GeneralStats,
-    /// Role transitions and merges; empty unless a recorder was listening.
     pub events: Vec<GroupEvent>,
 }
 
@@ -291,15 +221,14 @@ pub enum GeneralError {
         nodes: usize,
     },
     InvalidStart(NodeId),
-    /// A group finished probing at the root of its DFS tree with nowhere left
-    /// to go: its component holds fewer nodes than there are agents.
+    /// A group's component has fewer nodes than agents.
     Exhausted {
         leader: AgentId,
         node: NodeId,
     },
     Store(AgentStoreError),
     Scheduler(SchedulerError),
-    /// A model invariant broke. `detail` says which, `step` when.
+    /// A model invariant broke.
     Invariant {
         violation: InvariantViolation,
         step: u64,
@@ -327,17 +256,12 @@ impl From<SchedulerError> for GeneralError {
     }
 }
 
-/// Runs `GeneralDisp` from any placement: `starts[i]` is where agent `i`
-/// begins, and any number of agents may share a node.
-///
-/// `round_limit` bounds the number of time steps. Reaching it returns the
-/// partial state as [`Termination::RoundLimitReached`].
+/// Runs `GeneralDisp` with agent `i` starting on `starts[i]`, for at most
+/// `round_limit` time steps.
 ///
 /// # Errors
 ///
-/// Returns an error for an empty graph, no agents, more agents than nodes, a
-/// start outside the graph, a group whose component is too small to hold its
-/// agents, or a broken invariant.
+/// Returns an error for invalid input or a broken invariant.
 pub fn simulate<M: Metrics, R: Recorder>(
     graph: &PortGraph,
     starts: &[NodeId],
@@ -356,16 +280,15 @@ fn node_id(index: usize) -> NodeId {
     NodeId(u32::try_from(index).expect("PortGraph bounds the node count by u32"))
 }
 
-/// A leader probing at its node this unit, set up in slot 2.
+/// A leader probing at its node this unit.
 #[derive(Clone, Copy, Debug)]
 struct Centre {
     leader: AgentId,
     node: NodeId,
     /// `ψ(w)`.
     settler: AgentId,
-    /// Slot 4 decided the probe is over (line 36); slot 5 wraps it up.
     finishing: bool,
-    /// The pass of slots 6–8: ports `first..first + count`.
+    /// This pass probes ports `first..first + count`.
     first: u16,
     count: u16,
 }
@@ -389,14 +312,11 @@ struct Simulation<'g, M, R> {
     recorder: R,
     centres: Vec<Centre>,
     trips: Vec<Trip>,
-    /// Leaders that moved in slot 11 and record their `pin` in slot 12.
+    /// `(ψ(w), port)` of each helper recruited in slot 7.
+    recruited: Vec<(AgentId, PortId)>,
     moved: Vec<AgentId>,
-    /// Settlers walking home in this step; they are put back on their homes
-    /// once the step is committed.
     homecoming: Vec<AgentId>,
-    /// Settlers walking to a centre in slot 3.
     outgoing: Vec<AgentId>,
-    /// Zombies found weak in slot 9, which move again in slot 10.
     weak: Vec<bool>,
     intents: Vec<MoveIntent>,
     events: Vec<SimulationEvent>,
@@ -445,6 +365,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
             recorder,
             centres: Vec::new(),
             trips: Vec::new(),
+            recruited: Vec::new(),
             moved: Vec::new(),
             homecoming: Vec::new(),
             outgoing: Vec::new(),
@@ -488,7 +409,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         ))
     }
 
-    /// One time step: the slot's decisions, then its moves committed together.
+    /// One time step: the slot's decisions, then its moves.
     fn step(&mut self) -> Result<(), GeneralError> {
         let slot = slot_of(self.steps);
         if slot == 1 {
@@ -552,14 +473,12 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         Ok(())
     }
 
-    // ----- Slot 1: leader election (lines 3–6) -----
-
+    /// Slot 1 (lines 3–6): leaders meeting a stronger group become zombies.
     fn slot1_election(&mut self, occupancy: &OccupancyIndex) {
         let mut demoted = Vec::new();
         for agent in self.leaders() {
             let w = self.state(agent).node;
             let own = self.memory[agent.index()].group();
-            // Line 4: the strongest leader or settler at w, if stronger.
             let strongest = occupancy
                 .agents_at(w)
                 .iter()
@@ -572,10 +491,8 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         }
         for (agent, node, stronger) in demoted {
             let memory = &mut self.memory[agent.index()];
-            // Line 5.
             memory.level_location = memory.level;
             memory.level_swarm = memory.level;
-            // Line 6.
             memory.leader = stronger.leader;
             self.stats.zombifications += 1;
             self.note(GroupEvent::BecameZombie {
@@ -587,14 +504,13 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         }
     }
 
-    // ----- Slot 2: settle, level up, claim, start probing (lines 8–21) -----
-
+    /// Slot 2 (lines 8–21): settle a zombie or incorporate the settler, level
+    /// up, and set up the probe.
     fn slot2_settle(&mut self, occupancy: &OccupancyIndex) -> Result<(), GeneralError> {
         self.centres.clear();
         for leader in self.leaders() {
             let w = self.state(leader).node;
             let here = occupancy.agents_at(w);
-            // Line 8: alone, a leader waits.
             if here.len() == 1 {
                 continue;
             }
@@ -606,7 +522,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
             zombies.sort_unstable();
             let mut newcomer = None;
             let settler = if let Some(settler) = self.store.settled_agent_at(w) {
-                // Line 9: a weaker group's settler joins this one.
                 let from = self.memory[settler.index()].group();
                 if from < self.memory[leader.index()].group() {
                     self.memory[settler.index()].parent = self.memory[leader.index()].parent;
@@ -622,7 +537,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                 }
                 settler
             } else {
-                // Lines 10–12: settle the smallest zombie (decision 1).
                 if zombies.is_empty() {
                     return Err(self.broken(
                         InvariantViolation::InvalidAgentNode,
@@ -634,7 +548,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                 newcomer = Some(zombie);
                 zombie
             };
-            // Lines 13–16: a zombie of the leader's own level.
             let level = self.memory[leader.index()].level;
             if let Some(&zombie) = zombies
                 .iter()
@@ -654,7 +567,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                     level: level + 1,
                 });
             }
-            // Line 17.
             let group = self.memory[leader.index()].group();
             self.memory[settler.index()].leader = group.leader;
             self.memory[settler.index()].level = group.level;
@@ -666,7 +578,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                     group,
                 });
             }
-            // Lines 18–20.
             if self.memory[leader.index()].init_probe {
                 let memory = &mut self.memory[settler.index()];
                 memory.next = None;
@@ -676,7 +587,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                 self.memory[leader.index()].init_probe = false;
                 self.stats.probe_inits += 1;
             }
-            // Line 21: Probe(a) runs in slots 4–8.
             self.centres.push(Centre {
                 leader,
                 node: w,
@@ -711,8 +621,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         Ok(())
     }
 
-    // ----- Slot 3: settlers asked to help walk to the centre (line 61) -----
-
+    /// Slot 3 (line 61): settlers with `help` set walk to the centre.
     fn slot3_helpers_go(&mut self) -> Result<(), GeneralError> {
         for index in 0..self.memory.len() {
             let memory = self.memory[index];
@@ -757,15 +666,14 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         }
     }
 
-    // ----- Slot 4: missing helpers, dismissals, done? (lines 31–36) -----
-
+    /// Slot 4 (lines 31–36): find missing helpers, dismiss weaker ones, and
+    /// decide whether the probe is over.
     fn slot4_check(&mut self, occupancy: &OccupancyIndex) {
         for index in 0..self.centres.len() {
             let centre = self.centres[index];
             let (w, psi) = (centre.node, centre.settler);
             let leader_group = self.memory[centre.leader.index()].group();
             let helpers = self.helpers_at(occupancy, w, psi);
-            // Lines 32–33: the smallest checked port whose helper did not come.
             let checked = self.memory[psi.index()].checked;
             let next = checked.and_then(|last| {
                 (0..=last.0).map(PortId).find(|&port| {
@@ -775,7 +683,14 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                 })
             });
             self.memory[psi.index()].next = next;
-            // Lines 34–35: helpers of a weaker group go home for good.
+            for &(_, port) in self.recruited.iter().filter(|&&(at, _)| at == psi) {
+                if !helpers
+                    .iter()
+                    .any(|&b| self.state(b).arrival_port == Some(port))
+                {
+                    self.stats.stolen_helpers += 1;
+                }
+            }
             for &helper in &helpers {
                 if self.memory[helper.index()].group() < leader_group {
                     self.memory[helper.index()].help = None;
@@ -783,23 +698,20 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                     self.send_home(helper, w);
                 }
             }
-            // Line 36.
             let degree = self.graph.degree(w).unwrap_or(0);
             let all_checked = degree == 0 || checked.is_some_and(|last| last.0 + 1 == degree);
             self.centres[index].finishing = next.is_some() || all_checked;
         }
+        self.recruited.clear();
     }
 
-    // ----- Slot 5: wrap up a finished probe (lines 38–40) -----
-
+    /// Slot 5 (lines 38–40): a finished probe sends its helpers home.
     fn slot5_finish(&mut self, occupancy: &OccupancyIndex) {
         for index in 0..self.centres.len() {
             let centre = self.centres[index];
             if !centre.finishing {
                 continue;
             }
-            // Helpers dismissed in slot 4 already walked home in that step,
-            // so they are not at the centre any more.
             for helper in self.helpers_at(occupancy, centre.node, centre.settler) {
                 self.memory[helper.index()].help = None;
                 self.send_home(helper, centre.node);
@@ -808,8 +720,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         }
     }
 
-    // ----- Slot 6: probers go out (lines 43–47) -----
-
+    /// Slot 6 (lines 43–47): probers go out, one port each.
     fn slot6_probe_out(&mut self, occupancy: &OccupancyIndex) {
         self.trips.clear();
         for index in 0..self.centres.len() {
@@ -822,7 +733,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
             let first = self.memory[psi.index()]
                 .checked
                 .map_or(0, |last| last.0 + 1);
-            // Line 43: everyone at w but ψ(w), in ascending ID (decision 5).
             let mut probers: Vec<AgentId> = occupancy
                 .agents_at(w)
                 .iter()
@@ -830,7 +740,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                 .filter(|&b| b != psi)
                 .collect();
             probers.sort_unstable();
-            // Line 44: Δ′ = min(x, δ_w − 1 − checked).
             let count = probers.len().min(usize::from(degree - first));
             let count = u16::try_from(count).expect("count is at most the degree");
             self.centres[index].first = first;
@@ -854,8 +763,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         }
     }
 
-    // ----- Slot 7: look, recruit, come back (lines 49–54) -----
-
+    /// Slot 7 (lines 49–54): recruit a same-group settler and come back.
     fn slot7_probe_back(&mut self) -> Result<(), GeneralError> {
         for index in 0..self.trips.len() {
             let trip = self.trips[index];
@@ -867,18 +775,17 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                 )
             })?;
             let leader = self.centres[trip.centre].leader;
-            // Line 49, compared with the probing leader's group (decision 3).
             let found = self
                 .store
                 .settled_agent_at(state.node)
                 .filter(|&s| self.memory[s.index()].group() == self.memory[leader.index()].group());
             if let Some(settler) = found {
-                // Line 51.
                 self.memory[settler.index()].help = Some(back);
                 self.stats.helper_recruitments += 1;
+                self.recruited
+                    .push((self.centres[trip.centre].settler, trip.port));
             }
             self.memory[trip.prober.index()].found = found.is_some();
-            // Line 54.
             self.intents.push(MoveIntent {
                 agent: trip.prober,
                 from: state.node,
@@ -889,8 +796,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         Ok(())
     }
 
-    // ----- Slot 8: tally the pass, helpers go home (lines 56–59) -----
-
+    /// Slot 8 (lines 56–59): record the pass and send helpers home.
     fn slot8_tally(&mut self, occupancy: &OccupancyIndex) {
         for index in 0..self.centres.len() {
             let centre = self.centres[index];
@@ -898,8 +804,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                 continue;
             }
             let psi = centre.settler;
-            // Lines 56–57: the smallest port whose prober found nobody of the
-            // group (decision 4).
             let missing = self
                 .trips
                 .iter()
@@ -909,11 +813,9 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
             if missing.is_some() {
                 self.memory[psi.index()].next = missing;
             }
-            // Line 58.
             if centre.count > 0 {
                 self.memory[psi.index()].checked = Some(PortId(centre.first + centre.count - 1));
             }
-            // Line 59.
             for helper in self.helpers_at(occupancy, centre.node, psi) {
                 self.send_home(helper, centre.node);
             }
@@ -921,15 +823,14 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         self.trips.clear();
     }
 
-    // ----- Slots 9–10: zombies chase (lines 63–68) -----
-
+    /// Slots 9–10 (lines 63–68): weak zombies chase in both slots, strong
+    /// ones only in slot 10.
     fn chase(&mut self, first_slot: bool, occupancy: &OccupancyIndex) {
         let zombies: Vec<AgentId> = (0..self.memory.len())
             .map(agent_id)
             .filter(|&z| self.is_zombie(z))
             .collect();
         if first_slot {
-            // Line 63, from the state at the start of slot 9.
             let mut updates = Vec::with_capacity(zombies.len());
             for &zombie in &zombies {
                 let v = self.state(zombie).node;
@@ -959,18 +860,15 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                         swarm,
                     });
                 }
-                // Strong when the two levels agree.
                 self.weak[zombie.index()] = swarm < location;
             }
         }
         for &zombie in &zombies {
             let weak = self.weak[zombie.index()];
-            // Line 64: only weak zombies move in slot 9.
             if first_slot && !weak {
                 continue;
             }
             let v = self.state(zombie).node;
-            // Lines 64 and 67: not while a leader is here.
             let leader_here = occupancy.agents_at(v).iter().any(|&b| self.is_leader(b));
             if leader_here {
                 continue;
@@ -1007,8 +905,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         }
     }
 
-    // ----- Slot 11: the DFS move (lines 24–26) -----
-
+    /// Slot 11 (lines 23–26): move forward through `next`, or back.
     fn slot11_move(&mut self, occupancy: &OccupancyIndex) -> Result<(), GeneralError> {
         self.moved.clear();
         for index in 0..self.centres.len() {
@@ -1017,7 +914,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
             if !self.memory[psi.index()].done {
                 continue;
             }
-            // Lines 24–25: no port found means back to the parent.
             let forward = self.memory[psi.index()].next.is_some();
             if !forward {
                 self.memory[psi.index()].next = self.memory[psi.index()].parent;
@@ -1028,7 +924,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                     node: centre.node,
                 });
             };
-            // Line 26: everyone at w but ψ(w).
             let group: Vec<AgentId> = occupancy
                 .agents_at(centre.node)
                 .iter()
@@ -1076,8 +971,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         Ok(())
     }
 
-    // ----- Slot 12: remember the way back (lines 28–29) -----
-
+    /// Slot 12 (lines 27–29): leaders that moved record `parent ← pin`.
     fn slot12_parent(&mut self) {
         for index in 0..self.moved.len() {
             let leader = self.moved[index];
@@ -1089,11 +983,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         self.moved.clear();
     }
 
-    // ----- Plumbing -----
-
-    /// One synchronous time step: the moves in `self.intents` are validated
-    /// and committed together, and the step is charged one round. An empty
-    /// step is still a step: it clears every agent's incoming port.
+    /// Commits the step's moves together and charges one round.
     fn commit(&mut self, round: RoundKind) -> Result<(), GeneralError> {
         apply_move_intents(
             self.graph,
@@ -1119,8 +1009,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         Ok(())
     }
 
-    /// After a step: helpers that walked home are back on their homes, and
-    /// helpers that reached a centre remember their way back.
+    /// Puts returning helpers back home and gives arriving ones a return port.
     fn settle_movers(&mut self) -> Result<(), GeneralError> {
         for index in 0..self.homecoming.len() {
             let helper = self.homecoming[index];
@@ -1148,8 +1037,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
 
     /// Invariants after the step in slot `slot`.
     fn check(&self, slot: u8) -> Result<(), GeneralError> {
-        // Settlers leave home only for slots 3–8 (Section 4.2), so once slot 8
-        // is over every settler is home until the next slot 3.
         if matches!(slot, 8..=12 | 1 | 2) {
             for index in 0..self.memory.len() {
                 let state = self.state(agent_id(index));
@@ -1161,7 +1048,6 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                 }
             }
         }
-        // After leader election there is at most one leader per node.
         if slot == 1 {
             let mut seen = vec![false; self.graph.node_count()];
             for leader in self.leaders() {
@@ -1178,13 +1064,9 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
         Ok(())
     }
 
-    /// Definition 1, checked from outside: every agent on its own node, no
-    /// zombie, every settler home with nobody asking it to help, and no
-    /// prober out on a trip. Leaders are then alone on their nodes and wait,
-    /// so no agent moves again.
+    /// Definition 1: every agent on its own node, no zombie, every settler
+    /// home and not asked to help, and no prober out.
     fn legitimate(&self) -> bool {
-        // Between slots 6 and 7 a prober can stand alone on a node it is
-        // about to leave again; that configuration is not legitimate.
         if !self.trips.is_empty() {
             return false;
         }

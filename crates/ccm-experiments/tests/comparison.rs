@@ -1,7 +1,4 @@
-//! Multi-start comparison through the runner: one prepared input per case,
-//! given to every algorithm. Rooted-only algorithms must be refused before
-//! they run; `GeneralDisp` must disperse; and the role-transition trace must
-//! come from the same preparation as the CSV row.
+//! Multi-start comparison of every algorithm through the runner.
 
 use ccm_core::{Algorithm, NodeId, PortAssignment, Termination};
 use ccm_experiments::{
