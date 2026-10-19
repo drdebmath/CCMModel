@@ -30,7 +30,11 @@ A deterministic Cartesian sweep, with raw rows retained:
 
 Every CSV row includes the algorithm/version, optional build commit, graph and
 port model, placement, explicit starting vector, seed, termination reason,
-operation counters, maxima, and logical peak memory. Preserve raw rows; compute
+operation counters, maxima, and logical peak memory. The last column,
+`algorithm_kind`, is `paper` for an algorithm written from a publication and
+`legacy_baseline` for Drop-and-Freeze and Help-by-Scouts, which preserve this
+repository's historical code; it was appended last so that column positions in
+older result files are unchanged. Preserve raw rows; compute
 means, quantiles, and dispersion as a separate analysis step. Random averages
 are not evidence of worst-case complexity, so analyze structured and
 adversarial cases separately.

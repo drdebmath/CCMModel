@@ -11,7 +11,7 @@
 //! evicted records. Each record begins with a one-byte record kind followed by
 //! fixed-width dense IDs; group records carry an explicit agent count.
 
-use ccm_algorithms::{DropStatus, SharedRecorder, SimulationState as DropState};
+use ccm_algorithms::drop_and_freeze::{DropStatus, SharedRecorder, SimulationState as DropState};
 use ccm_core::{AgentStatus, ComplexityMetrics, NodeId, PortEdge, PortGraph, Termination};
 use ccm_trace::{
     BoundedTrace, Checkpoint, FullTrace, NoTrace, Phase, SimulationEvent, Trace, TraceBudget,
@@ -238,7 +238,7 @@ impl WasmSimulation {
         match self.trace_mode {
             TraceMode::Off => {
                 let mut metrics = ComplexityMetrics::default();
-                let run = ccm_algorithms::simulate_with(
+                let run = ccm_algorithms::drop_and_freeze::simulate_with(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -255,7 +255,7 @@ impl WasmSimulation {
             }
             TraceMode::Full => {
                 let mut metrics = ComplexityMetrics::default();
-                let run = ccm_algorithms::simulate_with(
+                let run = ccm_algorithms::drop_and_freeze::simulate_with(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -274,7 +274,7 @@ impl WasmSimulation {
                 let recorder = BoundedTrace::new(self.trace_budget())
                     .map_err(|error| AdapterError::Trace(error.to_string()))?;
                 let mut metrics = ComplexityMetrics::default();
-                let run = ccm_algorithms::simulate_with(
+                let run = ccm_algorithms::drop_and_freeze::simulate_with(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -297,7 +297,7 @@ impl WasmSimulation {
     fn run_help(&self) -> Result<SimulationOutput, AdapterError> {
         match self.trace_mode {
             TraceMode::Off => {
-                let (result, metrics, _) = ccm_help_scouts::simulate(
+                let (result, metrics, _) = ccm_algorithms::help_by_scouts::simulate(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -308,7 +308,7 @@ impl WasmSimulation {
                 Ok(output_from_help(result, metrics, None))
             }
             TraceMode::Full => {
-                let (result, metrics, recorder) = ccm_help_scouts::simulate(
+                let (result, metrics, recorder) = ccm_algorithms::help_by_scouts::simulate(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -325,7 +325,7 @@ impl WasmSimulation {
             TraceMode::Bounded => {
                 let recorder = BoundedTrace::new(self.trace_budget())
                     .map_err(|error| AdapterError::Trace(error.to_string()))?;
-                let (result, metrics, recorder) = ccm_help_scouts::simulate(
+                let (result, metrics, recorder) = ccm_algorithms::help_by_scouts::simulate(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -346,7 +346,7 @@ impl WasmSimulation {
     fn run_p1tree(&self) -> Result<SimulationOutput, AdapterError> {
         match self.trace_mode {
             TraceMode::Off => {
-                let (result, metrics, _) = ccm_p1tree::simulate(
+                let (result, metrics, _) = ccm_algorithms::p1tree::simulate(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -357,7 +357,7 @@ impl WasmSimulation {
                 Ok(output_from_p1tree(result, metrics, None))
             }
             TraceMode::Full => {
-                let (result, metrics, recorder) = ccm_p1tree::simulate(
+                let (result, metrics, recorder) = ccm_algorithms::p1tree::simulate(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -374,7 +374,7 @@ impl WasmSimulation {
             TraceMode::Bounded => {
                 let recorder = BoundedTrace::new(self.trace_budget())
                     .map_err(|error| AdapterError::Trace(error.to_string()))?;
-                let (result, metrics, recorder) = ccm_p1tree::simulate(
+                let (result, metrics, recorder) = ccm_algorithms::p1tree::simulate(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -591,7 +591,7 @@ fn output_from_drop(
 }
 
 fn output_from_help(
-    result: ccm_help_scouts::HelpResult,
+    result: ccm_algorithms::help_by_scouts::HelpResult,
     metrics: ComplexityMetrics,
     trace: Option<RenderPayload>,
 ) -> SimulationOutput {
@@ -603,9 +603,9 @@ fn output_from_help(
             .agents
             .iter()
             .map(|agent| match agent.status {
-                ccm_help_scouts::HelpStatus::Settled => 0,
-                ccm_help_scouts::HelpStatus::Unsettled => 1,
-                ccm_help_scouts::HelpStatus::SettledScout => 2,
+                ccm_algorithms::help_by_scouts::HelpStatus::Settled => 0,
+                ccm_algorithms::help_by_scouts::HelpStatus::Unsettled => 1,
+                ccm_algorithms::help_by_scouts::HelpStatus::SettledScout => 2,
             })
             .collect(),
         homes: result
@@ -621,7 +621,7 @@ fn output_from_help(
 }
 
 fn output_from_p1tree(
-    result: ccm_p1tree::P1Result,
+    result: ccm_algorithms::p1tree::P1Result,
     metrics: ComplexityMetrics,
     trace: Option<RenderPayload>,
 ) -> SimulationOutput {
@@ -633,11 +633,11 @@ fn output_from_p1tree(
             .agents
             .iter()
             .map(|agent| match agent.status {
-                ccm_p1tree::P1Status::Settled => 0,
-                ccm_p1tree::P1Status::Unsettled => 1,
+                ccm_algorithms::p1tree::P1Status::Settled => 0,
+                ccm_algorithms::p1tree::P1Status::Unsettled => 1,
                 // The renderer's third status is "settled but away", which is
                 // what a travelling scout is.
-                ccm_p1tree::P1Status::SettledScout => 2,
+                ccm_algorithms::p1tree::P1Status::SettledScout => 2,
             })
             .collect(),
         homes: result

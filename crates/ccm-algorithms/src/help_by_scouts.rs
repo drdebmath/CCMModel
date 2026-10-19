@@ -1,36 +1,20 @@
-//! Indexed, deterministic port of the repository's Help-by-Scouts behavior.
+//! Help-by-Scouts: a **legacy baseline**, an indexed, deterministic port of the
+//! repository's historical Help-by-Scouts behaviour.
+//!
+//! Like Drop-and-Freeze it is not a literal implementation of Sudo et al.; see
+//! `docs/behavior-spec.md`. It supports rooted placements only.
 
-use ccm_core::{
-    AgentId, AgentStatus, ComplexityMetrics, Metrics, NodeId, PortGraph, PortId, RoundKind,
-    Termination,
-};
-use ccm_trace::{NoTrace, Phase, Recorder, SimulationEvent};
+use ccm_core::{AgentId, AgentStatus, Metrics, NodeId, PortGraph, PortId, RoundKind, Termination};
+use ccm_trace::{Phase, Recorder, SimulationEvent};
+
+pub use crate::common::{EdgeType, NodeType};
 use core::fmt;
-
-/// Version of the authoritative Help-by-Scouts implementation.
-pub const ALGORITHM_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HelpStatus {
     Unsettled,
     Settled,
     SettledScout,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NodeType {
-    Unvisited,
-    Visited,
-    PartiallyVisited,
-    FullyVisited,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EdgeType {
-    OneOne,
-    OtherOne,
-    OneOther,
-    OtherOther,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -272,16 +256,8 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
     }
 
     fn edge_type(&self, node: NodeId, port: PortId) -> Result<EdgeType, HelpError> {
-        let edge = self
-            .graph
-            .traverse(node, port)
-            .ok_or(HelpError::InvalidPort { node, port })?;
-        Ok(match (port == PortId(0), edge.remote_port == PortId(0)) {
-            (true, true) => EdgeType::OneOne,
-            (false, true) => EdgeType::OtherOne,
-            (true, false) => EdgeType::OneOther,
-            (false, false) => EdgeType::OtherOther,
-        })
+        crate::common::edge_type_at(self.graph, node, port)
+            .ok_or(HelpError::InvalidPort { node, port })
     }
 
     fn settle(&mut self, agent: AgentId, node: NodeId, head: AgentId) -> Result<(), HelpError> {
@@ -329,12 +305,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
             }
             _ => 99,
         };
-        let edge_rank = match result.edge_type {
-            EdgeType::OtherOne => 0,
-            EdgeType::OneOne | EdgeType::OneOther => 1,
-            EdgeType::OtherOther => 2,
-        };
-        (node_rank, edge_rank, result.port.0)
+        (node_rank, result.edge_type.priority(), result.port.0)
     }
 
     fn parallel_probe(
@@ -727,265 +698,4 @@ pub fn simulate<M: Metrics, R: Recorder>(
     recorder: R,
 ) -> Result<(HelpResult, M, R), HelpError> {
     Simulation::new(graph, starts, round_limit, metrics, recorder)?.run()
-}
-
-/// Convenience entry point with complexity metrics and tracing disabled.
-///
-/// # Errors
-///
-/// Returns configuration, traversal, round-limit, or invariant errors.
-pub fn run(
-    graph: &PortGraph,
-    starts: &[NodeId],
-    round_limit: u64,
-) -> Result<HelpResult, HelpError> {
-    simulate(
-        graph,
-        starts,
-        round_limit,
-        ComplexityMetrics::default(),
-        NoTrace,
-    )
-    .map(|(result, _, _)| result)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ccm_core::PortEdge;
-    use ccm_trace::FullTrace;
-
-    #[test]
-    fn single_agent_settles_without_moving() {
-        let graph = PortGraph::from_undirected_edges(1, &[]).unwrap();
-        let result = run(&graph, &[NodeId(0)], 40).unwrap();
-        assert_eq!(result.termination, Termination::Completed);
-        assert_eq!(result.agents[0].status, HelpStatus::Settled);
-        assert_eq!(result.agents[0].home, Some(NodeId(0)));
-    }
-
-    #[test]
-    fn rooted_path_disperses() {
-        let graph =
-            PortGraph::from_undirected_edges(3, &[(NodeId(0), NodeId(1)), (NodeId(1), NodeId(2))])
-                .unwrap();
-        let result = run(&graph, &[NodeId(0), NodeId(0), NodeId(0)], 200).unwrap();
-        let mut nodes: Vec<NodeId> = result.agents.iter().map(|agent| agent.node).collect();
-        nodes.sort_unstable();
-        assert_eq!(nodes, vec![NodeId(0), NodeId(1), NodeId(2)]);
-        assert_eq!(
-            result
-                .agents
-                .iter()
-                .map(|agent| agent.home)
-                .collect::<Vec<_>>(),
-            vec![Some(NodeId(2)), Some(NodeId(1)), Some(NodeId(0))]
-        );
-    }
-
-    #[test]
-    fn same_input_is_deterministic() {
-        let graph = PortGraph::from_undirected_edges(
-            4,
-            &[
-                (NodeId(0), NodeId(1)),
-                (NodeId(1), NodeId(2)),
-                (NodeId(2), NodeId(3)),
-            ],
-        )
-        .unwrap();
-        let first = run(&graph, &[NodeId(0); 4], 400).unwrap();
-        let second = run(&graph, &[NodeId(0); 4], 400).unwrap();
-        assert_eq!(first, second);
-    }
-
-    #[test]
-    fn explicit_cycle_matches_python_final_fixture() {
-        let graph = PortGraph::from_port_tables(vec![
-            vec![
-                PortEdge {
-                    neighbor: NodeId(1),
-                    remote_port: PortId(0),
-                },
-                PortEdge {
-                    neighbor: NodeId(2),
-                    remote_port: PortId(1),
-                },
-            ],
-            vec![
-                PortEdge {
-                    neighbor: NodeId(0),
-                    remote_port: PortId(0),
-                },
-                PortEdge {
-                    neighbor: NodeId(2),
-                    remote_port: PortId(0),
-                },
-            ],
-            vec![
-                PortEdge {
-                    neighbor: NodeId(1),
-                    remote_port: PortId(1),
-                },
-                PortEdge {
-                    neighbor: NodeId(0),
-                    remote_port: PortId(1),
-                },
-            ],
-        ])
-        .unwrap();
-        let result = run(&graph, &[NodeId(0); 3], 200).unwrap();
-        assert_eq!(
-            result
-                .agents
-                .iter()
-                .map(|agent| agent.home)
-                .collect::<Vec<_>>(),
-            vec![Some(NodeId(2)), Some(NodeId(1)), Some(NodeId(0))]
-        );
-    }
-
-    #[test]
-    fn canonical_star_matches_python_final_fixture() {
-        let graph = PortGraph::from_undirected_edges(
-            4,
-            &[
-                (NodeId(0), NodeId(1)),
-                (NodeId(0), NodeId(2)),
-                (NodeId(0), NodeId(3)),
-            ],
-        )
-        .unwrap();
-        let result = run(&graph, &[NodeId(0); 4], 400).unwrap();
-        assert_eq!(
-            result
-                .agents
-                .iter()
-                .map(|agent| agent.home)
-                .collect::<Vec<_>>(),
-            vec![
-                Some(NodeId(1)),
-                Some(NodeId(3)),
-                Some(NodeId(2)),
-                Some(NodeId(0))
-            ]
-        );
-    }
-
-    #[test]
-    fn canonical_tree_matches_python_final_fixture() {
-        let graph = PortGraph::from_undirected_edges(
-            5,
-            &[
-                (NodeId(0), NodeId(1)),
-                (NodeId(0), NodeId(2)),
-                (NodeId(1), NodeId(3)),
-                (NodeId(1), NodeId(4)),
-            ],
-        )
-        .unwrap();
-        let result = run(&graph, &[NodeId(0); 5], 600).unwrap();
-        assert_eq!(
-            result
-                .agents
-                .iter()
-                .map(|agent| agent.home)
-                .collect::<Vec<_>>(),
-            vec![
-                Some(NodeId(4)),
-                Some(NodeId(3)),
-                Some(NodeId(1)),
-                Some(NodeId(2)),
-                Some(NodeId(0)),
-            ]
-        );
-    }
-
-    #[test]
-    fn canonical_complete_four_matches_python_final_fixture() {
-        let graph = PortGraph::from_undirected_edges(
-            4,
-            &[
-                (NodeId(0), NodeId(1)),
-                (NodeId(0), NodeId(2)),
-                (NodeId(0), NodeId(3)),
-                (NodeId(1), NodeId(2)),
-                (NodeId(1), NodeId(3)),
-                (NodeId(2), NodeId(3)),
-            ],
-        )
-        .unwrap();
-        let result = run(&graph, &[NodeId(0); 4], 600).unwrap();
-        assert_eq!(
-            result
-                .agents
-                .iter()
-                .map(|agent| agent.home)
-                .collect::<Vec<_>>(),
-            vec![
-                Some(NodeId(3)),
-                Some(NodeId(1)),
-                Some(NodeId(2)),
-                Some(NodeId(0))
-            ]
-        );
-    }
-
-    #[test]
-    fn documents_python_multi_start_failure() {
-        let graph =
-            PortGraph::from_undirected_edges(3, &[(NodeId(0), NodeId(1)), (NodeId(1), NodeId(2))])
-                .unwrap();
-        assert!(matches!(
-            run(&graph, &[NodeId(0), NodeId(2)], 200),
-            Err(HelpError::MissingAgentAtNode { .. })
-        ));
-    }
-
-    #[test]
-    fn tracing_does_not_change_results_or_metrics() {
-        let graph =
-            PortGraph::from_undirected_edges(3, &[(NodeId(0), NodeId(1)), (NodeId(1), NodeId(2))])
-                .unwrap();
-        let (plain, plain_metrics, _) = simulate(
-            &graph,
-            &[NodeId(0); 3],
-            200,
-            ComplexityMetrics::default(),
-            NoTrace,
-        )
-        .unwrap();
-        let (traced, traced_metrics, trace) = simulate(
-            &graph,
-            &[NodeId(0); 3],
-            200,
-            ComplexityMetrics::default(),
-            FullTrace::new(),
-        )
-        .unwrap();
-        assert_eq!(plain, traced);
-        assert_eq!(plain_metrics, traced_metrics);
-        assert!(!trace.trace().events.is_empty());
-    }
-
-    #[test]
-    fn round_limit_returns_partial_state_and_metrics() {
-        let graph =
-            PortGraph::from_undirected_edges(3, &[(NodeId(0), NodeId(1)), (NodeId(1), NodeId(2))])
-                .unwrap();
-        let (result, metrics, _) = simulate(
-            &graph,
-            &[NodeId(0); 3],
-            1,
-            ComplexityMetrics::default(),
-            NoTrace,
-        )
-        .unwrap();
-        assert_eq!(
-            result.termination,
-            Termination::RoundLimitReached { limit: 1 }
-        );
-        assert_eq!(metrics.macro_rounds, 1);
-        assert_eq!(metrics.settlements, 1);
-    }
 }

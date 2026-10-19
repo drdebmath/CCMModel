@@ -7,8 +7,6 @@ members = [
     "crates/ccm-cli",
     "crates/ccm-compat",
     "crates/ccm-experiments",
-    "crates/ccm-help-scouts",
-    "crates/ccm-p1tree",
     "crates/ccm-serve",
     "crates/ccm-trace",
     "crates/ccm-wasm",

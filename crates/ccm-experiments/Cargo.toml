@@ -9,8 +9,6 @@ repository.workspace = true
 [dependencies]
 ccm-algorithms = { path = "../ccm-algorithms" }
 ccm-core = { path = "../ccm-core" }
-ccm-help-scouts = { path = "../ccm-help-scouts" }
-ccm-p1tree = { path = "../ccm-p1tree" }
 ccm-trace = { path = "../ccm-trace" }
 
 [lints]

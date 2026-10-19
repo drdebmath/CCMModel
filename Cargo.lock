@@ -22,7 +22,7 @@ version = "0.1.0"
 dependencies = [
  "ccm-algorithms",
  "ccm-core",
- "ccm-help-scouts",
+ "ccm-trace",
 ]
 
 [[package]]
@@ -56,24 +56,6 @@ version = "0.1.0"
 dependencies = [
  "ccm-algorithms",
  "ccm-core",
- "ccm-help-scouts",
- "ccm-p1tree",
- "ccm-trace",
-]
-
-[[package]]
-name = "ccm-help-scouts"
-version = "0.1.0"
-dependencies = [
- "ccm-core",
- "ccm-trace",
-]
-
-[[package]]
-name = "ccm-p1tree"
-version = "0.1.0"
-dependencies = [
- "ccm-core",
  "ccm-trace",
 ]
 
@@ -94,8 +76,6 @@ version = "0.1.0"
 dependencies = [
  "ccm-algorithms",
  "ccm-core",
- "ccm-help-scouts",
- "ccm-p1tree",
  "ccm-trace",
  "js-sys",
  "wasm-bindgen",

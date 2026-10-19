@@ -248,7 +248,7 @@ function __wbg_adapter_31(arg0, arg1, arg2) {
 }
 
 function __wbg_adapter_40(arg0, arg1) {
-    wasm._dyn_core_9b3796e30d99ddb7___ops__function__FnMut_____Output______as_wasm_bindgen_4595a3726aa8569f___closure__WasmClosure___describe__invoke______(arg0, arg1);
+    wasm._dyn_core_9b3796e30d99ddb7___ops__function__FnMut_____Output______as_wasm_bindgen_654d4692a3abe62d___closure__WasmClosure___describe__invoke______(arg0, arg1);
 }
 
 async function __wbg_load(module, imports) {

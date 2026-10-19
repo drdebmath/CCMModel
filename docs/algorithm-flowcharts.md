@@ -14,9 +14,9 @@ before drawing conclusions from any of them.
 
 ## Contents
 
-- [Drop and Freeze](#drop-and-freeze) — `ccm-algorithms`
-- [Help by Scouts](#help-by-scouts) — `ccm-help-scouts`
-- [P1Tree](#p1tree) — `ccm-p1tree`
+- [Drop and Freeze](#drop-and-freeze) (legacy baseline) — `ccm_algorithms::drop_and_freeze`
+- [Help by Scouts](#help-by-scouts) (legacy baseline) — `ccm_algorithms::help_by_scouts`
+- [P1Tree](#p1tree) — `ccm_algorithms::p1tree`
 
 ---
 
@@ -92,12 +92,6 @@ pub fn simulate_with<M: Metrics, R: Recorder>(
     observe(metrics, &state);
     recorder.record(FrameLabel::Start, &state);
 
-    let metadata = SimulationMetadata {
-        node_count: graph.node_count(),
-        agent_count: state.agents.len(),
-        round_limit,
-    };
-
     let mut completed = all_settled(&state);
     for round in 1..=round_limit {
         if completed {
@@ -131,7 +125,6 @@ pub fn simulate_with<M: Metrics, R: Recorder>(
         Termination::RoundLimitReached { limit: round_limit }
     };
     Ok(SimulationRun {
-        metadata,
         final_state: state,
         termination,
         trace: recorder.finish(),
@@ -157,15 +150,7 @@ fn canonicalize_ports(graph: &PortGraph) -> Result<PortGraph, GraphError> {
 ```rust
 fn ordered_ports(graph: &PortGraph, node: NodeId) -> Vec<PortId> {
     let mut ports: Vec<(PortId, PortEdge)> = graph.ports(node).collect();
-    ports.sort_by_key(|(port, edge)| {
-        if port.0 != 0 && edge.remote_port.0 == 0 {
-            (0_u8, port.0)
-        } else if port.0 == 0 {
-            (1_u8, port.0)
-        } else {
-            (2_u8, port.0)
-        }
-    });
+    ports.sort_by_key(|(port, edge)| (EdgeType::of(*port, edge.remote_port).priority(), port.0));
     ports.into_iter().map(|(port, _)| port).collect()
 }
 ```
@@ -606,12 +591,7 @@ flowchart TD
             }
             _ => 99,
         };
-        let edge_rank = match result.edge_type {
-            EdgeType::OtherOne => 0,
-            EdgeType::OneOne | EdgeType::OneOther => 1,
-            EdgeType::OtherOther => 2,
-        };
-        (node_rank, edge_rank, result.port.0)
+        (node_rank, result.edge_type.priority(), result.port.0)
     }
 ```
 
@@ -923,9 +903,9 @@ flowchart TD
     ///
     /// The paper's rules (R1)-(R3) exist to tell an *empty* neighbour from a
     /// *vacated* one, which is ambiguous because a vacated node's settled agent
-    /// has left it to travel as a scout. This implementation does not vacate
-    /// (Section 4.1), so a node without a settled agent present is always empty
-    /// and rule (R1) decides every case on its own.
+    /// has left it to travel as a scout. Here the state is read directly, and
+    /// the rules only charge the detour walks they require; see
+    /// [`Self::probe_detour`].
     fn neighbourhood_search(&mut self, can_settle: bool) -> Result<Vec<ProbeResult>, P1Error> {
         let head = self.head;
         let degree = self.graph.degree(head).unwrap_or(0);

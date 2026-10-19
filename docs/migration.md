@@ -41,6 +41,9 @@ one Rust simulation core shared by native and browser consumers.
   describing each algorithm.
 - Added a dashboard page that sweeps agent counts per graph class and plots the
   cost of dispersion, sharing the simulator's shell, worker and theme.
+- Merged `ccm-help-scouts` and `ccm-p1tree` into `ccm-algorithms`, one module
+  per algorithm, and moved the algorithm tests to `ccm-experiments/tests`.
+  Fixed-seed sweeps produce byte-identical CSV before and after.
 
 ## Compatibility decisions
 

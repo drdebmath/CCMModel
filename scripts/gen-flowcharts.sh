@@ -58,9 +58,9 @@ block() {
   done
 }
 
-DROP=crates/ccm-algorithms/src/lib.rs
-HELP=crates/ccm-help-scouts/src/lib.rs
-P1=crates/ccm-p1tree/src/lib.rs
+DROP=crates/ccm-algorithms/src/drop_and_freeze.rs
+HELP=crates/ccm-algorithms/src/help_by_scouts.rs
+P1=crates/ccm-algorithms/src/p1tree.rs
 
 cat > "$out" <<'HEADER'
 # Algorithm flowcharts
@@ -79,9 +79,9 @@ before drawing conclusions from any of them.
 
 ## Contents
 
-- [Drop and Freeze](#drop-and-freeze) — `ccm-algorithms`
-- [Help by Scouts](#help-by-scouts) — `ccm-help-scouts`
-- [P1Tree](#p1tree) — `ccm-p1tree`
+- [Drop and Freeze](#drop-and-freeze) (legacy baseline) — `ccm_algorithms::drop_and_freeze`
+- [Help by Scouts](#help-by-scouts) (legacy baseline) — `ccm_algorithms::help_by_scouts`
+- [P1Tree](#p1tree) — `ccm_algorithms::p1tree`
 
 ---
 
