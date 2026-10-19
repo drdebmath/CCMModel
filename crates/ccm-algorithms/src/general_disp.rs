@@ -115,6 +115,29 @@ pub struct GeneralAgent {
     pub memory: GeneralMemory,
 }
 
+/// An agent's role as drawn, with weak and strong zombies apart.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShownRole {
+    Settler,
+    Helper,
+    ActiveLeader,
+    WaitingLeader,
+    WeakZombie,
+    StrongZombie,
+}
+
+/// An agent's shown role or group changed; visible from checkpoint `step` on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RoleChange {
+    pub step: u64,
+    pub agent: AgentId,
+    pub role: ShownRole,
+    pub group: Group,
+}
+
+/// Role changes kept per run; later ones are dropped.
+pub const MAX_ROLE_CHANGES: usize = 1 << 20;
+
 /// Role transitions and merges, recorded only when a recorder is listening.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GroupEvent {
@@ -210,6 +233,8 @@ pub struct GeneralResult {
     pub steps: u64,
     pub stats: GeneralStats,
     pub events: Vec<GroupEvent>,
+    /// Empty unless a recorder was listening.
+    pub roles: Vec<RoleChange>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -321,6 +346,8 @@ struct Simulation<'g, M, R> {
     intents: Vec<MoveIntent>,
     events: Vec<SimulationEvent>,
     group_events: Vec<GroupEvent>,
+    shown: Vec<Option<(ShownRole, Group)>>,
+    roles: Vec<RoleChange>,
 }
 
 impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
@@ -373,6 +400,8 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
             intents: Vec::with_capacity(count),
             events: Vec::new(),
             group_events: Vec::new(),
+            shown: vec![None; count],
+            roles: Vec::new(),
         })
     }
 
@@ -403,6 +432,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                 steps: self.steps,
                 stats: self.stats,
                 events: self.group_events,
+                roles: self.roles,
             },
             self.metrics,
             self.recorder,
@@ -1098,6 +1128,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
             return;
         }
         let step = self.steps;
+        self.note_roles(step);
         self.recorder
             .record_event(step, SimulationEvent::PhaseStarted { phase });
         for event in self.events.drain(..) {
@@ -1116,6 +1147,43 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                 .collect(),
         };
         self.recorder.record_checkpoint(checkpoint);
+    }
+
+    /// Logs every agent whose shown role or group changed since the last call.
+    fn note_roles(&mut self, step: u64) {
+        let occupancy = self.store.occupancy();
+        for index in 0..self.memory.len() {
+            let agent = agent_id(index);
+            let state = self.state(agent);
+            let memory = self.memory[index];
+            let role = if memory.settled {
+                if state.home == Some(state.node) {
+                    ShownRole::Settler
+                } else {
+                    ShownRole::Helper
+                }
+            } else if memory.leader == agent {
+                if occupancy.agents_at(state.node).len() == 1 {
+                    ShownRole::WaitingLeader
+                } else {
+                    ShownRole::ActiveLeader
+                }
+            } else if memory.level_swarm < memory.level_location {
+                ShownRole::WeakZombie
+            } else {
+                ShownRole::StrongZombie
+            };
+            let now = (role, memory.group());
+            if self.shown[index] != Some(now) && self.roles.len() < MAX_ROLE_CHANGES {
+                self.shown[index] = Some(now);
+                self.roles.push(RoleChange {
+                    step,
+                    agent,
+                    role,
+                    group: now.1,
+                });
+            }
+        }
     }
 
     fn note(&mut self, event: GroupEvent) {

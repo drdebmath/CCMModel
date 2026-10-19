@@ -6,7 +6,7 @@ mod common;
 use std::collections::HashMap;
 
 use ccm_algorithms::general_disp::{
-    simulate, slot_of, GeneralError, GeneralResult, GeneralRole, Group, GroupEvent,
+    simulate, slot_of, GeneralError, GeneralResult, GeneralRole, Group, GroupEvent, ShownRole,
 };
 use ccm_core::{AgentId, ComplexityMetrics, NodeId, PortAssignment, PortGraph, Termination};
 use ccm_experiments::{generate_graph, place_agents, GraphFamily, GraphSpec, PlacementSpec};
@@ -199,6 +199,35 @@ fn two_groups_meet_on_a_path() {
     );
     assert_eq!(result.agents[4].memory.group(), a);
     assert_eq!(result.stats.level_ups, 1);
+}
+
+/// The role log replays to the final roles and is empty without a recorder.
+#[test]
+fn the_role_log_replays_to_the_final_roles() {
+    let starts = nodes(&[0, 0, 0, 0, 3, 3]);
+    let (result, trace) = traced(&path(6), &starts);
+    let mut shown = vec![None; result.agents.len()];
+    for change in &result.roles {
+        shown[change.agent.index()] = Some((change.role, change.group));
+    }
+    for (index, agent) in result.agents.iter().enumerate() {
+        let role = match agent.role {
+            GeneralRole::Settler => ShownRole::Settler,
+            GeneralRole::WaitingLeader => ShownRole::WaitingLeader,
+            other => panic!("agent {index} ends as {other:?}"),
+        };
+        assert_eq!(shown[index], Some((role, agent.memory.group())));
+    }
+    assert!(result.roles.windows(2).all(|p| p[0].step <= p[1].step));
+    assert!(result
+        .roles
+        .iter()
+        .all(|change| trace.checkpoints.iter().any(|c| c.step == change.step)));
+    assert!(result
+        .roles
+        .iter()
+        .any(|change| change.role == ShownRole::StrongZombie));
+    assert!(run(&path(6), &starts).unwrap().roles.is_empty());
 }
 
 fn label(level: u32, leader: u32) -> Group {
