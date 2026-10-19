@@ -1,14 +1,12 @@
-//! `GeneralDisp` (Sudo et al., Section 4, Algorithms 2–5) tests: small cases
-//! traced by hand from the pseudocode, two groups meeting on a path, and
-//! properties of the paper (Lemmas 3 and 4, the slot discipline, dispersion)
-//! over seeded graphs and multi-start placements.
+//! `GeneralDisp` tests: hand traces, collisions, probing rules and the
+//! paper's properties over seeded multi-start sweeps.
 
 mod common;
 
 use std::collections::HashMap;
 
 use ccm_algorithms::general_disp::{
-    simulate, slot_of, GeneralError, GeneralResult, GeneralRole, Group, GroupEvent,
+    simulate, slot_of, GeneralError, GeneralResult, GeneralRole, Group, GroupEvent, ShownRole,
 };
 use ccm_core::{AgentId, ComplexityMetrics, NodeId, PortAssignment, PortGraph, Termination};
 use ccm_experiments::{generate_graph, place_agents, GraphFamily, GraphSpec, PlacementSpec};
@@ -41,8 +39,7 @@ fn path(n: u32) -> PortGraph {
     graph(&edges, usize::try_from(n).unwrap())
 }
 
-/// Definition 1 at the end: every agent on its own node, none a zombie, and
-/// every agent a settler on its home or a leader waiting alone.
+/// Definition 1: every agent alone on its node, as a settler or a waiting leader.
 fn assert_dispersed(result: &GeneralResult, label: &str) {
     assert_eq!(result.termination, Termination::Completed, "{label}");
     let mut seen = HashMap::new();
@@ -65,8 +62,6 @@ fn assert_dispersed(result: &GeneralResult, label: &str) {
     }
 }
 
-// ----- Hand traces -----
-
 #[test]
 fn an_already_dispersed_start_takes_no_step() {
     let result = run(&path(2), &nodes(&[0, 1])).unwrap();
@@ -85,17 +80,7 @@ fn a_single_agent_takes_no_step() {
     assert_eq!(result.steps, 0);
 }
 
-/// Path 0 – 1 – 2, both agents on node 0, traced from the pseudocode:
-///
-/// - step 0 (slot 1): agent 1 is stronger, so agent 0 becomes a zombie;
-/// - step 1 (slot 2): node 0 is unsettled, so zombie 0 settles there;
-/// - steps 5–7 (slots 6–8): leader 1 probes port 0, finds no settler of its
-///   group at node 1, and sets `next = 0`, `checked = 0`;
-/// - step 15 (slot 4 of unit 2): port 0 is checked and has no helper, so the
-///   probe is over; step 16 (slot 5) sets `done`;
-/// - step 22 (slot 11): leader 1 moves forward to node 1 and waits there.
-///
-/// After step 22 every agent is on its own node, so the run ends at 23 steps.
+/// Path 0 – 1 – 2 with both agents on node 0, traced by hand: 23 steps.
 #[test]
 fn two_agents_on_one_node_match_the_hand_trace() {
     let (result, _) = traced(&path(3), &nodes(&[0, 0]));
@@ -122,7 +107,6 @@ fn two_agents_on_one_node_match_the_hand_trace() {
                 step: 1,
                 agent: AgentId(0),
                 node: NodeId(0),
-                // A zombie carries the ID of the leader that beat it.
                 group: leader,
             },
             GroupEvent::ForwardMove {
@@ -140,21 +124,7 @@ fn two_agents_on_one_node_match_the_hand_trace() {
     );
 }
 
-/// The card's first exercise: two groups meet on a path.
-///
-/// Path 0 – … – 5. Agents 0–3 start on node 0, agents 4–5 on node 3.
-///
-/// - Group A: leader 3 settles zombie 0 at node 0 and meets zombie 1 of its own
-///   level, so it rises to level 2 and zombie 1 drops to level 0. It settles
-///   zombie 1 at node 1 and walks on with zombie 2.
-/// - Group B: leader 5 settles zombie 4 at node 3 (group `(1, 5)`), probes,
-///   and walks alone to node 2, where it waits.
-/// - Group A reaches node 2, where B's leader waits. A (level 2) is stronger,
-///   so leader 5 becomes a zombie and joins A. A settles zombie 2 there.
-/// - A probes from node 2: node 3 holds settler 4 of the weaker group B, so it
-///   counts as outside A's territory. A moves there and incorporates settler
-///   4 into its own group, then settles zombie 5 at node 4 and walks alone to
-///   node 5, where it waits.
+/// Two groups meet on a path (see `docs/general-disp.md` for the trace).
 #[test]
 fn two_groups_meet_on_a_path() {
     use GeneralRole::{Settler, WaitingLeader};
@@ -193,8 +163,6 @@ fn two_groups_meet_on_a_path() {
             _ => None,
         })
         .collect();
-    // At the start, the weaker agents on each start node; then leader 5 at
-    // node 2, beaten by group A.
     assert_eq!(
         became_zombie.last(),
         Some(&(AgentId(5), NodeId(2), a)),
@@ -229,12 +197,228 @@ fn two_groups_meet_on_a_path() {
             a
         )]
     );
-    // Settler 4 ends in group A.
     assert_eq!(result.agents[4].memory.group(), a);
     assert_eq!(result.stats.level_ups, 1);
 }
 
-// ----- Properties over a sweep -----
+/// The role log replays to the final roles and is empty without a recorder.
+#[test]
+fn the_role_log_replays_to_the_final_roles() {
+    let starts = nodes(&[0, 0, 0, 0, 3, 3]);
+    let (result, trace) = traced(&path(6), &starts);
+    let mut shown = vec![None; result.agents.len()];
+    for change in &result.roles {
+        shown[change.agent.index()] = Some((change.role, change.group));
+    }
+    for (index, agent) in result.agents.iter().enumerate() {
+        let role = match agent.role {
+            GeneralRole::Settler => ShownRole::Settler,
+            GeneralRole::WaitingLeader => ShownRole::WaitingLeader,
+            other => panic!("agent {index} ends as {other:?}"),
+        };
+        assert_eq!(shown[index], Some((role, agent.memory.group())));
+    }
+    assert!(result.roles.windows(2).all(|p| p[0].step <= p[1].step));
+    assert!(result
+        .roles
+        .iter()
+        .all(|change| trace.checkpoints.iter().any(|c| c.step == change.step)));
+    assert!(result
+        .roles
+        .iter()
+        .any(|change| change.role == ShownRole::StrongZombie));
+    assert!(run(&path(6), &starts).unwrap().roles.is_empty());
+}
+
+fn label(level: u32, leader: u32) -> Group {
+    Group {
+        level,
+        leader: AgentId(leader),
+    }
+}
+
+fn generated(family: GraphFamily, n: usize) -> PortGraph {
+    generate_graph(&GraphSpec::new(family, n), PortAssignment::Canonical, 0).unwrap()
+}
+
+/// Three groups on a cycle: a higher level wins, equal levels go to the larger
+/// ID, weak zombies chase in slot 9 and strong ones only in slot 10.
+#[test]
+fn three_groups_collide_and_zombies_chase_by_strength() {
+    let g = generated(GraphFamily::Cycle, 8);
+    let (result, _) = traced(&g, &nodes(&[1, 5, 5, 4, 4, 1, 4, 1]));
+    assert_dispersed(&result, "three groups");
+    let zombies: Vec<(u64, AgentId, NodeId, Group)> = result
+        .events
+        .iter()
+        .filter_map(|event| match *event {
+            GroupEvent::BecameZombie {
+                step,
+                agent,
+                node,
+                stronger,
+            } if step > 0 => Some((step, agent, node, stronger)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        zombies,
+        vec![
+            (24, AgentId(2), NodeId(4), label(2, 6)),
+            (72, AgentId(6), NodeId(1), label(2, 7)),
+        ]
+    );
+    let chases: Vec<(u64, u8, AgentId, NodeId, bool)> = result
+        .events
+        .iter()
+        .filter_map(|event| match *event {
+            GroupEvent::Chased {
+                step,
+                zombie,
+                to,
+                weak,
+                ..
+            } => Some((step, slot_of(step), zombie, to, weak)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        chases,
+        vec![
+            (32, 9, AgentId(2), NodeId(3), true),
+            (81, 10, AgentId(6), NodeId(0), false),
+            (93, 10, AgentId(6), NodeId(7), false),
+        ]
+    );
+    assert!(result.events.contains(&GroupEvent::ZombieLevels {
+        step: 32,
+        zombie: AgentId(2),
+        location: 2,
+        swarm: 1,
+    }));
+    assert!(result.events.contains(&GroupEvent::Settled {
+        step: 97,
+        agent: AgentId(6),
+        node: NodeId(7),
+        group: label(2, 7),
+    }));
+    assert_eq!(
+        (
+            result.stats.weak_chase_moves,
+            result.stats.strong_chase_moves
+        ),
+        (1, 2)
+    );
+}
+
+/// Unlike `RootedDisp`, only a settler of the leader's own group marks a node
+/// visited.
+#[test]
+fn a_probe_counts_only_settlers_of_the_leaders_group() {
+    let (result, _) = traced(&path(6), &nodes(&[0, 0, 0, 0, 3, 3]));
+    let at = |wanted: &GroupEvent| {
+        result
+            .events
+            .iter()
+            .position(|event| event == wanted)
+            .unwrap_or_else(|| panic!("missing {wanted:?}"))
+    };
+    let into_b = at(&GroupEvent::ForwardMove {
+        step: 70,
+        leader: AgentId(3),
+        from: NodeId(2),
+        to: NodeId(3),
+    });
+    let taken = at(&GroupEvent::Incorporated {
+        step: 73,
+        settler: AgentId(4),
+        node: NodeId(3),
+        from: label(1, 5),
+        to: label(2, 3),
+    });
+    assert!(into_b < taken);
+}
+
+/// Helpers walk over through `help`; after a level-up, the group's older
+/// helpers count as weaker and are sent home.
+#[test]
+fn helpers_follow_help_and_weaker_ones_are_dismissed() {
+    let (result, trace) = traced(&path(4), &nodes(&[0, 1, 1, 0]));
+    assert_dispersed(&result, "dismissal");
+    assert!(result.events.contains(&GroupEvent::LevelUp {
+        step: 37,
+        leader: AgentId(3),
+        zombie: AgentId(2),
+        node: NodeId(1),
+        level: 2,
+    }));
+    let position = |after_step: u64| {
+        trace
+            .checkpoints
+            .iter()
+            .find(|checkpoint| checkpoint.step == after_step)
+            .map(|checkpoint| checkpoint.agent_nodes[0])
+            .unwrap()
+    };
+    assert_eq!(position(38), NodeId(0), "home before slot 3");
+    assert_eq!(position(39), NodeId(1), "at the centre after slot 3");
+    assert_eq!(position(40), NodeId(0), "dismissed in slot 4");
+    assert_eq!(result.stats.helpers_dismissed, 1);
+    assert_eq!(result.stats.stolen_helpers, 0);
+    assert!(result.events.contains(&GroupEvent::Incorporated {
+        step: 61,
+        settler: AgentId(0),
+        node: NodeId(0),
+        from: label(1, 3),
+        to: label(2, 3),
+    }));
+}
+
+/// A recruited helper taken over by a stronger group marks its port as
+/// leading out of the territory.
+#[test]
+fn a_helper_taken_by_a_stronger_group_is_detected_as_stolen() {
+    let g = generated(GraphFamily::Tree { branching: 2 }, 10);
+    let (result, _) = traced(&g, &nodes(&[7, 7, 1, 4, 7, 4, 7, 1, 7]));
+    assert_dispersed(&result, "stolen helper");
+    assert_eq!(result.stats.stolen_helpers, 1);
+    let order: Vec<&GroupEvent> = result
+        .events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                GroupEvent::Incorporated { step: 49, .. }
+                    | GroupEvent::ForwardMove { step: 58, .. }
+                    | GroupEvent::BecameZombie { step: 60, .. }
+            )
+        })
+        .collect();
+    assert_eq!(
+        order,
+        vec![
+            &GroupEvent::Incorporated {
+                step: 49,
+                settler: AgentId(2),
+                node: NodeId(1),
+                from: label(1, 7),
+                to: label(2, 8),
+            },
+            &GroupEvent::ForwardMove {
+                step: 58,
+                leader: AgentId(7),
+                from: NodeId(0),
+                to: NodeId(1),
+            },
+            &GroupEvent::BecameZombie {
+                step: 60,
+                agent: AgentId(7),
+                node: NodeId(1),
+                stronger: label(2, 8),
+            },
+        ]
+    );
+}
 
 fn families() -> Vec<(&'static str, GraphFamily)> {
     vec![
@@ -316,8 +500,7 @@ fn check_run(g: &PortGraph, starts: &[NodeId], label: &str, totals: &mut Totals)
     assert_dispersed(&result, label);
     let k = starts.len();
 
-    // Lemma 3: a level never exceeds log2 k + 1.
-    let bound = (usize::BITS - k.leading_zeros()) - 1 + 1; // floor(log2 k) + 1
+    let bound = (usize::BITS - k.leading_zeros()) - 1 + 1;
     assert!(
         result.stats.max_level <= bound,
         "{label}: level {} exceeds log2 k + 1 = {bound}",
@@ -328,7 +511,6 @@ fn check_run(g: &PortGraph, starts: &[NodeId], label: &str, totals: &mut Totals)
         "{label}: a zombie had no port"
     );
 
-    // Slot 9 moves only weak zombies; slot 10 moves both kinds.
     for event in &result.events {
         if let GroupEvent::Chased {
             step, weak, zombie, ..
@@ -344,7 +526,6 @@ fn check_run(g: &PortGraph, starts: &[NodeId], label: &str, totals: &mut Totals)
         }
     }
 
-    // Lemma 4: a zombie's location level never decreases.
     let mut location: HashMap<AgentId, u32> = HashMap::new();
     for event in &result.events {
         if let GroupEvent::ZombieLevels {
@@ -365,8 +546,6 @@ fn check_run(g: &PortGraph, starts: &[NodeId], label: &str, totals: &mut Totals)
         }
     }
 
-    // Settlers are home in slots 9–12 and 1–2 (Section 4.2), read from the
-    // trace: the checkpoint after step t is the state before step t + 1.
     for checkpoint in &trace.checkpoints {
         let slot_ahead = slot_of(checkpoint.step);
         if matches!(slot_ahead, 9..=12 | 1..=3) {
@@ -381,7 +560,6 @@ fn check_run(g: &PortGraph, starts: &[NodeId], label: &str, totals: &mut Totals)
         }
     }
 
-    // Theorem 2's shape: steps against k log k log τ, recorded for the report.
     let tau = k.min(max_degree(g)).max(2);
     let k_log = f64::from(u32::try_from(k.max(2)).unwrap());
     let scale = k_log * k_log.log2() * f64::from(u32::try_from(tau).unwrap()).log2();
@@ -430,7 +608,6 @@ fn every_run_disperses_and_keeps_the_papers_invariants() {
         }
     }
     println!("{totals:?}");
-    // The sweep must reach the parts of the algorithm it claims to test.
     assert!(totals.runs > 1_000, "{totals:?}");
     assert!(totals.zombifications > 0, "{totals:?}");
     assert!(totals.incorporations > 0, "{totals:?}");
@@ -470,8 +647,6 @@ fn larger_multi_start_runs_disperse() {
     }
     println!("{totals:?}");
 }
-
-// ----- Inputs -----
 
 #[test]
 fn inputs_outside_the_model_are_rejected() {
@@ -521,6 +696,5 @@ fn every_step_is_one_round_in_the_metrics() {
     .unwrap();
     assert_eq!(metrics.rounds, result.steps);
     assert_eq!(metrics.macro_rounds, result.stats.units);
-    // Without a recorder, no events are kept.
     assert!(result.events.is_empty());
 }

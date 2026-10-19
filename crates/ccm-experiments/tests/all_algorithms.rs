@@ -82,6 +82,7 @@ fn summary<R: Recorder>(
             // not depend on it.
             let mut result = result;
             result.events.clear();
+            result.roles.clear();
             (format!("{result:?}"), metrics)
         }
         other => unreachable!("unknown algorithm {other}"),

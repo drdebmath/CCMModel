@@ -17,6 +17,15 @@ function getStringFromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
+/**
+ * The slot, 1–12, of `GeneralDisp` time step `step`.
+ * @param {bigint} step
+ * @returns {number}
+ */
+export function general_disp_slot(step) {
+    const ret = wasm.general_disp_slot(step);
+    return ret;
+}
 
 let cachedUint32ArrayMemory0 = null;
 
@@ -59,13 +68,14 @@ function takeFromExternrefTable0(idx) {
 }
 /**
  * Algorithm selector shared by native and browser callers.
- * @enum {0 | 1 | 2 | 3}
+ * @enum {0 | 1 | 2 | 3 | 4}
  */
 export const AlgorithmSelector = Object.freeze({
     HelpByScouts: 0, "0": "HelpByScouts",
     DropAndFreeze: 1, "1": "DropAndFreeze",
     P1Tree: 2, "2": "P1Tree",
     RootedDisp: 3, "3": "RootedDisp",
+    GeneralDisp: 4, "4": "GeneralDisp",
 });
 /**
  * Trace policy. `Bounded` uses the supplied record and sampling limits.
@@ -103,6 +113,15 @@ export class SimulationOutput {
     free() {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_simulationoutput_free(ptr, 0);
+    }
+    /**
+     * `GeneralDisp` roles, groups, slots and merge events per frame, in the
+     * format of `encode_groups`; empty for other algorithms or without a trace.
+     * @returns {Uint8Array}
+     */
+    group_bytes() {
+        const ret = wasm.simulationoutput_group_bytes(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Compact binary render records; this avoids one JS message per agent.
