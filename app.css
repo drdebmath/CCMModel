@@ -1927,3 +1927,7 @@ footer a {
     backdrop-filter: none;
   }
 }
+
+.legend-group {
+  display: contents;
+}

@@ -6,6 +6,7 @@
 
 mod dashboard;
 mod docs;
+mod general;
 
 use js_sys::{Array, Int32Array, Object, Reflect, Uint32Array, Uint8Array};
 use serde::{Deserialize, Serialize};
@@ -112,6 +113,8 @@ pub struct ResultData {
     pub render_truncated: bool,
     #[serde(rename = "renderBytes", default, skip_serializing)]
     pub render_bytes: Vec<u8>,
+    #[serde(rename = "groupBytes", default, skip_serializing)]
+    pub group_bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -164,6 +167,8 @@ struct AppState {
     config: Option<Config>,
     result: Option<ResultData>,
     frames: Vec<Frame>,
+    /// GeneralDisp roles, groups and merge events of the loaded result.
+    groups: Option<general::Groups>,
     /// One line per frame from [`frame_notes`], shown under the playback bar.
     notes: Vec<String>,
     /// The last comparison's rows, and which of them is loaded for playback.
@@ -397,6 +402,7 @@ fn algorithm_label(value: &str) -> &'static str {
         "help" => "Help by Scouts",
         "p1tree" => "P1Tree",
         "rooted" => "RootedDisp",
+        "general" => "GeneralDisp",
         _ => "Drop and Freeze",
     }
 }
@@ -837,7 +843,132 @@ fn refresh_notes(app: &mut AppState) {
         .config
         .as_ref()
         .map_or("", |config| config.algorithm.as_str());
-    app.notes = frame_notes(&app.frames, algorithm);
+    app.notes = match &app.groups {
+        Some(groups) if algorithm == "general" => general::notes(&app.frames, groups),
+        _ => frame_notes(&app.frames, algorithm),
+    };
+    set_legend(
+        &app.document,
+        app.groups.is_some() && algorithm == "general",
+    );
+}
+
+fn set_legend(document: &Document, general: bool) {
+    let _ = element::<Element>(document, "statusLegend")
+        .class_list()
+        .toggle_with_force("hidden", general);
+    let _ = element::<Element>(document, "generalLegend")
+        .class_list()
+        .toggle_with_force("hidden", !general);
+}
+
+fn sync_placement(document: &Document) {
+    let placement = select_value(document, "placement");
+    let _ = element::<Element>(document, "startNodesWrap")
+        .class_list()
+        .toggle_with_force("hidden", placement != "groups");
+    let _ = element::<Element>(document, "clickHint")
+        .class_list()
+        .toggle_with_force("hidden", placement != "click");
+}
+
+/// Shows the graph from the controls with the clicked starts, before a run.
+fn preview(state: &Rc<RefCell<AppState>>) {
+    let document = state.borrow().document.clone();
+    if state.borrow().busy || select_value(&document, "placement") != "click" {
+        return;
+    }
+    let config = read_config(&document);
+    let graph = make_graph_full(
+        &config.family,
+        config.node_count,
+        config.grid_columns,
+        config.tree_branching,
+        config.seed,
+    );
+    {
+        let mut app = state.borrow_mut();
+        let nodes = graph.node_count;
+        app.starts.retain(|node| (*node as usize) < nodes);
+        let starts = app.starts.clone();
+        element::<HtmlInputElement>(&document, "agents")
+            .set_value(&starts.len().max(1).to_string());
+        app.frames = vec![initial_frame(&starts)];
+        app.frame = 0;
+        app.notes = vec![format!(
+            "{} agents placed · click a node to add one, shift-click to remove one",
+            starts.len()
+        )];
+        app.graph = Some(graph);
+        app.config = Some(config);
+        app.result = None;
+        app.groups = None;
+        app.layout.clear();
+        app.layout_size = (0.0, 0.0);
+        let _ = element::<Element>(&document, "emptyState")
+            .class_list()
+            .add_1("hidden");
+        set_disabled(&element::<HtmlElement>(&document, "export"), true);
+        set_text(&document, "runTitle", "Placing agents");
+        set_legend(&document, false);
+        set_timeline(&app);
+    }
+    resize(state);
+}
+
+fn place_click(state: &Rc<RefCell<AppState>>, event: &MouseEvent) {
+    let node = {
+        let app = state.borrow();
+        if app.busy || select_value(&app.document, "placement") != "click" {
+            return;
+        }
+        let rect = app.canvas.get_bounding_client_rect();
+        let x = f64::from(event.client_x()) - rect.left();
+        let y = f64::from(event.client_y()) - rect.top();
+        app.layout
+            .iter()
+            .enumerate()
+            .map(|(node, point)| ((point.0 - x).hypot(point.1 - y), node))
+            .filter(|(distance, _)| *distance < 14.0)
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, node)| node as u32)
+    };
+    let Some(node) = node else {
+        return;
+    };
+    {
+        let mut app = state.borrow_mut();
+        let nodes = app.graph.as_ref().map_or(0, |graph| graph.node_count);
+        if event.shift_key() {
+            if let Some(index) = app.starts.iter().rposition(|start| *start == node) {
+                app.starts.remove(index);
+            }
+        } else if app.starts.len() < nodes {
+            app.starts.push(node);
+        }
+    }
+    preview(state);
+}
+
+/// A GeneralDisp preset: the graph and starts of a tested fixture, then a run.
+fn general_preset(state: &Rc<RefCell<AppState>>, family: &str, nodes: usize, starts: &[u32]) {
+    let document = state.borrow().document.clone();
+    element::<HtmlSelectElement>(&document, "algorithm").set_value("general");
+    element::<HtmlSelectElement>(&document, "family").set_value(family);
+    element::<HtmlSelectElement>(&document, "placement").set_value("click");
+    element::<HtmlSelectElement>(&document, "traceMode").set_value("full");
+    element::<HtmlInputElement>(&document, "nodes").set_value(&nodes.to_string());
+    for id in ["gridColumnsWrap", "treeBranchingWrap", "sampleEveryWrap"] {
+        let _ = element::<Element>(&document, id)
+            .class_list()
+            .add_1("hidden");
+    }
+    let _ = element::<Element>(&document, "traceLimitWrap")
+        .class_list()
+        .remove_1("hidden");
+    sync_placement(&document);
+    state.borrow_mut().starts = starts.to_vec();
+    run(state);
 }
 
 fn set_timeline(app: &AppState) {
@@ -1431,6 +1562,16 @@ fn render(state: &Rc<RefCell<AppState>>) {
         }
     }
     let radius = (2.5_f64).max((9.0_f64).min(12.0 - graph.node_count as f64 / 1800.0));
+    let shown = app
+        .groups
+        .as_ref()
+        .map(|groups| groups.at(frame.step, frame.positions.len()));
+    let agent_color = |agent: usize| -> String {
+        match shown.as_ref().and_then(|roles| roles.get(agent)) {
+            Some(&(role, _, _)) => general::ROLE_COLORS[role as usize % 6].to_owned(),
+            None => COLORS[frame.statuses.get(agent).copied().unwrap_or(0) as usize % 3].to_owned(),
+        }
+    };
     if show_edges {
         context.set_stroke_style_str(&border);
         context.set_line_width(if graph.node_count > 800 { 0.55 } else { 1.0 });
@@ -1474,11 +1615,10 @@ fn render(state: &Rc<RefCell<AppState>>) {
     if graph.node_count > 2500 {
         for (node, point) in points.iter().enumerate() {
             let agents = &by_node[node];
-            context.set_fill_style_str(if let Some(agent) = agents.first() {
-                COLORS[frame.statuses.get(*agent).copied().unwrap_or(0) as usize % 3]
-            } else {
-                &empty_fill
-            });
+            let fill = agents
+                .first()
+                .map_or_else(|| empty_fill.clone(), |agent| agent_color(*agent));
+            context.set_fill_style_str(&fill);
             context.fill_rect(point.0 - 1.0, point.1 - 1.0, 2.0, 2.0);
         }
         return;
@@ -1487,14 +1627,13 @@ fn render(state: &Rc<RefCell<AppState>>) {
         let agents = &by_node[node];
         let color = agents
             .first()
-            .map(|a| COLORS[frame.statuses.get(*a).copied().unwrap_or(0) as usize % 3])
-            .unwrap_or(&border);
+            .map_or_else(|| border.clone(), |agent| agent_color(*agent));
         context.set_fill_style_str(if agents.is_empty() {
             &empty_fill
         } else {
             "#314875"
         });
-        context.set_stroke_style_str(color);
+        context.set_stroke_style_str(&color);
         context.set_line_width(if agents.is_empty() { 1.0 } else { 2.0 });
         context.begin_path();
         let _ = context.arc(
@@ -1510,9 +1649,7 @@ fn render(state: &Rc<RefCell<AppState>>) {
             for (index, agent) in agents.iter().enumerate() {
                 let angle = index as f64 * std::f64::consts::TAU / agents.len().max(1) as f64;
                 let distance = radius + 5.0 + agents.len().min(10) as f64;
-                context.set_fill_style_str(
-                    COLORS[frame.statuses.get(*agent).copied().unwrap_or(0) as usize % 3],
-                );
+                context.set_fill_style_str(&agent_color(*agent));
                 context.begin_path();
                 let _ = context.arc(
                     point.0 + angle.cos() * distance,
@@ -1522,6 +1659,11 @@ fn render(state: &Rc<RefCell<AppState>>) {
                     std::f64::consts::TAU,
                 );
                 context.fill();
+                if let Some(&(_, _, leader)) = shown.as_ref().and_then(|roles| roles.get(*agent)) {
+                    context.set_stroke_style_str(&general::group_color(leader));
+                    context.set_line_width(1.5);
+                    context.stroke();
+                }
             }
         }
     }
@@ -1627,6 +1769,11 @@ fn result_from_message(data: &JsValue) -> Result<ResultData, String> {
             .as_bool()
             .ok_or_else(|| "worker render truncation flag is invalid".to_owned())?,
         render_bytes: Uint8Array::new(&render_bytes).to_vec(),
+        group_bytes: reflected_value(data, "groupBytes")
+            .ok()
+            .filter(|bytes| bytes.is_instance_of::<Uint8Array>())
+            .map(|bytes| Uint8Array::new(&bytes).to_vec())
+            .unwrap_or_default(),
     })
 }
 
@@ -1646,6 +1793,7 @@ fn accept_result(state: &Rc<RefCell<AppState>>, result: ResultData) {
     let mut app = state.borrow_mut();
     let starts = app.starts.clone();
     app.frames = trace_frames(&result.render_bytes, &starts, &result);
+    app.groups = general::Groups::decode(&result.group_bytes);
     app.frame = 0;
     app.result = Some(result.clone());
     refresh_notes(&mut app);
@@ -1697,7 +1845,7 @@ fn accept_result(state: &Rc<RefCell<AppState>>, result: ResultData) {
 }
 
 /// Algorithms the comparison runs, RootedDisp first so its row loads first.
-const COMPARED: [&str; 4] = ["rooted", "drop", "help", "p1tree"];
+const COMPARED: [&str; 5] = ["rooted", "drop", "help", "p1tree", "general"];
 
 /// Sends one job to the worker: `"run"` for the configured algorithm, or
 /// `"compare"` for every algorithm in `algorithms` on the same inputs.
@@ -1954,17 +2102,63 @@ fn prepare(state: &Rc<RefCell<AppState>>, rooted: bool) -> Option<(Config, Graph
         config.tree_branching,
         config.seed,
     );
-    let starts = if config.placement == "rooted" {
-        vec![0; config.agent_count]
-    } else {
-        seeded_shuffle(config.node_count, config.seed)[..config.agent_count].to_vec()
+    let starts = match config.placement.as_str() {
+        "rooted" => vec![0; config.agent_count],
+        "groups" => {
+            let distinct = number(&document, "startNodes", 3, 1, config.node_count);
+            general::uniform_starts(
+                config.node_count,
+                config.agent_count,
+                distinct,
+                u64::from(config.seed),
+            )
+        }
+        "click" => {
+            let picked: Vec<u32> = state
+                .borrow()
+                .starts
+                .iter()
+                .copied()
+                .filter(|node| (*node as usize) < config.node_count)
+                .collect();
+            if picked.is_empty() {
+                say(
+                    &document,
+                    "Click nodes on the graph to place agents.",
+                    "error",
+                );
+                return None;
+            }
+            config.agent_count = picked.len();
+            element::<HtmlInputElement>(&document, "agents").set_value(&picked.len().to_string());
+            picked
+        }
+        _ => seeded_shuffle(config.node_count, config.seed)[..config.agent_count].to_vec(),
     };
+    let scattered = starts.windows(2).any(|pair| pair[0] != pair[1]);
+    if scattered && matches!(config.algorithm.as_str(), "help" | "p1tree" | "rooted") {
+        say(
+            &document,
+            &format!(
+                "{} needs every agent on one node. Choose “Rooted at node 0”, or GeneralDisp for scattered starts.",
+                algorithm_label(&config.algorithm)
+            ),
+            "error",
+        );
+        return None;
+    }
+    if config.algorithm == "general" {
+        config.round_limit = config
+            .round_limit
+            .max(general::round_limit(config.agent_count));
+    }
     {
         let mut app = state.borrow_mut();
         app.config = Some(config.clone());
         app.graph = Some(graph.clone());
         app.starts = starts.clone();
         app.result = None;
+        app.groups = None;
         app.frames.clear();
         app.notes.clear();
         app.comparison.clear();
@@ -2062,6 +2256,7 @@ fn show_comparison(state: &Rc<RefCell<AppState>>, index: usize) {
     {
         let mut app = state.borrow_mut();
         app.compare_selected = Some(index);
+        app.groups = None;
         if let Some(config) = app.config.as_mut() {
             config.algorithm.clone_from(&algorithm);
         }
@@ -2246,6 +2441,7 @@ fn import_file(state: &Rc<RefCell<AppState>>, event: Event) {
                 app.starts = data.starts;
                 app.result = Some(data.result.clone());
                 app.frames = data.frames;
+                app.groups = None;
                 app.frame = 0;
                 refresh_notes(&mut app);
                 app.layout.clear();
@@ -2436,6 +2632,7 @@ pub fn start() -> Result<(), JsValue> {
         config: None,
         result: None,
         frames: Vec::new(),
+        groups: None,
         notes: Vec::new(),
         comparison: Vec::new(),
         compare_selected: None,
@@ -2447,6 +2644,34 @@ pub fn start() -> Result<(), JsValue> {
     hook_click(&state, "run", run);
     hook_click(&state, "compare", compare);
     hook_click(&state, "comparePreset", compare_preset);
+    hook_click(&state, "presetTwoGroups", |s| {
+        general_preset(s, "path", 6, &[0, 0, 0, 0, 3, 3]);
+    });
+    hook_click(&state, "presetThreeGroups", |s| {
+        general_preset(s, "cycle", 8, &[1, 5, 5, 4, 4, 1, 4, 1]);
+    });
+    for id in [
+        "placement",
+        "family",
+        "nodes",
+        "gridColumns",
+        "treeBranching",
+        "seed",
+    ] {
+        let target: Element = element(&document, id);
+        let state = Rc::clone(&state);
+        let placement = id == "placement";
+        let closure = Closure::<dyn FnMut(Event)>::new(move |_| {
+            let document = state.borrow().document.clone();
+            sync_placement(&document);
+            if placement {
+                state.borrow_mut().starts.clear();
+            }
+            preview(&state);
+        });
+        let _ = target.add_event_listener_with_callback("change", closure.as_ref().unchecked_ref());
+        closure.forget();
+    }
     {
         // One listener for the whole comparison table: a row's Play button
         // carries its index in `data-compare`.
@@ -2584,6 +2809,14 @@ pub fn start() -> Result<(), JsValue> {
     }
     {
         let state = Rc::clone(&state);
+        let closure = Closure::<dyn FnMut(MouseEvent)>::new(move |event: MouseEvent| {
+            place_click(&state, &event)
+        });
+        let _ = canvas.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
+        closure.forget();
+    }
+    {
+        let state = Rc::clone(&state);
         let closure = Closure::<dyn FnMut(Event)>::new(move |_| {
             let app = state.borrow();
             let _ = element::<Element>(&app.document, "tooltip").set_attribute("hidden", "");
@@ -2661,6 +2894,10 @@ fn tooltip(state: &Rc<RefCell<AppState>>, event: MouseEvent) {
         ["settled", "unsettled", "waiting"]
     };
     let leader = frame.positions.len().saturating_sub(1);
+    let shown = app
+        .groups
+        .as_ref()
+        .map(|groups| groups.at(frame.step, frame.positions.len()));
     let agents: Vec<String> = frame
         .positions
         .iter()
@@ -2668,7 +2905,14 @@ fn tooltip(state: &Rc<RefCell<AppState>>, event: MouseEvent) {
         .filter(|(_, position)| **position as usize == node)
         .map(|(i, position)| {
             let status = names[frame.statuses.get(i).copied().unwrap_or(1) as usize % 3];
-            let status = if rooted && i == leader {
+            let status = if let Some(&(role, level, group)) =
+                shown.as_ref().and_then(|roles| roles.get(i))
+            {
+                format!(
+                    "{} · group {level}:{group}",
+                    general::ROLE_NAMES[role as usize % 6]
+                )
+            } else if rooted && i == leader {
                 format!("{status} · leader a_max")
             } else {
                 status.to_owned()
@@ -2765,6 +3009,7 @@ mod tests {
             render_record_count: 1,
             render_truncated: false,
             render_bytes: vec![1, 2, 0, 0, 1],
+            group_bytes: Vec::new(),
         };
         assert_eq!(trace_frames(&result.render_bytes, &[0], &result).len(), 2);
     }
@@ -3074,6 +3319,7 @@ mod tests {
             render_record_count: 2,
             render_truncated: false,
             render_bytes: bytes,
+            group_bytes: Vec::new(),
         };
         let frames = trace_frames(&result.render_bytes, &[0], &result);
         assert_eq!(
@@ -3108,6 +3354,7 @@ mod tests {
             render_record_count: 2,
             render_truncated: false,
             render_bytes: bytes,
+            group_bytes: Vec::new(),
         };
         let frames = trace_frames(&result.render_bytes, &[0], &result);
         let phases: Vec<Option<u8>> = frames.iter().map(|frame| frame.phase).collect();

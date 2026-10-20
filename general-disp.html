@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GeneralDisp demo</title>
+  <link rel="stylesheet" href="general-disp.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>GeneralDisp</h1>
+      <p>Sudo et al., Section 4: groups, zombies and merges from any starting placement.</p>
+    </div>
+    <a href="index.html">Main simulator</a>
+  </header>
+
+  <main>
+    <aside class="panel">
+      <section>
+        <h2>Presets</h2>
+        <div class="row">
+          <button type="button" data-preset="two">Two groups</button>
+          <button type="button" data-preset="three">Three groups</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Graph</h2>
+        <label>Family
+          <select id="family">
+            <option value="path">Path</option>
+            <option value="cycle">Cycle</option>
+            <option value="star">Star</option>
+            <option value="complete">Complete</option>
+            <option value="tree">Tree</option>
+            <option value="grid">Grid</option>
+          </select>
+        </label>
+        <label>Nodes <input id="nodes" type="number" min="2" max="64" value="12"></label>
+        <label id="paramLabel" hidden><span id="paramName">Branching</span>
+          <input id="param" type="number" min="1" max="16" value="2">
+        </label>
+      </section>
+
+      <section>
+        <h2>Placement</h2>
+        <div class="row">
+          <label class="choice"><input type="radio" name="mode" value="random" checked> Random (seeded)</label>
+          <label class="choice"><input type="radio" name="mode" value="click"> Click on graph</label>
+        </div>
+        <div id="randomFields">
+          <label>Agents <input id="agents" type="number" min="1" max="64" value="8"></label>
+          <label>Start nodes <input id="distinct" type="number" min="1" max="64" value="3"></label>
+          <label>Seed <input id="seed" type="number" min="0" value="1"></label>
+        </div>
+        <div id="clickFields" hidden>
+          <p class="hint">Click a node to add an agent there, shift-click to remove one.</p>
+          <button type="button" id="clear">Clear</button>
+        </div>
+        <p id="summary" class="hint"></p>
+      </section>
+
+      <button type="button" id="run" class="primary">Run</button>
+      <p id="message" class="message" role="status"></p>
+
+      <section>
+        <h2>Roles</h2>
+        <ul class="legend" id="legend"></ul>
+        <p class="hint">The ring around an agent is its group's colour.</p>
+      </section>
+    </aside>
+
+    <section class="stage">
+      <div id="status" class="status">Not run yet</div>
+      <div class="canvasWrap">
+        <canvas id="canvas"></canvas>
+        <div id="tooltip" class="tooltip" hidden></div>
+      </div>
+      <div class="playback">
+        <button type="button" id="first" title="First frame">⏮</button>
+        <button type="button" id="back" title="Previous step">◀</button>
+        <button type="button" id="play" title="Play or pause">▶</button>
+        <button type="button" id="forward" title="Next step">▶|</button>
+        <button type="button" id="nextEvent" title="Next group change">⏭</button>
+        <input id="slider" type="range" min="0" max="0" value="0" aria-label="Frame">
+        <select id="speed" aria-label="Speed">
+          <option value="400">Slow</option>
+          <option value="120" selected>Normal</option>
+          <option value="30">Fast</option>
+          <option value="5">Fastest</option>
+        </select>
+      </div>
+      <code id="cli" class="cli"></code>
+
+      <div class="lower">
+        <section>
+          <div class="sectionHead">
+            <h2>Events</h2>
+            <label class="choice"><input type="checkbox" id="groupsOnly" checked> Group changes only</label>
+          </div>
+          <ol id="events" class="events"></ol>
+        </section>
+        <section>
+          <h2>Agents</h2>
+          <div class="tableWrap">
+            <table>
+              <thead><tr><th>Agent</th><th>Node</th><th>Role</th><th>Group</th><th>Home</th></tr></thead>
+              <tbody id="agentRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="general-disp.js"></script>
+</body>
+</html>
