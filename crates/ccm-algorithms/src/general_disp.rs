@@ -1163,7 +1163,9 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
                     ShownRole::Helper
                 }
             } else if memory.leader == agent {
-                if occupancy.agents_at(state.node).len() == 1 {
+                // A leader out on a probe trip is alone only for that step.
+                let probing = self.trips.iter().any(|trip| trip.prober == agent);
+                if !probing && occupancy.agents_at(state.node).len() == 1 {
                     ShownRole::WaitingLeader
                 } else {
                     ShownRole::ActiveLeader

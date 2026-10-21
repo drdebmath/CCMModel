@@ -55,6 +55,8 @@ struct SweepConfig {
     algorithm: String,
     families: Vec<usize>,
     nodes: usize,
+    /// The node every agent starts on.
+    root: usize,
     agent_from: usize,
     agent_to: usize,
     agent_step: usize,
@@ -135,6 +137,7 @@ fn read_config(document: &Document) -> SweepConfig {
             .map(|(index, _)| index)
             .collect(),
         nodes,
+        root: number(document, "startNode", 0, 0, nodes - 1),
         agent_from,
         agent_to,
         agent_step: number(document, "agentStep", 4, 1, 1_000),
@@ -173,9 +176,10 @@ fn build_jobs(config: &SweepConfig) -> (Array, Vec<Series>) {
             let _ = Reflect::set(&job, &"nodeCount".into(), &(graph.node_count as u32).into());
             let edges = js_sys::Uint32Array::from(&graph.edges[..]);
             let _ = Reflect::set(&job, &"edges".into(), &edges);
-            // Rooted at node 0: P1Tree is defined for a rooted start, and using
-            // the same placement for every algorithm keeps the comparison fair.
+            // Rooted at one node: three algorithms need a rooted start, and the
+            // same placement for every algorithm keeps the comparison fair.
             let starts = js_sys::Uint32Array::new_with_length(agents as u32);
+            starts.fill(config.root as u32, 0, agents as u32);
             let _ = Reflect::set(&job, &"starts".into(), &starts);
             let _ = Reflect::set(
                 &job,
@@ -718,14 +722,16 @@ fn export_csv(state: &Rc<RefCell<DashState>>) {
     let Some(config) = app.config.as_ref() else {
         return;
     };
-    let mut csv = String::from("algorithm,graph_class,nodes,agents,seed,metric,value,completed\n");
+    let mut csv =
+        String::from("algorithm,graph_class,nodes,start_node,agents,seed,metric,value,completed\n");
     for series in &app.series {
         for point in &series.points {
             csv.push_str(&format!(
-                "{},{},{},{},{},{},{},{}\n",
+                "{},{},{},{},{},{},{},{},{}\n",
                 config.algorithm,
                 series.family,
                 config.nodes,
+                config.root,
                 point.agents,
                 config.seed,
                 config.metric,
@@ -844,12 +850,11 @@ pub fn start_dashboard() -> Result<(), JsValue> {
             set_text(
                 &document,
                 "algorithmNote",
-                if algorithm == "p1tree" {
-                    "P1Tree requires a rooted start; every sweep places all agents at node 0."
-                } else if algorithm == "rooted" {
-                    "RootedDisp requires a rooted start; every sweep places all agents at node 0."
-                } else {
-                    "All agents start at node 0, so the classes are compared on the same placement."
+                match algorithm.as_str() {
+                    "p1tree" => "P1Tree requires a rooted start; every sweep places all agents on the start node.",
+                    "rooted" => "RootedDisp requires a rooted start; every sweep places all agents on the start node.",
+                    "help" => "Help by Scouts requires a rooted start; every sweep places all agents on the start node.",
+                    _ => "All agents start on the start node, so the classes are compared on the same placement.",
                 },
             );
         });

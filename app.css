@@ -12,21 +12,30 @@
 /* ---------------------------------------------------------------- tokens - */
 
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: dark;
 
-  --bg: #0b1020;
-  --panel: #11192b;
-  --panel-2: #17223a;
-  --border: #263653;
-  --text: #e8eef9;
-  --muted: #91a0bb;
-  --accent: #7c8cff;
+  --bg: #1a2a40;
+  --panel: #213450;
+  --panel-2: #2a3f5e;
+  --border: #34507a;
+  --edge: #5677a3;
+  --text: #eef4fb;
+  --muted: #a9bdd6;
+  --accent: #6aa8ff;
+  --accent-text: #0b1626;
   --accent-2: #39d3b4;
   --warn: #f6b44f;
   --danger: #ff7183;
-  --canvas: #0e1628;
-  --shadow: 0 16px 45px #0005;
+  --canvas: #213450;
+  --node-busy: #2f4e78;
+  --shadow: 0 10px 30px #0000004d;
+  --r0: #39d3b4;
+  --r1: #f6b44f;
+  --r2: #ff7183;
+  --r3: #ffa66b;
+  --r4: #c3aef5;
+  --r5: #9f7aea;
 
   /* Chrome heights are tokens so the drawer and any offset math stay in sync
    * with the real bars instead of repeating magic numbers. */
@@ -44,14 +53,27 @@
 
 html[data-theme="light"] {
   color-scheme: light;
-  --bg: #f4f7fb;
-  --panel: #fff;
-  --panel-2: #f0f4fa;
-  --border: #d8e0ec;
-  --text: #182237;
-  --muted: #60708a;
-  --canvas: #fbfcfe;
-  --shadow: 0 16px 45px #31415b1c;
+  --bg: #e7f1fc;
+  --panel: #ffffff;
+  --panel-2: #eef5fd;
+  --border: #cfe0f3;
+  --edge: #9db8d6;
+  --text: #0f2740;
+  --muted: #4f6884;
+  --accent: #1f6fd1;
+  --accent-text: #ffffff;
+  --accent-2: #14907a;
+  --warn: #d68910;
+  --danger: #d9475a;
+  --canvas: #ffffff;
+  --node-busy: #d6e8fb;
+  --shadow: 0 10px 30px #1f569629;
+  --r0: #14907a;
+  --r1: #d68910;
+  --r2: #d9475a;
+  --r3: #e5762e;
+  --r4: #8e6fd8;
+  --r5: #5b33a8;
 }
 
 /* ------------------------------------------------------------------ base - */
@@ -64,10 +86,6 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  background-image:
-    radial-gradient(circle at 80% -10%, #586bda24, transparent 40%),
-    radial-gradient(#ffffff08 1px, transparent 1px);
-  background-size: auto, 24px 24px;
 
   /* A definite height, not min-height: the shell below resolves `flex:1`
    * against it, and without it the grid row sizes to the tall controls column
@@ -284,7 +302,7 @@ button:disabled {
 
 .panel-tab[aria-selected="true"] {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
 }
 
 .tab-pane[hidden] {
@@ -412,7 +430,7 @@ input:focus,
 select:focus,
 button:focus-visible {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px #7c8cff30;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
   outline: none;
 }
 
@@ -476,7 +494,7 @@ input[type=range] {
 
 .primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
 }
 
 .primary:hover {
@@ -702,7 +720,7 @@ input[type=range] {
 .chart-tab.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
 }
 
 .zoom-controls {
@@ -1614,7 +1632,7 @@ footer a {
   .lab .playback #play {
     width: 64px;
     background: var(--accent);
-    color: #fff;
+    color: var(--accent-text);
     font-size: 14px;
   }
 
@@ -1930,4 +1948,316 @@ footer a {
 
 .legend-group {
   display: contents;
+}
+
+/* ----------------------------------------------------- floating pages - */
+
+.reset-layout {
+  display: none;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: 4px 6px;
+}
+
+.reset-layout:hover {
+  color: var(--accent);
+}
+
+@media (min-width: 901px) {
+  body.floating footer {
+    display: none;
+  }
+
+  body.floating .reset-layout {
+    display: inline-block;
+  }
+
+  body.floating .topbar {
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: auto;
+    max-width: calc(100vw - 32px);
+    height: auto;
+    padding: 6px 8px 6px 16px;
+    gap: 16px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    box-shadow: var(--shadow);
+    z-index: 20;
+  }
+
+  body.floating .brand small {
+    display: none;
+  }
+
+  body.floating [data-window] {
+    position: fixed;
+    z-index: 10;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--panel) 94%, transparent);
+    backdrop-filter: blur(10px);
+    box-shadow: var(--shadow);
+  }
+
+  body.floating .win-handle {
+    position: relative;
+    cursor: move;
+    user-select: none;
+  }
+
+  body.floating [data-window].collapsed > :not(.win-handle) {
+    display: none !important;
+  }
+
+  .win-collapse {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 6px;
+  }
+
+  body.floating .app-shell {
+    display: block;
+  }
+
+  body.floating .controls {
+    left: 16px;
+    top: 10px;
+    bottom: 16px;
+    width: 300px;
+    overflow: hidden;
+  }
+
+  body.floating .controls.collapsed {
+    bottom: auto;
+  }
+
+  body.floating .controls.collapsed .panel-heading {
+    padding-bottom: 14px;
+  }
+
+  body.floating .workspace {
+    position: fixed;
+    top: 64px;
+    right: 16px;
+    bottom: 16px;
+    left: var(--content-left, 332px);
+    padding: 16px 20px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--panel) 94%, transparent);
+    box-shadow: var(--shadow);
+  }
+
+  body.floating .docs-shell,
+  body.floating .docs-main {
+    position: fixed;
+    inset: 0;
+    display: block;
+    padding: 0;
+  }
+
+  body.floating .charts {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--bg);
+  }
+
+  body.floating .docs-bar {
+    left: 16px;
+    top: 64px;
+    max-width: min(780px, calc(100vw - 32px));
+    padding: 8px 10px;
+  }
+
+  body.floating .docs-hint {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    z-index: 10;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--panel) 90%, transparent);
+  }
+
+  body.floating .code-pane {
+    top: 10px;
+    right: 16px;
+    bottom: 16px;
+    width: min(460px, 40vw);
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1180px) {
+  body.floating .controls,
+  body.floating .code-pane {
+    top: 64px;
+  }
+}
+
+/* Workbench look for the floating pages: compact controls, window-style
+ * headings, flat run bar. */
+body.floating {
+  font-size: 13px;
+}
+
+body.floating .panel-heading {
+  padding: 8px 40px 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+body.floating .panel-heading .eyebrow,
+body.floating .workspace-head .eyebrow {
+  display: none;
+}
+
+body.floating .panel-heading h1 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+body.floating .controls-body {
+  padding: 0 12px 8px;
+}
+
+body.floating .control-section {
+  border-top: 0;
+  padding: 10px 0 2px;
+}
+
+body.floating .control-section h2 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  margin: 0 0 6px;
+}
+
+body.floating .control-section label {
+  gap: 3px;
+  margin: 6px 0;
+}
+
+body.floating .two-col,
+body.floating .checks {
+  gap: 8px;
+}
+
+body.floating input[type=number],
+body.floating select {
+  padding: 5px 7px;
+  border-radius: 6px;
+}
+
+body.floating .primary,
+body.floating .secondary {
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+body.floating .primary {
+  padding: 7px 24px;
+}
+
+body.floating .secondary {
+  padding: 5px 12px;
+  font-weight: 500;
+}
+
+body.floating .run-bar {
+  padding: 10px 12px;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.floating .message {
+  min-height: 0;
+  margin-top: 6px;
+}
+
+body.floating .workspace-head h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+body.floating .results-scroll {
+  border-radius: 8px;
+}
+
+body.floating .results-table table {
+  font-size: 12px;
+}
+
+body.floating .chart-tab {
+  padding: 4px 12px;
+  font-weight: 600;
+}
+
+body.floating .code-head {
+  padding: 8px 12px 4px;
+  cursor: move;
+}
+
+/* Floating windows scroll without a visible scrollbar. */
+body.floating .controls-body,
+body.floating .workspace,
+body.floating .results-scroll,
+body.floating .code-body {
+  scrollbar-width: none;
+}
+
+body.floating .controls-body::-webkit-scrollbar,
+body.floating .workspace::-webkit-scrollbar,
+body.floating .results-scroll::-webkit-scrollbar,
+body.floating .code-body::-webkit-scrollbar {
+  display: none;
+}
+
+/* Flowcharts on a wide screen: the algorithm's description floats under the
+ * tabs, and the diagram is fitted into the space below it. */
+@media (min-width: 901px) {
+  body.floating .chart-blurb {
+    position: fixed;
+    left: 16px;
+    top: 124px;
+    width: min(780px, calc(100vw - 32px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    box-shadow: var(--shadow);
+    z-index: 9;
+  }
+
+  body.floating .chart-panel {
+    top: 220px;
+    right: 16px;
+    bottom: 56px;
+    left: 16px;
+  }
+
+  body.floating .docs-main:has(.code-pane.open) .chart-panel {
+    right: calc(min(460px, 40vw) + 32px);
+  }
+
+  body.floating .docs-main:has(.code-pane.open) .chart-blurb {
+    width: min(780px, calc(100vw - min(460px, 40vw) - 64px));
+  }
 }

@@ -201,6 +201,27 @@ fn two_groups_meet_on_a_path() {
     assert_eq!(result.stats.level_ups, 1);
 }
 
+/// A leader alone on a node only because it is out probing is shown active.
+#[test]
+fn a_leader_on_a_probe_trip_is_shown_active() {
+    let mut starts = vec![0; 27];
+    starts.extend([9, 16, 23]);
+    let (result, _) = traced(&generated(GraphFamily::Star, 30), &nodes(&starts));
+    let shown_at = |step: u64, agent: u32| {
+        result
+            .roles
+            .iter()
+            .rfind(|change| change.step <= step && change.agent == AgentId(agent))
+            .map(|change| change.role)
+    };
+    assert_eq!(slot_of(197), 6);
+    assert_eq!(shown_at(198, 26), Some(ShownRole::ActiveLeader));
+    assert!(result
+        .roles
+        .iter()
+        .any(|change| change.role == ShownRole::WaitingLeader));
+}
+
 /// The role log replays to the final roles and is empty without a recorder.
 #[test]
 fn the_role_log_replays_to_the_final_roles() {

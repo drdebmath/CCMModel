@@ -12,8 +12,12 @@ pub const ROLE_NAMES: [&str; 6] = [
     "strong zombie",
 ];
 
+/// Theme tokens of the role colours in `app.css`; [`ROLE_COLORS`] are their
+/// fallbacks.
+pub const ROLE_TOKENS: [&str; 6] = ["--r0", "--r1", "--r2", "--r3", "--r4", "--r5"];
+
 pub const ROLE_COLORS: [&str; 6] = [
-    "#39d3b4", "#f6b44f", "#ff7183", "#ffa66b", "#b69cf5", "#7c5cd6",
+    "#39d3b4", "#f6b44f", "#ff7183", "#ffa66b", "#c3aef5", "#9f7aea",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -1482,24 +1482,22 @@ fn draw_port_chip(
 }
 
 fn theme_colors(document: &Document) -> (String, String, String) {
-    let window = web_sys::window().expect("window");
-    let root = document.document_element().expect("root");
-    let styles = window.get_computed_style(&root).ok().flatten();
-    let border = styles
-        .as_ref()
-        .and_then(|s| s.get_property_value("--border").ok())
-        .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| "#52617a".into());
-    let fill = styles
-        .as_ref()
-        .and_then(|s| s.get_property_value("--panel-2").ok())
-        .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| "#1d2940".into());
-    let text = styles
-        .and_then(|s| s.get_property_value("--text").ok())
-        .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| "#e8eef9".into());
-    (border, fill, text)
+    (
+        css_token(document, "--edge", "#485366"),
+        css_token(document, "--panel-2", "#212836"),
+        css_token(document, "--text", "#e5e9f0"),
+    )
+}
+
+/// A theme token from `app.css`, or `fallback` when it is not defined.
+fn css_token(document: &Document, name: &str, fallback: &str) -> String {
+    web_sys::window()
+        .zip(document.document_element())
+        .and_then(|(window, root)| window.get_computed_style(&root).ok().flatten())
+        .and_then(|styles| styles.get_property_value(name).ok())
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| fallback.to_owned())
 }
 
 fn render(state: &Rc<RefCell<AppState>>) {
@@ -1566,10 +1564,23 @@ fn render(state: &Rc<RefCell<AppState>>) {
         .groups
         .as_ref()
         .map(|groups| groups.at(frame.step, frame.positions.len()));
+    let status_colors: Vec<String> = ["--r0", "--r2", "--r1"]
+        .iter()
+        .zip(COLORS)
+        .map(|(token, fallback)| css_token(&app.document, token, fallback))
+        .collect();
+    let role_colors: Vec<String> = general::ROLE_TOKENS
+        .iter()
+        .zip(general::ROLE_COLORS)
+        .map(|(token, fallback)| css_token(&app.document, token, fallback))
+        .collect();
+    let busy_fill = css_token(&app.document, "--node-busy", "#26324a");
     let agent_color = |agent: usize| -> String {
         match shown.as_ref().and_then(|roles| roles.get(agent)) {
-            Some(&(role, _, _)) => general::ROLE_COLORS[role as usize % 6].to_owned(),
-            None => COLORS[frame.statuses.get(agent).copied().unwrap_or(0) as usize % 3].to_owned(),
+            Some(&(role, _, _)) => role_colors[role as usize % 6].clone(),
+            None => {
+                status_colors[frame.statuses.get(agent).copied().unwrap_or(0) as usize % 3].clone()
+            }
         }
     };
     if show_edges {
@@ -1631,7 +1642,7 @@ fn render(state: &Rc<RefCell<AppState>>) {
         context.set_fill_style_str(if agents.is_empty() {
             &empty_fill
         } else {
-            "#314875"
+            &busy_fill
         });
         context.set_stroke_style_str(&color);
         context.set_line_width(if agents.is_empty() { 1.0 } else { 2.0 });
