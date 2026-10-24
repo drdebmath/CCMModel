@@ -846,6 +846,8 @@ pub fn start_dashboard() -> Result<(), JsValue> {
                 "algorithmNote",
                 if algorithm == "p1tree" {
                     "P1Tree requires a rooted start; every sweep places all agents at node 0."
+                } else if algorithm == "rooted" {
+                    "RootedDisp requires a rooted start; every sweep places all agents at node 0."
                 } else {
                     "All agents start at node 0, so the classes are compared on the same placement."
                 },

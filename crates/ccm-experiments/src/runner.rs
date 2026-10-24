@@ -112,6 +112,17 @@ impl SimulationRunner for BuiltinRunner {
                 .map_err(|error| RunError::Message(error.to_string()))?;
                 (result.termination, metrics)
             }
+            Algorithm::RootedDisp => {
+                let (result, metrics, _) = ccm_algorithms::rooted_disp::simulate(
+                    &prepared.graph,
+                    &prepared.starts,
+                    limit,
+                    ComplexityMetrics::default(),
+                    NoTrace,
+                )
+                .map_err(|error| RunError::Message(error.to_string()))?;
+                (result.termination, metrics)
+            }
         };
         Ok(RunResult {
             algorithm: prepared.request.algorithm,
@@ -275,6 +286,7 @@ pub fn algorithm_label(algorithm: Algorithm) -> &'static str {
         Algorithm::DropAndFreeze => "drop_and_freeze",
         Algorithm::HelpByScouts => "help_by_scouts",
         Algorithm::P1Tree => "p1tree",
+        Algorithm::RootedDisp => "rooted_disp",
     }
 }
 
@@ -285,7 +297,7 @@ pub fn algorithm_label(algorithm: Algorithm) -> &'static str {
 pub fn algorithm_kind(algorithm: Algorithm) -> &'static str {
     match algorithm {
         Algorithm::DropAndFreeze | Algorithm::HelpByScouts => "legacy_baseline",
-        Algorithm::P1Tree => "paper",
+        Algorithm::P1Tree | Algorithm::RootedDisp => "paper",
     }
 }
 
