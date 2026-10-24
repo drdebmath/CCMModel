@@ -1,7 +1,7 @@
-use crate::runner::{algorithm_label, termination_label, RunResult};
+use crate::runner::{algorithm_kind, algorithm_label, termination_label, RunResult};
 
 /// Stable tabular schema: exactly one row per independent simulation trial.
-pub const CSV_HEADER: &str = "algorithm,algorithm_version,git_commit,graph_model,port_assignment,placement,nodes,edges,agents,seed,starts,completed,termination,rounds,macro_rounds,probe_rounds,movement_rounds,agent_moves,edge_traversals,port_probes,probe_out_traversals,probe_back_traversals,settlements,backtracks,group_moves,maximum_group_size,maximum_simultaneously_unsettled,maximum_tree_depth,peak_owned_nodes,scout_operations,vacates,chase_operations,follow_operations,retraces,peak_logical_memory_words\n";
+pub const CSV_HEADER: &str = "algorithm,algorithm_version,git_commit,graph_model,port_assignment,placement,nodes,edges,agents,seed,starts,completed,termination,rounds,macro_rounds,probe_rounds,movement_rounds,agent_moves,edge_traversals,port_probes,probe_out_traversals,probe_back_traversals,settlements,backtracks,group_moves,maximum_group_size,maximum_simultaneously_unsettled,maximum_tree_depth,peak_owned_nodes,scout_operations,vacates,chase_operations,follow_operations,retraces,peak_logical_memory_words,algorithm_kind\n";
 
 /// Serializes rows without adding a filesystem or CSV-library dependency.
 /// Values containing commas, quotes, or newlines are RFC-4180 escaped.
@@ -52,6 +52,7 @@ pub fn results_to_csv(results: &[RunResult]) -> String {
             result.metrics.follow_operations.to_string(),
             result.metrics.retraces.to_string(),
             result.metrics.peak_logical_memory_words.to_string(),
+            algorithm_kind(result.algorithm).to_owned(),
         ];
         for (index, value) in values.iter().enumerate() {
             if index != 0 {
@@ -82,10 +83,9 @@ mod tests {
     use super::*;
     use ccm_core::{Algorithm, ComplexityMetrics, NodeId, Termination};
 
-    #[test]
-    fn csv_has_header_and_one_row_per_result() {
-        let result = RunResult {
-            algorithm: Algorithm::DropAndFreeze,
+    fn result(algorithm: Algorithm) -> RunResult {
+        RunResult {
+            algorithm,
             algorithm_version: "0.1.0",
             git_commit: "test-commit",
             graph_family: "path".to_owned(),
@@ -98,12 +98,34 @@ mod tests {
             starts: vec![NodeId(0), NodeId(0), NodeId(0)],
             termination: Termination::Completed,
             metrics: ComplexityMetrics::default(),
-        };
-        let csv = results_to_csv(&[result.clone(), result]);
+        }
+    }
+
+    #[test]
+    fn csv_has_header_and_one_row_per_result() {
+        let row = result(Algorithm::DropAndFreeze);
+        let csv = results_to_csv(&[row.clone(), row]);
         assert_eq!(csv.lines().count(), 3);
         assert!(csv.starts_with(CSV_HEADER.trim_end()));
         assert!(csv.contains(
             "drop_and_freeze,0.1.0,test-commit,path,canonical,single:0,3,2,3,4,0;0;0,true,completed"
         ));
+    }
+
+    #[test]
+    fn algorithm_kind_is_the_last_column_and_marks_legacy_baselines() {
+        let header: Vec<&str> = CSV_HEADER.trim_end().split(',').collect();
+        assert_eq!(header.last(), Some(&"algorithm_kind"));
+        for (algorithm, kind) in [
+            (Algorithm::DropAndFreeze, "legacy_baseline"),
+            (Algorithm::HelpByScouts, "legacy_baseline"),
+            (Algorithm::P1Tree, "paper"),
+            (Algorithm::RootedDisp, "paper"),
+        ] {
+            let csv = results_to_csv(&[result(algorithm)]);
+            let row: Vec<&str> = csv.lines().nth(1).unwrap().split(',').collect();
+            assert_eq!(row.len(), header.len());
+            assert_eq!(row.last(), Some(&kind), "{algorithm:?}");
+        }
     }
 }

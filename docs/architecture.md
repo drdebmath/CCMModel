@@ -6,8 +6,7 @@ visualization.
 
 ```text
 ccm-core ───────────── dense IDs, reciprocal port graph, RNG, metrics
-   ├── ccm-algorithms ─ Drop-and-Freeze
-   ├── ccm-help-scouts  Help-by-Scouts
+   ├── ccm-algorithms ─ Drop-and-Freeze, Help-by-Scouts, P1Tree, RootedDisp
    ├── ccm-trace ────── optional semantic recording
    ├── ccm-experiments  graph/placement generation and parallel sweeps
    │      └── ccm-cli ─ native CSV interface
@@ -25,7 +24,7 @@ graph inputs and renders outputs; it never implements an algorithm transition.
 ## Native execution
 
 `ccm-cli` prepares a complete `RunRequest`, deterministically generates the
-graph, port assignment, and placement, and invokes one of the two Rust
+graph, port assignment, and placement, and invokes one of the four Rust
 algorithms. Sweep parallelism is across independent simulations. Results are
 returned in input order regardless of worker count.
 

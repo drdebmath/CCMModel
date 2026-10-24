@@ -23,7 +23,10 @@ The algorithms are deterministic centralized simulations of synchronous
 logical operations; they do not create an operating-system task per agent.
 Drop-and-Freeze uses explicit probe-out, probe-back, and movement barriers.
 Help-by-Scouts preserves the current repository's rooted activation order and
-uses explicit logical traversal counts. See [behavior-spec.md](behavior-spec.md)
+uses explicit logical traversal counts. RootedDisp commits every synchronous
+step through `apply_move_intents` on an `AgentStore`, so all moves of a step are
+validated before any is applied and incoming ports follow the paper's model
+([rooted-disp.md](rooted-disp.md)). See [behavior-spec.md](behavior-spec.md)
 for the exact compatibility semantics and discrepancies from Sudo et al.
 
 ## State and indexes

@@ -151,6 +151,14 @@ button:disabled {
   flex: 0 0 auto;
 }
 
+.top-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 10px;
+  border-right: 1px solid var(--border);
+}
+
 .engine-state {
   font-size: 12px;
   color: var(--muted);
@@ -188,15 +196,32 @@ button:disabled {
   overflow: hidden;
 }
 
+/* The panel is a column of three: heading, a scrolling body, and a run bar
+ * pinned to the bottom so "Run simulation" never scrolls out of reach. */
 .controls {
   min-height: 0;
   min-width: 0;
-  scrollbar-gutter: stable;
   background: color-mix(in srgb, var(--panel) 95%, transparent);
   border-right: 1px solid var(--border);
-  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.controls-body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  padding: 0 20px 12px;
+}
+
+.run-bar {
+  flex: 0 0 auto;
+  padding: 14px 20px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 -10px 24px #0002;
 }
 
 .panel-scrim {
@@ -204,11 +229,12 @@ button:disabled {
 }
 
 .panel-heading {
+  flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  margin-bottom: 24px;
+  padding: 22px 20px 16px;
 }
 
 .eyebrow {
@@ -228,18 +254,113 @@ button:disabled {
 
 /* --------------------------------------------------------------- controls - */
 
+/* Sidebar tabs: run parameters and the algorithm notes share the panel. */
+.panel-tabs {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 0 20px 12px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-2);
+}
+
+.panel-tab {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+
+.panel-tab:hover {
+  color: var(--text);
+}
+
+.panel-tab[aria-selected="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tab-pane[hidden] {
+  display: none;
+}
+
+/* Each pane opens directly under the tabs, so its first rule is redundant. */
+.tab-pane > .control-section:first-child {
+  border-top: 0;
+  padding-top: 4px;
+}
+
+/* The setup pane runs slightly smaller than the rest of the page so every
+ * section, through saved executions, fits a laptop-height panel. */
+#paramsPane .control-section {
+  padding: 12px 0 6px;
+}
+
+#paramsPane .control-section h2 {
+  font-size: 11px;
+  margin-bottom: 6px;
+}
+
+#paramsPane .control-section label {
+  font-size: 11px;
+  gap: 4px;
+  margin: 7px 0;
+}
+
+#paramsPane input[type=number],
+#paramsPane select {
+  font-size: 12.5px;
+  padding: 6px 8px;
+}
+
+#paramsPane .two-col {
+  row-gap: 0;
+}
+
+#paramsPane .secondary {
+  padding: 8px 10px;
+  font-size: 11.5px;
+}
+
+#paramsPane .help-note {
+  font-size: 11px;
+}
+
 .control-section {
   border-top: 1px solid var(--border);
-  padding: 18px 0;
+  padding: 16px 0 10px;
   min-width: 0;
 }
 
 .control-section h2 {
+  display: flex;
+  align-items: center;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: .11em;
   color: var(--muted);
-  margin: 0 0 14px;
+  margin: 0 0 12px;
+}
+
+/* Numbered steps: the sections read top to bottom in the order a run is set up. */
+.step {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 10px;
+  letter-spacing: 0;
 }
 
 .control-section label {
@@ -326,16 +447,22 @@ input[type=range] {
   flex: 0 0 auto;
 }
 
-.run-actions,
 .file-actions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
-  margin-top: 4px;
+  margin-bottom: 12px;
 }
 
-.file-actions {
-  margin-top: 9px;
+/* Run takes the width; the second button only needs to be findable. */
+.run-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.run-actions .secondary {
+  padding-inline: 18px;
 }
 
 .primary,
@@ -376,8 +503,8 @@ input[type=range] {
 }
 
 .message {
-  min-height: 34px;
-  margin: 16px 0 0;
+  min-height: 2.9em;
+  margin: 10px 0 0;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
@@ -504,6 +631,27 @@ input[type=range] {
 .results-table tbody tr:last-child th,
 .results-table tbody tr:last-child td {
   border-bottom: 0;
+}
+
+/* The simulator's comparison table: short, under the legend, so the canvas
+   keeps most of the height. The loaded row is marked. */
+.compare-panel {
+  max-height: 28vh;
+}
+
+.results-table tr.selected th,
+.results-table tr.selected td {
+  background: var(--panel-2);
+}
+
+.results-table .row-play {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
 }
 
 @media (max-width: 900px) {
@@ -1537,17 +1685,93 @@ html[data-theme="light"] {
   width: 42px;
 }
 
-.playback input {
+.playback > input {
   accent-color: var(--accent);
   flex: 1 1 140px;
   min-width: 0;
 }
 
-.playback span {
+.playback > span {
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
+}
+
+/* Speed lives with the transport it controls rather than in the setup panel. */
+.speed {
+  flex: 0 1 230px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.speed output {
+  color: var(--text);
+  min-width: 46px;
+}
+
+.speed input {
+  flex: 1 1 80px;
+  min-width: 60px;
+}
+
+/* Legend on the left, view toggles on the right: both describe the canvas. */
+.view-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 24px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.view-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  font-size: 12px;
+}
+
+.view-filters-title {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.view-filters label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.view-filters input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+/* One line naming the step and phase of the frame on screen. Kept to its own
+ * row, and reserved even when empty, so the canvas does not jump. */
+.phase-label {
+  flex: 0 0 auto;
+  margin: 0;
+  min-height: 1.4em;
+  font-size: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .legend {
@@ -1581,7 +1805,8 @@ html[data-theme="light"] {
 }
 
 .legend-tip {
-  margin-left: auto;
+  font-style: italic;
+  opacity: .85;
 }
 
 /* ---------------------------------------------------------------- footer - */
@@ -1612,6 +1837,315 @@ footer a {
 
 .mobile-only {
   display: none;
+}
+
+/* ========================================================= floating lab = */
+
+/* Main page on a desktop-sized screen: the dotted backdrop runs edge to edge
+ * and every piece of chrome floats on it as a card.  The canvas wrap is the
+ * box between those cards, not the whole screen, so the graph layout - which
+ * Rust fits to the wrap - never puts a node underneath one.  These queries
+ * are the exact complement of drawer mode below, which takes over unchanged. */
+@media (min-width: 1025px), (min-width: 901px) and (min-height: 561px) {
+  body.lab {
+    --float-gap: 12px;
+    --bar-h: 46px;
+    --float-bg: color-mix(in srgb, var(--panel) 90%, transparent);
+    display: block;
+  }
+
+  .lab .float-card,
+  .lab .topbar,
+  .lab .controls,
+  .lab .workspace-head,
+  .lab .playback,
+  .lab .legend,
+  .lab .view-filters,
+  .lab .phase-label,
+  .lab .compare-panel {
+    background: var(--float-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(10px);
+  }
+
+  /* RootedDisp's step notes and the comparison table float like the bars
+   * around them; the note shows only once there is a frame to describe. */
+  .lab .phase-label {
+    align-self: flex-start;
+    max-width: 100%;
+    padding: 6px 12px;
+    min-height: 0;
+  }
+
+  .lab .phase-label:empty {
+    display: none;
+  }
+
+  /* Toolbar: a pill in the top-left corner rather than a full-width bar. */
+  .lab .topbar {
+    position: fixed;
+    top: var(--float-gap);
+    left: var(--float-gap);
+    height: var(--bar-h);
+    padding: 0 8px 0 14px;
+    gap: 14px;
+    justify-content: flex-start;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .lab .brand {
+    align-items: center;
+    font-size: 14px;
+    gap: 8px;
+  }
+
+  .lab .brand-mark {
+    font-size: 18px;
+  }
+
+  .lab .brand small {
+    display: none;
+  }
+
+  .lab .top-actions {
+    gap: 8px;
+  }
+
+  .lab .top-nav {
+    border-right: 0;
+    padding-right: 0;
+    border-left: 1px solid var(--border);
+    padding-left: 10px;
+  }
+
+  .lab .top-nav .text-link {
+    font-size: 12px;
+  }
+
+  .lab .icon-button {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .lab footer {
+    display: none;
+  }
+
+  .lab .app-shell {
+    display: block;
+  }
+
+  /* Settings: a card under the toolbar, as tall as its content and never
+   * taller than the screen; the body inside it scrolls. */
+  .lab .controls {
+    position: fixed;
+    z-index: 4;
+    top: calc(var(--float-gap) * 2 + var(--bar-h) - 2px);
+    left: var(--float-gap);
+    width: var(--sidebar-w);
+    max-height: calc(100vh - var(--bar-h) - var(--float-gap) * 3);
+    max-height: calc(100dvh - var(--bar-h) - var(--float-gap) * 3);
+    overflow: hidden;
+  }
+
+  .lab .panel-heading {
+    padding: 14px 16px 10px;
+  }
+
+  .lab .panel-heading .eyebrow {
+    display: none;
+  }
+
+  .lab .panel-heading h1 {
+    font-size: 14px;
+  }
+
+  .lab .panel-tabs {
+    margin: 0 16px 8px;
+  }
+
+  .lab .controls-body {
+    padding: 0 16px 8px;
+  }
+
+  .lab .run-bar {
+    padding: 12px 16px;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .lab .message {
+    min-height: 0;
+    margin-top: 8px;
+  }
+
+  /* Everything right of the settings card: stats on top, the canvas, then the
+   * transport and the legend along the bottom. */
+  .lab .workspace {
+    position: fixed;
+    top: var(--float-gap);
+    right: var(--float-gap);
+    bottom: var(--float-gap);
+    left: calc(var(--sidebar-w) + var(--float-gap) * 2);
+    padding: 0;
+    gap: 10px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Stats: a pill in the top-right corner, level with the toolbar.  It keeps
+   * to the right so the toolbar can extend over the canvas column. */
+  .lab .workspace-head {
+    flex: 0 0 var(--bar-h);
+    align-self: flex-end;
+    max-width: calc(100% - 250px);
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 0 16px;
+  }
+
+  .lab .workspace-head > div:first-child {
+    min-width: 0;
+  }
+
+  .lab .workspace-head .eyebrow {
+    display: none;
+  }
+
+  .lab .workspace-head h2 {
+    font-size: 13px;
+    font-weight: 650;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lab .metrics {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 16px;
+    padding-left: 16px;
+    border-left: 1px solid var(--border);
+  }
+
+  .lab .metrics span {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 5px;
+  }
+
+  .lab .metrics b {
+    font-size: 14px;
+  }
+
+  .lab .metrics small {
+    order: -1;
+    font-size: 10px;
+  }
+
+  /* The canvas sits straight on the backdrop: no frame, no fill. */
+  .lab .canvas-wrap {
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .lab .playback {
+    flex-wrap: nowrap;
+    padding: 6px 12px 6px 6px;
+    gap: 8px;
+  }
+
+  .lab .playback button {
+    height: 32px;
+    width: 34px;
+    font-size: 18px;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .lab .playback #play {
+    width: 64px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+  }
+
+  .lab .playback #play:disabled {
+    background: var(--panel-2);
+    color: var(--muted);
+  }
+
+  .lab .speed {
+    flex: 0 0 210px;
+  }
+
+  .lab .view-bar {
+    border-top: 0;
+    padding: 0;
+    flex-wrap: nowrap;
+    gap: 10px;
+  }
+
+  .lab .legend,
+  .lab .view-filters {
+    padding: 8px 14px;
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+
+  /* The hint text is the part that gives way, so the filters never get
+   * pushed off screen by a long message. */
+  .lab .legend {
+    flex: 0 1 auto;
+  }
+
+  .lab .legend > span:not(.legend-tip) {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .lab .legend-tip {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lab .view-filters {
+    flex: 0 0 auto;
+  }
+
+  .lab .view-filters {
+    gap: 12px;
+    overflow-x: auto;
+  }
+}
+
+/* Laptop widths: the run title gives way before the counters do. */
+@media (min-width: 1025px) and (max-width: 1280px),
+  (min-width: 901px) and (max-width: 1024px) and (min-height: 561px) {
+  .lab .workspace-head > div:first-child,
+  .lab .legend-tip {
+    display: none;
+  }
+
+  .lab .metrics {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .lab .view-bar {
+    flex-wrap: wrap;
+  }
 }
 
 /* ============================================================ breakpoints = */
@@ -1713,14 +2247,33 @@ footer a {
     align-items: flex-start;
   }
 
-  .legend-tip {
-    width: 100%;
-    margin-left: 0;
+  .top-nav {
+    padding-right: 4px;
+  }
+
+  .view-bar {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
-/* Phone: single-column controls and a full-width scrubber row. */
+/* Phone: single-column controls and a full-width scrubber row.  The page
+ * links need the topbar width more than the wordmark does, so only the mark
+ * stays. */
 @media (max-width: 560px) {
+  .brand > span:not(.brand-mark) {
+    display: none;
+  }
+
+  .top-nav {
+    padding-right: 0;
+    border-right: 0;
+  }
+
+  .top-nav .text-link {
+    padding: 6px 7px;
+  }
+
   :root {
     --canvas-min: min(240px, 34vh);
   }
@@ -1731,7 +2284,6 @@ footer a {
 
   .two-col,
   .checks,
-  .run-actions,
   .file-actions {
     grid-template-columns: 1fr;
   }
@@ -1744,14 +2296,21 @@ footer a {
     font-size: 14px;
   }
 
-  .playback input {
+  .playback > input {
     flex: 1 1 100%;
     order: 1;
   }
 
-  .playback span {
+  .playback > span {
     order: 2;
+  }
+
+  .speed {
+    order: 3;
+    flex: 1 1 100%;
     margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
   }
 }
 

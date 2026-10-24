@@ -148,10 +148,10 @@ pub static CHARTS: &[Chart] = &[
     // ------------------------------------------------------------------ Drop
     Chart {
         id: "drop",
-        title: "Drop and Freeze",
+        title: "Drop and Freeze (legacy baseline)",
         short: "A DFS whose tree is held by the settled agents",
         crate_name: "ccm-algorithms",
-        source: "crates/ccm-algorithms/src/lib.rs",
+        source: "crates/ccm-algorithms/src/drop_and_freeze.rs",
         intro: &[
             "Three phases per round, over the agents standing on each node. Unsettled agents \
              fan out one per port to look at a neighbour, come back carrying one bit — does it \
@@ -436,10 +436,10 @@ pub static CHARTS: &[Chart] = &[
     // ------------------------------------------------------------------ Help
     Chart {
         id: "help",
-        title: "Help by Scouts",
+        title: "Help by Scouts (legacy baseline)",
         short: "A DFS where settled agents help probe",
-        crate_name: "ccm-help-scouts",
-        source: "crates/ccm-help-scouts/src/lib.rs",
+        crate_name: "ccm-algorithms",
+        source: "crates/ccm-algorithms/src/help_by_scouts.rs",
         intro: &[
             "Also a DFS, but settled agents help. A settled agent whose node can spare it \
              vacates and travels with the group as a scout, so more agents share the probing \
@@ -697,8 +697,8 @@ pub static CHARTS: &[Chart] = &[
         id: "p1tree",
         title: "P1Tree",
         short: "A DFS that builds a port-one tree",
-        crate_name: "ccm-p1tree",
-        source: "crates/ccm-p1tree/src/lib.rs",
+        crate_name: "ccm-algorithms",
+        source: "crates/ccm-algorithms/src/p1tree.rs",
         intro: &[
             "`DFS_P1Tree` from Pattanayak, Kshemkalyani, Kumar, Molla and Sharma, *Optimal \
              Dispersion Under Asynchrony*. A DFS that builds a **port-one tree**: in a finished \
@@ -729,8 +729,8 @@ pub static CHARTS: &[Chart] = &[
             "A leaf (no ports but the parent's) or a search with nobody to probe skips the \
              probe steps: the search returns nothing and the node goes straight to the \
              \"none, all probed\" branch.",
-            "\"Every agent settled?\" is the stop rule of `run()` and `simulate()` \
-             (`Stop::AtDispersion`). `run_to_full_tree` uses `Stop::AtFullTree`, whose only \
+            "\"Every agent settled?\" is the stop rule of `simulate()` (`Stop::AtDispersion`). \
+             `simulate_with_stop` with `Stop::AtFullTree` runs on instead, and its only \
              Completed exit is the root being popped (it can still stop at the round limit).",
         ],
         lanes: Lanes::Rows(&[
@@ -747,7 +747,7 @@ pub static CHARTS: &[Chart] = &[
                 "run()",
                 (0.0, 0.0),
                 Entry,
-                Some("run@2"),
+                Some("run"),
                 "Settles the root, runs the DFS loop, and when it ends Completed walks the \
                  scouts home.",
             ),
@@ -1016,6 +1016,194 @@ pub static CHARTS: &[Chart] = &[
             e("parent", "release", None, Auto),
             e("release", "trav", Some("next pass"), Outer(1)),
             e("retrace", "done", None, Auto),
+        ],
+    },
+    // ------------------------------------------------------------ RootedDisp
+    Chart {
+        id: "rooteddisp",
+        title: "RootedDisp",
+        short: "The rooted HEO-DFS: probers double each pass",
+        crate_name: "ccm-algorithms",
+        source: "crates/ccm-algorithms/src/rooted_disp.rs",
+        intro: &[
+            "`RootedDisp` from Sudo, Shibata, Nakamura, Kim and Masuzawa, *Near-linear Time \
+             Dispersion of Mobile Agents*, Section 3 and Algorithm 1: the rooted HEO-DFS. The \
+             agent with the largest ID leads a depth-first search, and the smallest-ID explorer \
+             settles at each node it reaches. Every box that moves agents is exactly one \
+             synchronous step, committed through `apply_move_intents`; settling takes none. \
+             [rooted-disp.md](rooted-disp.md) has the time model, the decisions taken where \
+             Algorithm 1 leaves a choice, and two worked traces.",
+            "What makes the search fast is `probe_pass`. Every agent at the node except its \
+             settler takes one port; a settler found at home comes back as a **helper** and \
+             probes in the next pass too, so the probers double until one finds an unsettled \
+             neighbour: `O(log τ)` passes per probe and `O(k log τ)` steps in all. `probe` \
+             resets `next` and `checked` on every call, so no cursor survives from an earlier \
+             visit.",
+        ],
+        notes: &[
+            "Rooted only: every agent must start on one node. Any other placement is refused \
+             with `NonRootedStart` before the first step.",
+            "Two choices Algorithm 1 leaves open (rooted-disp.md, decisions 1 and 2): the \
+             helpers walk home in a step of their own, taken only when there are helpers; and \
+             probers take ports in ascending ID, the smallest unsettled port winning.",
+            "A retreat at the root would mean the root's component has fewer nodes than agents; \
+             the run returns `RootExhausted` instead of looping.",
+            "Round limit: `commit` checks it before every step, so a run can stop between the \
+             passes of a probe and returns its partial state as RoundLimitReached.",
+        ],
+        lanes: Lanes::Rows(&[
+            ("Start", 0.0, 1.0),
+            ("Each move", 2.0, 3.0),
+            ("Probe()", 4.0, 7.0),
+            ("Move on or back", 8.0, 9.0),
+        ]),
+        nodes: &[
+            node(
+                "start",
+                "Run RootedDisp",
+                "simulate()",
+                (0.0, 0.0),
+                Entry,
+                Some("simulate"),
+                "Checks the input (a non-empty graph, no more agents than nodes, every agent on \
+                 the same start node) and builds the agent store.",
+            ),
+            node(
+                "root",
+                "Smallest ID settles at the root",
+                "run(), line 1",
+                (0.0, 1.0),
+                Step,
+                Some("run"),
+                "The first explorer, the smallest ID, becomes the root's settler with no parent. \
+                 It takes no step.",
+            ),
+            node(
+                "loop",
+                "Search until the leader settles",
+                "disperse()",
+                (0.0, 2.0),
+                Step,
+                Some("disperse"),
+                "Lines 2–11: probe, then move forward or back, until `a_max` (the largest ID) \
+                 has settled.",
+            ),
+            node(
+                "leader",
+                "Leader settled?",
+                "a_max.settled",
+                (0.0, 3.0),
+                Decision,
+                None,
+                "The leader settles last, when it is the only explorer left, so this is also \
+                 \"every agent settled\".",
+            ),
+            node(
+                "done",
+                "Completed",
+                "Termination::Completed",
+                (-1.5, 3.0),
+                Terminal,
+                None,
+                "Every agent settled on its own node; `validate_final` confirms it.",
+            ),
+            node(
+                "probe",
+                "Probe the current node",
+                "probe(), lines 12–14",
+                (0.0, 4.0),
+                Step,
+                Some("probe"),
+                "Resets the settler's `next` and `checked`, then runs passes until a port is \
+                 found or every port has been checked.",
+            ),
+            node(
+                "pass",
+                "One pass: out and back",
+                "probe_pass(), lines 16–21",
+                (0.0, 5.0),
+                Step,
+                Some("probe_pass"),
+                "Every agent at the node but its settler takes one of the next ports, in \
+                 ascending ID. Two steps: out, then back, each bringing the settler it found. An \
+                 agent that found nobody reports its port as unsettled.",
+            ),
+            node(
+                "commit",
+                "One synchronous step",
+                "commit()",
+                (-1.3, 5.0),
+                Aside,
+                Some("commit"),
+                "Validates and applies every move of the step together, after checking the \
+                 round limit.",
+            ),
+            node(
+                "found",
+                "Unsettled port, or all checked?",
+                "next / checked",
+                (0.0, 6.0),
+                Decision,
+                None,
+                "With neither, every prober brought a helper back, so twice as many agents probe \
+                 the next ports.",
+            ),
+            node(
+                "home",
+                "Helpers walk home",
+                "helpers_home(), line 22",
+                (0.0, 7.0),
+                Step,
+                Some("helpers_home"),
+                "Each helper leaves through the port it arrived by, which leads home. One step, \
+                 taken only when there are helpers.",
+            ),
+            node(
+                "next",
+                "Unsettled neighbour?",
+                "ψ(w).next",
+                (0.0, 8.0),
+                Decision,
+                None,
+                "`next` holds the smallest port to an unsettled neighbour, or nothing when every \
+                 neighbour is settled.",
+            ),
+            node(
+                "fwd",
+                "Move forward; smallest settles",
+                "forward(), lines 6–9",
+                (-0.8, 9.0),
+                Step,
+                Some("forward"),
+                "All explorers move through `next` in one step; the smallest ID among them \
+                 settles there with `parent` set to the leader's incoming port.",
+            ),
+            node(
+                "bwd",
+                "Move back to the parent",
+                "backward(), line 11",
+                (0.8, 9.0),
+                Step,
+                Some("backward"),
+                "All explorers move through the settler's `parent` port in one step.",
+            ),
+        ],
+        edges: &[
+            e("start", "root", None, Auto),
+            e("root", "loop", None, Auto),
+            e("loop", "leader", None, Auto),
+            e("leader", "done", Some("yes"), Auto),
+            e("leader", "probe", Some("no"), Auto),
+            e("probe", "pass", None, Auto),
+            e("pass", "found", None, Auto),
+            e("found", "pass", Some("no: twice the probers"), Around(1)),
+            e("found", "home", Some("yes"), Auto),
+            e("home", "next", None, Auto),
+            e("next", "fwd", Some("yes"), Auto),
+            e("next", "bwd", Some("no"), Auto),
+            e("fwd", "leader", Some("next step"), Around(-2)),
+            e("bwd", "probe", Some("probe the parent"), Around(2)),
+            aside("pass", "commit", Some("each step")),
         ],
     },
 ];

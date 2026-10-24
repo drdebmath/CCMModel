@@ -11,7 +11,7 @@
 //! evicted records. Each record begins with a one-byte record kind followed by
 //! fixed-width dense IDs; group records carry an explicit agent count.
 
-use ccm_algorithms::{DropStatus, SharedRecorder, SimulationState as DropState};
+use ccm_algorithms::drop_and_freeze::{DropStatus, SharedRecorder, SimulationState as DropState};
 use ccm_core::{AgentStatus, ComplexityMetrics, NodeId, PortEdge, PortGraph, Termination};
 use ccm_trace::{
     BoundedTrace, Checkpoint, FullTrace, NoTrace, Phase, SimulationEvent, Trace, TraceBudget,
@@ -26,6 +26,7 @@ pub enum AlgorithmSelector {
     HelpByScouts = 0,
     DropAndFreeze = 1,
     P1Tree = 2,
+    RootedDisp = 3,
 }
 
 /// Trace policy. `Bounded` uses the supplied record and sampling limits.
@@ -44,6 +45,7 @@ enum AdapterError {
     Help(String),
     Drop(String),
     P1Tree(String),
+    RootedDisp(String),
     Trace(String),
 }
 
@@ -55,6 +57,7 @@ impl fmt::Display for AdapterError {
             | Self::Help(message)
             | Self::Drop(message)
             | Self::P1Tree(message)
+            | Self::RootedDisp(message)
             | Self::Trace(message) => f.write_str(message),
         }
     }
@@ -231,6 +234,7 @@ impl WasmSimulation {
             AlgorithmSelector::DropAndFreeze => self.run_drop(),
             AlgorithmSelector::HelpByScouts => self.run_help(),
             AlgorithmSelector::P1Tree => self.run_p1tree(),
+            AlgorithmSelector::RootedDisp => self.run_rooted_disp(),
         }
     }
 
@@ -238,7 +242,7 @@ impl WasmSimulation {
         match self.trace_mode {
             TraceMode::Off => {
                 let mut metrics = ComplexityMetrics::default();
-                let run = ccm_algorithms::simulate_with(
+                let run = ccm_algorithms::drop_and_freeze::simulate_with(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -255,7 +259,7 @@ impl WasmSimulation {
             }
             TraceMode::Full => {
                 let mut metrics = ComplexityMetrics::default();
-                let run = ccm_algorithms::simulate_with(
+                let run = ccm_algorithms::drop_and_freeze::simulate_with(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -274,7 +278,7 @@ impl WasmSimulation {
                 let recorder = BoundedTrace::new(self.trace_budget())
                     .map_err(|error| AdapterError::Trace(error.to_string()))?;
                 let mut metrics = ComplexityMetrics::default();
-                let run = ccm_algorithms::simulate_with(
+                let run = ccm_algorithms::drop_and_freeze::simulate_with(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -297,7 +301,7 @@ impl WasmSimulation {
     fn run_help(&self) -> Result<SimulationOutput, AdapterError> {
         match self.trace_mode {
             TraceMode::Off => {
-                let (result, metrics, _) = ccm_help_scouts::simulate(
+                let (result, metrics, _) = ccm_algorithms::help_by_scouts::simulate(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -308,7 +312,7 @@ impl WasmSimulation {
                 Ok(output_from_help(result, metrics, None))
             }
             TraceMode::Full => {
-                let (result, metrics, recorder) = ccm_help_scouts::simulate(
+                let (result, metrics, recorder) = ccm_algorithms::help_by_scouts::simulate(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -325,7 +329,7 @@ impl WasmSimulation {
             TraceMode::Bounded => {
                 let recorder = BoundedTrace::new(self.trace_budget())
                     .map_err(|error| AdapterError::Trace(error.to_string()))?;
-                let (result, metrics, recorder) = ccm_help_scouts::simulate(
+                let (result, metrics, recorder) = ccm_algorithms::help_by_scouts::simulate(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -346,7 +350,7 @@ impl WasmSimulation {
     fn run_p1tree(&self) -> Result<SimulationOutput, AdapterError> {
         match self.trace_mode {
             TraceMode::Off => {
-                let (result, metrics, _) = ccm_p1tree::simulate(
+                let (result, metrics, _) = ccm_algorithms::p1tree::simulate(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -357,7 +361,7 @@ impl WasmSimulation {
                 Ok(output_from_p1tree(result, metrics, None))
             }
             TraceMode::Full => {
-                let (result, metrics, recorder) = ccm_p1tree::simulate(
+                let (result, metrics, recorder) = ccm_algorithms::p1tree::simulate(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -374,7 +378,7 @@ impl WasmSimulation {
             TraceMode::Bounded => {
                 let recorder = BoundedTrace::new(self.trace_budget())
                     .map_err(|error| AdapterError::Trace(error.to_string()))?;
-                let (result, metrics, recorder) = ccm_p1tree::simulate(
+                let (result, metrics, recorder) = ccm_algorithms::p1tree::simulate(
                     &self.graph,
                     &self.starts,
                     self.round_limit,
@@ -384,6 +388,55 @@ impl WasmSimulation {
                 .map_err(|error| AdapterError::P1Tree(error.to_string()))?;
                 let truncated = trace_was_truncated(&recorder);
                 Ok(output_from_p1tree(
+                    result,
+                    metrics,
+                    Some(encode_trace(&recorder.into_trace(), truncated)),
+                ))
+            }
+        }
+    }
+
+    fn run_rooted_disp(&self) -> Result<SimulationOutput, AdapterError> {
+        match self.trace_mode {
+            TraceMode::Off => {
+                let (result, metrics, _) = ccm_algorithms::rooted_disp::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    NoTrace,
+                )
+                .map_err(|error| AdapterError::RootedDisp(error.to_string()))?;
+                Ok(output_from_rooted_disp(result, metrics, None))
+            }
+            TraceMode::Full => {
+                let (result, metrics, recorder) = ccm_algorithms::rooted_disp::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    FullTrace::new(),
+                )
+                .map_err(|error| AdapterError::RootedDisp(error.to_string()))?;
+                Ok(output_from_rooted_disp(
+                    result,
+                    metrics,
+                    Some(encode_trace(&recorder.into_trace(), false)),
+                ))
+            }
+            TraceMode::Bounded => {
+                let recorder = BoundedTrace::new(self.trace_budget())
+                    .map_err(|error| AdapterError::Trace(error.to_string()))?;
+                let (result, metrics, recorder) = ccm_algorithms::rooted_disp::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    recorder,
+                )
+                .map_err(|error| AdapterError::RootedDisp(error.to_string()))?;
+                let truncated = trace_was_truncated(&recorder);
+                Ok(output_from_rooted_disp(
                     result,
                     metrics,
                     Some(encode_trace(&recorder.into_trace(), truncated)),
@@ -591,7 +644,7 @@ fn output_from_drop(
 }
 
 fn output_from_help(
-    result: ccm_help_scouts::HelpResult,
+    result: ccm_algorithms::help_by_scouts::HelpResult,
     metrics: ComplexityMetrics,
     trace: Option<RenderPayload>,
 ) -> SimulationOutput {
@@ -603,9 +656,9 @@ fn output_from_help(
             .agents
             .iter()
             .map(|agent| match agent.status {
-                ccm_help_scouts::HelpStatus::Settled => 0,
-                ccm_help_scouts::HelpStatus::Unsettled => 1,
-                ccm_help_scouts::HelpStatus::SettledScout => 2,
+                ccm_algorithms::help_by_scouts::HelpStatus::Settled => 0,
+                ccm_algorithms::help_by_scouts::HelpStatus::Unsettled => 1,
+                ccm_algorithms::help_by_scouts::HelpStatus::SettledScout => 2,
             })
             .collect(),
         homes: result
@@ -621,7 +674,7 @@ fn output_from_help(
 }
 
 fn output_from_p1tree(
-    result: ccm_p1tree::P1Result,
+    result: ccm_algorithms::p1tree::P1Result,
     metrics: ComplexityMetrics,
     trace: Option<RenderPayload>,
 ) -> SimulationOutput {
@@ -633,11 +686,43 @@ fn output_from_p1tree(
             .agents
             .iter()
             .map(|agent| match agent.status {
-                ccm_p1tree::P1Status::Settled => 0,
-                ccm_p1tree::P1Status::Unsettled => 1,
+                ccm_algorithms::p1tree::P1Status::Settled => 0,
+                ccm_algorithms::p1tree::P1Status::Unsettled => 1,
                 // The renderer's third status is "settled but away", which is
                 // what a travelling scout is.
-                ccm_p1tree::P1Status::SettledScout => 2,
+                ccm_algorithms::p1tree::P1Status::SettledScout => 2,
+            })
+            .collect(),
+        homes: result
+            .agents
+            .iter()
+            .map(|agent| agent.home.map_or(-1, |node| node.0 as i32))
+            .collect(),
+        rounds: metrics.rounds,
+        moves: metrics.agent_moves,
+        probes: metrics.port_probes,
+        trace: trace.unwrap_or_else(empty_payload),
+    }
+}
+
+fn output_from_rooted_disp(
+    result: ccm_algorithms::rooted_disp::RootedResult,
+    metrics: ComplexityMetrics,
+    trace: Option<RenderPayload>,
+) -> SimulationOutput {
+    SimulationOutput {
+        algorithm: AlgorithmSelector::RootedDisp,
+        termination_code: termination_code(&result.termination),
+        positions: result.agents.iter().map(|agent| agent.node.0).collect(),
+        statuses: result
+            .agents
+            .iter()
+            .map(|agent| match agent.role {
+                ccm_algorithms::rooted_disp::RootedRole::Settler => 0,
+                ccm_algorithms::rooted_disp::RootedRole::Explorer => 1,
+                // A helper is a settler away from home, the renderer's third
+                // status.
+                ccm_algorithms::rooted_disp::RootedRole::Helper => 2,
             })
             .collect(),
         homes: result
@@ -828,6 +913,7 @@ fn phase_code(phase: Phase) -> u8 {
         Phase::Follow => 7,
         Phase::Retrace => 8,
         Phase::Other => 9,
+        Phase::HelperReturn => 10,
     }
 }
 
@@ -980,6 +1066,106 @@ mod tests {
 
         let mut limited = path_simulation(AlgorithmSelector::DropAndFreeze, TraceMode::Full, 0, 0);
         assert_eq!(limited.run_internal().unwrap().termination_code, 1);
+    }
+
+    /// Walks a version-1 semantic stream and returns the phase code of every
+    /// `PhaseStarted` record, failing if any record is malformed.
+    fn phase_codes(bytes: &[u8]) -> Vec<u8> {
+        let u32_at = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+        let optional = |at: usize, width: usize| if bytes[at] == 0 { 1 } else { 1 + width };
+        assert_eq!((bytes[0], bytes[1]), (1, 2), "version 1, semantic stream");
+        let records = u32_at(4);
+        let mut at = 8;
+        let mut phases = Vec::new();
+        for _ in 0..records {
+            let kind = bytes[at];
+            at += 9; // record kind + u64 step
+            if kind == 3 {
+                let agents = u32_at(at);
+                at += 4;
+                for _ in 0..agents {
+                    at += 5; // node + status
+                    at += optional(at, 4);
+                }
+                continue;
+            }
+            assert_eq!(kind, 2, "event or checkpoint record");
+            let event = bytes[at];
+            at += 1;
+            match event {
+                0 => {
+                    phases.push(bytes[at]);
+                    at += 1;
+                }
+                1 => {
+                    at += 14;
+                    at += optional(at, 2);
+                }
+                2 => at += 4 + 4 * u32_at(at) + 10,
+                3 => at += 8,
+                4 => at += 6,
+                5 => {
+                    at += 16;
+                    at += optional(at, 2);
+                    at += optional(at, 2);
+                }
+                6 => at += 5,
+                other => panic!("unknown event kind {other}"),
+            }
+        }
+        assert_eq!(at, bytes.len(), "the stream ends exactly after its records");
+        phases
+    }
+
+    #[test]
+    fn rooted_disp_runs_and_streams_its_helper_return_phase() {
+        let mut rooted = path_simulation(AlgorithmSelector::RootedDisp, TraceMode::Full, 100, 0);
+        let output = rooted.run_internal().unwrap();
+        assert_eq!(output.termination_code, 0);
+        assert_eq!(output.positions, vec![0, 1, 2]);
+        assert_eq!(output.homes, vec![0, 1, 2]);
+        assert_eq!(output.statuses, vec![0, 0, 0]);
+        assert!(output.trace.record_count > 0);
+        assert!(phase_codes(&output.trace.bytes).contains(&phase_code(Phase::HelperReturn)));
+    }
+
+    #[test]
+    fn rooted_disp_reproduces_the_star_hand_trace_with_tracing_off() {
+        let edges: Vec<u32> = (1..9).flat_map(|leaf| [0, leaf]).collect();
+        let mut star = WasmSimulation::new(
+            9,
+            &edges,
+            &[0; 9],
+            AlgorithmSelector::RootedDisp,
+            TraceMode::Off,
+            1_000,
+            0,
+            1,
+        )
+        .unwrap();
+        let output = star.run_internal().unwrap();
+        assert_eq!(output.termination_code, 0);
+        assert_eq!((output.rounds, output.probes, output.moves), (73, 65, 264));
+        assert_eq!(output.trace, empty_payload());
+    }
+
+    #[test]
+    fn rooted_disp_refuses_a_scattered_start() {
+        let mut scattered = WasmSimulation::new(
+            3,
+            &[0, 1, 1, 2],
+            &[0, 2],
+            AlgorithmSelector::RootedDisp,
+            TraceMode::Off,
+            100,
+            0,
+            1,
+        )
+        .unwrap();
+        assert!(matches!(
+            scattered.run_internal(),
+            Err(AdapterError::RootedDisp(message)) if message.contains("NonRootedStart")
+        ));
     }
 
     #[test]
