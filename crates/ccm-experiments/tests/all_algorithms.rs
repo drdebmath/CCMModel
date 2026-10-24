@@ -1,10 +1,12 @@
-//! Properties every algorithm must have, checked once for all three.
+//! Properties every algorithm must have, checked once for all five.
 
 mod common;
 
 use ccm_algorithms::drop_and_freeze::DropStatus;
+use ccm_algorithms::general_disp::GeneralRole;
 use ccm_algorithms::help_by_scouts::HelpStatus;
 use ccm_algorithms::p1tree::P1Status;
+use ccm_algorithms::rooted_disp::RootedRole;
 use ccm_core::{ComplexityMetrics, NodeId, PortAssignment, PortGraph, Termination};
 use ccm_experiments::{generate_graph, GraphFamily, GraphSpec};
 use ccm_trace::{FullTrace, NoTrace, Recorder};
@@ -56,11 +58,44 @@ fn summary<R: Recorder>(
             .unwrap();
             (format!("{result:?}"), metrics)
         }
+        "rooted_disp" => {
+            let (result, metrics, _) = ccm_algorithms::rooted_disp::simulate(
+                g,
+                starts,
+                1_000,
+                ComplexityMetrics::default(),
+                recorder,
+            )
+            .unwrap();
+            (format!("{result:?}"), metrics)
+        }
+        "general_disp" => {
+            let (result, metrics, _) = ccm_algorithms::general_disp::simulate(
+                g,
+                starts,
+                1_000_000,
+                ComplexityMetrics::default(),
+                recorder,
+            )
+            .unwrap();
+            // Events are kept only for a listening recorder; the rest must
+            // not depend on it.
+            let mut result = result;
+            result.events.clear();
+            result.roles.clear();
+            (format!("{result:?}"), metrics)
+        }
         other => unreachable!("unknown algorithm {other}"),
     }
 }
 
-const ALGORITHMS: [&str; 3] = ["drop_and_freeze", "help_by_scouts", "p1tree"];
+const ALGORITHMS: [&str; 5] = [
+    "drop_and_freeze",
+    "help_by_scouts",
+    "p1tree",
+    "rooted_disp",
+    "general_disp",
+];
 
 fn cases() -> Vec<PortGraph> {
     vec![
@@ -128,6 +163,39 @@ fn final_placement(
                 .agents
                 .iter()
                 .map(|agent| (agent.node, agent.status == P1Status::Settled, agent.home));
+            (result.termination, agents.collect())
+        }
+        "rooted_disp" => {
+            let (result, _, _) = ccm_algorithms::rooted_disp::simulate(
+                g,
+                starts,
+                LIMIT,
+                ComplexityMetrics::default(),
+                NoTrace,
+            )
+            .unwrap();
+            let agents = result
+                .agents
+                .iter()
+                .map(|agent| (agent.node, agent.role == RootedRole::Settler, agent.home));
+            (result.termination, agents.collect())
+        }
+        "general_disp" => {
+            let (result, _, _) = ccm_algorithms::general_disp::simulate(
+                g,
+                starts,
+                LIMIT,
+                ComplexityMetrics::default(),
+                NoTrace,
+            )
+            .unwrap();
+            // GeneralDisp's last leader does not settle: it waits alone on its
+            // node (Section 4.1), which therefore counts as its home here.
+            let agents = result.agents.iter().map(|agent| match agent.role {
+                GeneralRole::Settler => (agent.node, true, agent.home),
+                GeneralRole::WaitingLeader => (agent.node, true, Some(agent.node)),
+                _ => (agent.node, false, agent.home),
+            });
             (result.termination, agents.collect())
         }
         other => unreachable!("unknown algorithm {other}"),

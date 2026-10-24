@@ -79,6 +79,25 @@ fn zoom_by(state: &Rc<RefCell<DocsState>>, factor: f64) {
     apply_view(state);
 }
 
+/// Zooms by `factor`, keeping the point under the pointer where it is.
+fn zoom_at(state: &Rc<RefCell<DocsState>>, factor: f64, client_x: f64, client_y: f64) {
+    {
+        let mut app = state.borrow_mut();
+        let Some(frame) = app.stage().and_then(|stage| stage.parent_element()) else {
+            return;
+        };
+        let rect = frame.get_bounding_client_rect();
+        let mx = client_x - rect.left() - rect.width() / 2.0;
+        let my = client_y - rect.top() - rect.height() / 2.0;
+        let scale = (app.view.scale * factor).clamp(MIN_SCALE, MAX_SCALE);
+        let ratio = scale / app.view.scale;
+        app.view.x = mx - ratio * (mx - app.view.x);
+        app.view.y = my - ratio * (my - app.view.y);
+        app.view.scale = scale;
+    }
+    apply_view(state);
+}
+
 fn fit(state: &Rc<RefCell<DocsState>>) {
     {
         let mut app = state.borrow_mut();
@@ -263,8 +282,19 @@ pub fn start_docs() -> Result<(), JsValue> {
         let state = Rc::clone(&state);
         let closure = Closure::<dyn FnMut(WheelEvent)>::new(move |event: WheelEvent| {
             event.prevent_default();
-            let factor = if event.delta_y() < 0.0 { 1.12 } else { 0.89 };
-            zoom_by(&state, factor);
+            let unit = match event.delta_mode() {
+                1 => 16.0,
+                2 => 400.0,
+                _ => 1.0,
+            };
+            // A touchpad pinch arrives as small wheel steps with ctrl held.
+            let rate = if event.ctrl_key() { 0.01 } else { 0.0015 };
+            zoom_at(
+                &state,
+                (-event.delta_y() * unit * rate).exp(),
+                f64::from(event.client_x()),
+                f64::from(event.client_y()),
+            );
         });
         // Not passive: the handler calls preventDefault so the page does not
         // scroll while the reader is zooming the diagram.

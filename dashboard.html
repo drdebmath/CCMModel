@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,22 +7,23 @@
   <title>CCM Dispersion Dashboard</title>
   <link rel="stylesheet" href="./app.css">
 </head>
-<body>
+<body class="floating">
   <header class="topbar">
     <div class="brand"><span class="brand-mark" aria-hidden="true">◈</span><span>CCM Dashboard</span><small>Cost sweep</small></div>
     <div class="top-actions"><nav class="top-nav" aria-label="Pages"><a class="text-link" href="./index.html">Simulator</a><a class="text-link" href="./docs.html">Flowcharts</a><a class="text-link" href="https://github.com/drdebmath/CCMModel/tree/main/docs" target="_blank" rel="noopener noreferrer">Docs</a></nav><span id="engineState" class="engine-state" role="status">Checking WASM…</span><button id="themeToggle" class="icon-button" type="button" aria-label="Switch theme">☀</button><button id="panelToggle" class="icon-button mobile-only" type="button" aria-label="Open controls">☰</button></div>
   </header>
 
   <div class="app-shell">
-    <aside id="controlPanel" class="controls" aria-label="Sweep controls">
+    <aside id="controlPanel" class="controls" aria-label="Sweep controls" data-window="controls" data-handle=".panel-heading">
       <div class="panel-heading"><div><p class="eyebrow">EXPERIMENT</p><h1>Cost of dispersion</h1></div><button id="closePanel" class="icon-button mobile-only" type="button" aria-label="Close controls">×</button></div>
 
       <div class="controls-body">
       <section class="control-section"><h2>Model</h2>
-        <label>Algorithm<select id="algorithm"><option value="drop">Drop and Freeze</option><option value="help">Help by Scouts</option><option value="p1tree">P1Tree</option></select></label>
+        <label>Algorithm<select id="algorithm"><option value="drop">Drop and Freeze</option><option value="help">Help by Scouts</option><option value="p1tree">P1Tree</option><option value="rooted">RootedDisp</option><option value="general">GeneralDisp</option></select></label>
         <label>Cost measured<select id="metric"><option value="rounds">Rounds</option><option value="moves">Agent moves</option><option value="probes">Port probes</option></select></label>
         <div class="two-col"><label>Nodes<input id="nodes" type="number" min="2" max="2000" value="40" inputmode="numeric"></label><label>Seed<input id="seed" type="number" min="0" max="4294967295" value="42" inputmode="numeric"></label></div>
-        <p id="algorithmNote" class="help-note">All agents start at node 0, so the classes are compared on the same placement.</p>
+        <div class="two-col"><label>Start node<input id="startNode" type="number" min="0" max="1999" value="0" inputmode="numeric"></label></div>
+        <p id="algorithmNote" class="help-note">All agents start on the start node, so the classes are compared on the same placement.</p>
       </section>
 
       <section class="control-section"><h2>Agent range</h2>
@@ -52,7 +53,7 @@
       </div>
     </aside>
 
-    <main class="workspace">
+    <main class="workspace" data-content>
       <div class="workspace-head">
         <div><p class="eyebrow">RESULTS</p><h2 id="runTitle">No sweep yet</h2></div>
       </div>
@@ -89,5 +90,6 @@
       message.className = 'message error';
     }
   </script>
+  <script src="./floating.js" defer></script>
 </body>
 </html>

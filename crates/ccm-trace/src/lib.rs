@@ -21,6 +21,8 @@ pub enum Phase {
     Chase,
     Follow,
     Retrace,
+    /// `RootedDisp`'s line 22: settlers that helped a probe walk home.
+    HelperReturn,
     Other,
 }
 

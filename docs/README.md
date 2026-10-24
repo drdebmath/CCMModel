@@ -5,7 +5,7 @@ Start here.
 ## How the algorithms work
 
 - **[The interactive flowcharts](https://drdebmath.github.io/CCMModel/docs.html)** —
-  the same three charts as a page you can pan and zoom, where clicking any box
+  the same four charts as a page you can pan and zoom, where clicking any box
   opens the source of the function it stands for. Served alongside the
   simulator; also reachable from either app page's header.
 - **[algorithm-flowcharts.md](algorithm-flowcharts.md)** — one flowchart per
@@ -15,6 +15,15 @@ Start here.
   Kshemkalyani, Kumar, Molla and Sharma, *Optimal Dispersion Under Asynchrony*.
   What is implemented, what is not, and the two places where the pseudocode
   needs reading alongside the proofs.
+- [rooted-disp.md](rooted-disp.md) — RootedDisp, the rooted HEO-DFS of Sudo et
+  al., *Near-linear Time Dispersion of Mobile Agents*: its time steps, the
+  decisions taken where Algorithm 1 leaves a choice, and two worked traces.
+- [general-disp.md](general-disp.md) — GeneralDisp, the general HEO-DFS with
+  the Zombie method from the same paper (Section 4, Algorithms 2–5). Covers:
+  - the twelve-slot schedule, groups and roles;
+  - how its probing differs from RootedDisp;
+  - the decisions taken where the pseudocode leaves a choice;
+  - the two-group and three-group hand traces.
 - [behavior-spec.md](behavior-spec.md) — Drop-and-Freeze and Help-by-Scouts,
   as they behaved in the Python implementation the Rust ports preserve.
   **Archival**: it cites files this repository no longer contains.

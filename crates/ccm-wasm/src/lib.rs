@@ -26,6 +26,8 @@ pub enum AlgorithmSelector {
     HelpByScouts = 0,
     DropAndFreeze = 1,
     P1Tree = 2,
+    RootedDisp = 3,
+    GeneralDisp = 4,
 }
 
 /// Trace policy. `Bounded` uses the supplied record and sampling limits.
@@ -44,6 +46,8 @@ enum AdapterError {
     Help(String),
     Drop(String),
     P1Tree(String),
+    RootedDisp(String),
+    GeneralDisp(String),
     Trace(String),
 }
 
@@ -55,6 +59,8 @@ impl fmt::Display for AdapterError {
             | Self::Help(message)
             | Self::Drop(message)
             | Self::P1Tree(message)
+            | Self::RootedDisp(message)
+            | Self::GeneralDisp(message)
             | Self::Trace(message) => f.write_str(message),
         }
     }
@@ -231,6 +237,8 @@ impl WasmSimulation {
             AlgorithmSelector::DropAndFreeze => self.run_drop(),
             AlgorithmSelector::HelpByScouts => self.run_help(),
             AlgorithmSelector::P1Tree => self.run_p1tree(),
+            AlgorithmSelector::RootedDisp => self.run_rooted_disp(),
+            AlgorithmSelector::GeneralDisp => self.run_general_disp(),
         }
     }
 
@@ -392,6 +400,104 @@ impl WasmSimulation {
         }
     }
 
+    fn run_rooted_disp(&self) -> Result<SimulationOutput, AdapterError> {
+        match self.trace_mode {
+            TraceMode::Off => {
+                let (result, metrics, _) = ccm_algorithms::rooted_disp::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    NoTrace,
+                )
+                .map_err(|error| AdapterError::RootedDisp(error.to_string()))?;
+                Ok(output_from_rooted_disp(result, metrics, None))
+            }
+            TraceMode::Full => {
+                let (result, metrics, recorder) = ccm_algorithms::rooted_disp::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    FullTrace::new(),
+                )
+                .map_err(|error| AdapterError::RootedDisp(error.to_string()))?;
+                Ok(output_from_rooted_disp(
+                    result,
+                    metrics,
+                    Some(encode_trace(&recorder.into_trace(), false)),
+                ))
+            }
+            TraceMode::Bounded => {
+                let recorder = BoundedTrace::new(self.trace_budget())
+                    .map_err(|error| AdapterError::Trace(error.to_string()))?;
+                let (result, metrics, recorder) = ccm_algorithms::rooted_disp::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    recorder,
+                )
+                .map_err(|error| AdapterError::RootedDisp(error.to_string()))?;
+                let truncated = trace_was_truncated(&recorder);
+                Ok(output_from_rooted_disp(
+                    result,
+                    metrics,
+                    Some(encode_trace(&recorder.into_trace(), truncated)),
+                ))
+            }
+        }
+    }
+
+    fn run_general_disp(&self) -> Result<SimulationOutput, AdapterError> {
+        match self.trace_mode {
+            TraceMode::Off => {
+                let (result, metrics, _) = ccm_algorithms::general_disp::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    NoTrace,
+                )
+                .map_err(|error| AdapterError::GeneralDisp(error.to_string()))?;
+                Ok(output_from_general_disp(result, metrics, None))
+            }
+            TraceMode::Full => {
+                let (result, metrics, recorder) = ccm_algorithms::general_disp::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    FullTrace::new(),
+                )
+                .map_err(|error| AdapterError::GeneralDisp(error.to_string()))?;
+                Ok(output_from_general_disp(
+                    result,
+                    metrics,
+                    Some(encode_trace(&recorder.into_trace(), false)),
+                ))
+            }
+            TraceMode::Bounded => {
+                let recorder = BoundedTrace::new(self.trace_budget())
+                    .map_err(|error| AdapterError::Trace(error.to_string()))?;
+                let (result, metrics, recorder) = ccm_algorithms::general_disp::simulate(
+                    &self.graph,
+                    &self.starts,
+                    self.round_limit,
+                    ComplexityMetrics::default(),
+                    recorder,
+                )
+                .map_err(|error| AdapterError::GeneralDisp(error.to_string()))?;
+                let truncated = trace_was_truncated(&recorder);
+                Ok(output_from_general_disp(
+                    result,
+                    metrics,
+                    Some(encode_trace(&recorder.into_trace(), truncated)),
+                ))
+            }
+        }
+    }
+
     fn trace_budget(&self) -> TraceBudget {
         let checkpoint_words = 1_usize
             .saturating_add(self.starts.len().saturating_mul(3))
@@ -423,10 +529,17 @@ pub struct SimulationOutput {
     moves: u64,
     probes: u64,
     trace: RenderPayload,
+    groups: Vec<u8>,
 }
 
 #[wasm_bindgen]
 impl SimulationOutput {
+    /// `GeneralDisp` roles, groups, slots and merge events per frame, in the
+    /// format of `encode_groups`; empty for other algorithms or without a trace.
+    pub fn group_bytes(&self) -> js_sys::Uint8Array {
+        js_sys::Uint8Array::from(self.groups.as_slice())
+    }
+
     /// Dense agent-node positions as a JS Uint32Array.
     pub fn positions(&self) -> js_sys::Uint32Array {
         js_sys::Uint32Array::from(self.positions.as_slice())
@@ -564,6 +677,7 @@ fn initial_output(
             record_count: 0,
             truncated: false,
         },
+        groups: Vec::new(),
     }
 }
 
@@ -587,6 +701,7 @@ fn output_from_drop(
         moves: metrics.agent_moves,
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
+        groups: Vec::new(),
     }
 }
 
@@ -617,6 +732,7 @@ fn output_from_help(
         moves: metrics.agent_moves,
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
+        groups: Vec::new(),
     }
 }
 
@@ -649,6 +765,220 @@ fn output_from_p1tree(
         moves: metrics.agent_moves,
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
+        groups: Vec::new(),
+    }
+}
+
+fn output_from_rooted_disp(
+    result: ccm_algorithms::rooted_disp::RootedResult,
+    metrics: ComplexityMetrics,
+    trace: Option<RenderPayload>,
+) -> SimulationOutput {
+    SimulationOutput {
+        algorithm: AlgorithmSelector::RootedDisp,
+        termination_code: termination_code(&result.termination),
+        positions: result.agents.iter().map(|agent| agent.node.0).collect(),
+        statuses: result
+            .agents
+            .iter()
+            .map(|agent| match agent.role {
+                ccm_algorithms::rooted_disp::RootedRole::Settler => 0,
+                ccm_algorithms::rooted_disp::RootedRole::Explorer => 1,
+                // A helper is a settler away from home, the renderer's third
+                // status.
+                ccm_algorithms::rooted_disp::RootedRole::Helper => 2,
+            })
+            .collect(),
+        homes: result
+            .agents
+            .iter()
+            .map(|agent| agent.home.map_or(-1, |node| node.0 as i32))
+            .collect(),
+        rounds: metrics.rounds,
+        moves: metrics.agent_moves,
+        probes: metrics.port_probes,
+        trace: trace.unwrap_or_else(empty_payload),
+        groups: Vec::new(),
+    }
+}
+
+fn output_from_general_disp(
+    result: ccm_algorithms::general_disp::GeneralResult,
+    metrics: ComplexityMetrics,
+    trace: Option<RenderPayload>,
+) -> SimulationOutput {
+    use ccm_algorithms::general_disp::GeneralRole;
+    let groups = if trace.is_some() {
+        encode_groups(&result)
+    } else {
+        Vec::new()
+    };
+    SimulationOutput {
+        algorithm: AlgorithmSelector::GeneralDisp,
+        termination_code: termination_code(&result.termination),
+        positions: result.agents.iter().map(|agent| agent.node.0).collect(),
+        statuses: result
+            .agents
+            .iter()
+            .map(|agent| match agent.role {
+                GeneralRole::Settler => 0,
+                GeneralRole::ActiveLeader | GeneralRole::WaitingLeader | GeneralRole::Zombie => 1,
+                GeneralRole::Helper => 2,
+            })
+            .collect(),
+        homes: result
+            .agents
+            .iter()
+            .map(|agent| agent.home.map_or(-1, |node| node.0 as i32))
+            .collect(),
+        rounds: metrics.rounds,
+        moves: metrics.agent_moves,
+        probes: metrics.port_probes,
+        trace: trace.unwrap_or_else(empty_payload),
+        groups,
+    }
+}
+
+/// The slot, 1–12, of `GeneralDisp` time step `step`.
+#[wasm_bindgen]
+#[must_use]
+pub fn general_disp_slot(step: u64) -> u8 {
+    ccm_algorithms::general_disp::slot_of(step)
+}
+
+/// The `GeneralDisp` group stream, little-endian.
+///
+/// Header `[version=1, kind=4, truncated, reserved, record_count:u32]`, then
+/// records sorted by frame. Each starts `[record kind, frame:u64, slot:u8]`:
+/// `frame` is the checkpoint step it shows in, `slot` the slot that produced
+/// that frame (0 for frame 0).
+/// - Kind 1, role change: `agent:u32, role:u8, level:u32, leader:u32`. Roles:
+///   settler 0, helper 1, active leader 2, waiting leader 3, weak zombie 4,
+///   strong zombie 5.
+/// - Kind 2, group event: `code:u8, agent:u32, node:u32, a, b, c, d:u32`.
+///   Codes and fields: became zombie 0 (stronger level, leader), settled 1
+///   (group level, leader), incorporated 2 (from level, leader, to level,
+///   leader), level up 3 (level, zombie), forward 4 (to), backward 5 (to),
+///   zombie levels 6 (location, swarm; node is `u32::MAX`), chase 7 (to, weak).
+fn encode_groups(result: &ccm_algorithms::general_disp::GeneralResult) -> Vec<u8> {
+    use ccm_algorithms::general_disp::{slot_of, ShownRole, MAX_ROLE_CHANGES};
+    let slot = |frame: u64| if frame == 0 { 0 } else { slot_of(frame - 1) };
+    let mut records: Vec<(u64, Vec<u8>)> = Vec::new();
+    for event in &result.events {
+        let (step, code, agent, node, fields) = general_event_fields(event);
+        let frame = step + 1;
+        let mut bytes = vec![2];
+        bytes.extend_from_slice(&frame.to_le_bytes());
+        bytes.push(slot(frame));
+        bytes.push(code);
+        put_u32(&mut bytes, agent);
+        put_u32(&mut bytes, node);
+        for field in fields {
+            put_u32(&mut bytes, field);
+        }
+        records.push((frame, bytes));
+    }
+    for change in &result.roles {
+        let role = match change.role {
+            ShownRole::Settler => 0,
+            ShownRole::Helper => 1,
+            ShownRole::ActiveLeader => 2,
+            ShownRole::WaitingLeader => 3,
+            ShownRole::WeakZombie => 4,
+            ShownRole::StrongZombie => 5,
+        };
+        let mut bytes = vec![1];
+        bytes.extend_from_slice(&change.step.to_le_bytes());
+        bytes.push(slot(change.step));
+        put_u32(&mut bytes, change.agent.0);
+        bytes.push(role);
+        put_u32(&mut bytes, change.group.level);
+        put_u32(&mut bytes, change.group.leader.0);
+        records.push((change.step, bytes));
+    }
+    records.sort_by_key(|(frame, _)| *frame);
+    let truncated = result.roles.len() >= MAX_ROLE_CHANGES;
+    let mut bytes = stream_header(4, records.len() as u32, truncated);
+    for (_, record) in records {
+        bytes.extend_from_slice(&record);
+    }
+    bytes
+}
+
+fn general_event_fields(
+    event: &ccm_algorithms::general_disp::GroupEvent,
+) -> (u64, u8, u32, u32, [u32; 4]) {
+    use ccm_algorithms::general_disp::GroupEvent as E;
+    match *event {
+        E::BecameZombie {
+            step,
+            agent,
+            node,
+            stronger,
+        } => (
+            step,
+            0,
+            agent.0,
+            node.0,
+            [stronger.level, stronger.leader.0, 0, 0],
+        ),
+        E::Settled {
+            step,
+            agent,
+            node,
+            group,
+        } => (
+            step,
+            1,
+            agent.0,
+            node.0,
+            [group.level, group.leader.0, 0, 0],
+        ),
+        E::Incorporated {
+            step,
+            settler,
+            node,
+            from,
+            to,
+        } => (
+            step,
+            2,
+            settler.0,
+            node.0,
+            [from.level, from.leader.0, to.level, to.leader.0],
+        ),
+        E::LevelUp {
+            step,
+            leader,
+            zombie,
+            node,
+            level,
+        } => (step, 3, leader.0, node.0, [level, zombie.0, 0, 0]),
+        E::ForwardMove {
+            step,
+            leader,
+            from,
+            to,
+        } => (step, 4, leader.0, from.0, [to.0, 0, 0, 0]),
+        E::BackwardMove {
+            step,
+            leader,
+            from,
+            to,
+        } => (step, 5, leader.0, from.0, [to.0, 0, 0, 0]),
+        E::ZombieLevels {
+            step,
+            zombie,
+            location,
+            swarm,
+        } => (step, 6, zombie.0, u32::MAX, [location, swarm, 0, 0]),
+        E::Chased {
+            step,
+            zombie,
+            from,
+            to,
+            weak,
+        } => (step, 7, zombie.0, from.0, [to.0, u32::from(weak), 0, 0]),
     }
 }
 
@@ -828,6 +1158,7 @@ fn phase_code(phase: Phase) -> u8 {
         Phase::Follow => 7,
         Phase::Retrace => 8,
         Phase::Other => 9,
+        Phase::HelperReturn => 10,
     }
 }
 
@@ -980,6 +1311,236 @@ mod tests {
 
         let mut limited = path_simulation(AlgorithmSelector::DropAndFreeze, TraceMode::Full, 0, 0);
         assert_eq!(limited.run_internal().unwrap().termination_code, 1);
+    }
+
+    /// Walks a version-1 semantic stream and returns the phase code of every
+    /// `PhaseStarted` record, failing if any record is malformed.
+    fn phase_codes(bytes: &[u8]) -> Vec<u8> {
+        let u32_at = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+        let optional = |at: usize, width: usize| if bytes[at] == 0 { 1 } else { 1 + width };
+        assert_eq!((bytes[0], bytes[1]), (1, 2), "version 1, semantic stream");
+        let records = u32_at(4);
+        let mut at = 8;
+        let mut phases = Vec::new();
+        for _ in 0..records {
+            let kind = bytes[at];
+            at += 9; // record kind + u64 step
+            if kind == 3 {
+                let agents = u32_at(at);
+                at += 4;
+                for _ in 0..agents {
+                    at += 5; // node + status
+                    at += optional(at, 4);
+                }
+                continue;
+            }
+            assert_eq!(kind, 2, "event or checkpoint record");
+            let event = bytes[at];
+            at += 1;
+            match event {
+                0 => {
+                    phases.push(bytes[at]);
+                    at += 1;
+                }
+                1 => {
+                    at += 14;
+                    at += optional(at, 2);
+                }
+                2 => at += 4 + 4 * u32_at(at) + 10,
+                3 => at += 8,
+                4 => at += 6,
+                5 => {
+                    at += 16;
+                    at += optional(at, 2);
+                    at += optional(at, 2);
+                }
+                6 => at += 5,
+                other => panic!("unknown event kind {other}"),
+            }
+        }
+        assert_eq!(at, bytes.len(), "the stream ends exactly after its records");
+        phases
+    }
+
+    #[test]
+    fn rooted_disp_runs_and_streams_its_helper_return_phase() {
+        let mut rooted = path_simulation(AlgorithmSelector::RootedDisp, TraceMode::Full, 100, 0);
+        let output = rooted.run_internal().unwrap();
+        assert_eq!(output.termination_code, 0);
+        assert_eq!(output.positions, vec![0, 1, 2]);
+        assert_eq!(output.homes, vec![0, 1, 2]);
+        assert_eq!(output.statuses, vec![0, 0, 0]);
+        assert!(output.trace.record_count > 0);
+        assert!(phase_codes(&output.trace.bytes).contains(&phase_code(Phase::HelperReturn)));
+    }
+
+    #[test]
+    fn rooted_disp_reproduces_the_star_hand_trace_with_tracing_off() {
+        let edges: Vec<u32> = (1..9).flat_map(|leaf| [0, leaf]).collect();
+        let mut star = WasmSimulation::new(
+            9,
+            &edges,
+            &[0; 9],
+            AlgorithmSelector::RootedDisp,
+            TraceMode::Off,
+            1_000,
+            0,
+            1,
+        )
+        .unwrap();
+        let output = star.run_internal().unwrap();
+        assert_eq!(output.termination_code, 0);
+        assert_eq!((output.rounds, output.probes, output.moves), (73, 65, 264));
+        assert_eq!(output.trace, empty_payload());
+    }
+
+    #[test]
+    fn rooted_disp_refuses_a_scattered_start() {
+        let mut scattered = WasmSimulation::new(
+            3,
+            &[0, 1, 1, 2],
+            &[0, 2],
+            AlgorithmSelector::RootedDisp,
+            TraceMode::Off,
+            100,
+            0,
+            1,
+        )
+        .unwrap();
+        assert!(matches!(
+            scattered.run_internal(),
+            Err(AdapterError::RootedDisp(message)) if message.contains("NonRootedStart")
+        ));
+    }
+
+    /// Path of 6 nodes with agents on 0, 0, 0, 0, 3, 3.
+    fn two_groups(mode: TraceMode) -> WasmSimulation {
+        WasmSimulation::new(
+            6,
+            &[0, 1, 1, 2, 2, 3, 3, 4, 4, 5],
+            &[0, 0, 0, 0, 3, 3],
+            AlgorithmSelector::GeneralDisp,
+            mode,
+            100_000,
+            0,
+            1,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn general_disp_runs_a_scattered_start_like_the_native_call() {
+        let mut simulation = two_groups(TraceMode::Off);
+        let output = simulation.run_internal().unwrap();
+        let (native, metrics, _) = ccm_algorithms::general_disp::simulate(
+            &simulation.graph,
+            &simulation.starts,
+            100_000,
+            ComplexityMetrics::default(),
+            NoTrace,
+        )
+        .unwrap();
+        assert_eq!(output.termination_code, 0);
+        assert_eq!(output.rounds, native.steps);
+        assert_eq!(output.moves, metrics.agent_moves);
+        assert_eq!(output.positions, vec![0, 1, 2, 5, 3, 4]);
+        assert_eq!(output.statuses, vec![0, 0, 0, 1, 0, 0]);
+        assert_eq!(output.homes, vec![0, 1, 2, -1, 3, 4]);
+        assert_eq!(output.trace, empty_payload());
+    }
+
+    #[test]
+    fn general_disp_streams_a_well_formed_trace() {
+        let output = two_groups(TraceMode::Full).run_internal().unwrap();
+        assert_eq!(output.termination_code, 0);
+        assert!(output.trace.record_count > 0);
+        assert!(!phase_codes(&output.trace.bytes).is_empty());
+        let bounded = two_groups(TraceMode::Bounded);
+        let mut bounded = WasmSimulation {
+            max_trace_records: 8,
+            ..bounded
+        };
+        let output = bounded.run_internal().unwrap();
+        assert!(output.trace.record_count <= 16);
+        assert!(output.trace.truncated);
+    }
+
+    /// Decodes a group stream into `(kind, frame, slot, fields)` records.
+    fn group_records(bytes: &[u8]) -> Vec<(u8, u64, u8, Vec<u32>)> {
+        let u32_at = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+        assert_eq!((bytes[0], bytes[1]), (1, 4), "version 1, group stream");
+        let mut at = 8;
+        let mut records = Vec::new();
+        for _ in 0..u32_at(4) {
+            let kind = bytes[at];
+            let frame = u64::from_le_bytes(bytes[at + 1..at + 9].try_into().unwrap());
+            let slot = bytes[at + 9];
+            at += 10;
+            let fields = match kind {
+                1 => {
+                    let fields = vec![
+                        u32_at(at),
+                        u32::from(bytes[at + 4]),
+                        u32_at(at + 5),
+                        u32_at(at + 9),
+                    ];
+                    at += 13;
+                    fields
+                }
+                2 => {
+                    let mut fields = vec![u32::from(bytes[at])];
+                    fields.extend((0..6).map(|i| u32_at(at + 1 + 4 * i)));
+                    at += 25;
+                    fields
+                }
+                other => panic!("unknown group record kind {other}"),
+            };
+            records.push((kind, frame, slot, fields));
+        }
+        assert_eq!(at, bytes.len(), "the stream ends exactly after its records");
+        records
+    }
+
+    #[test]
+    fn general_disp_streams_roles_slots_and_merges() {
+        let output = two_groups(TraceMode::Full).run_internal().unwrap();
+        let records = group_records(&output.groups);
+        let first: Vec<&Vec<u32>> = records
+            .iter()
+            .filter(|record| record.0 == 1 && record.1 == 0)
+            .map(|record| &record.3)
+            .collect();
+        assert_eq!(first.len(), 6);
+        assert!(first
+            .iter()
+            .all(|fields| fields[1] == 2 && fields[2] == 1 && fields[3] == fields[0]));
+        assert!(records.contains(&(2, 74, 2, vec![2, 4, 3, 1, 5, 2, 3])));
+        let mut roles = vec![u32::MAX; 6];
+        for record in records.iter().filter(|record| record.0 == 1) {
+            roles[record.3[0] as usize] = record.3[1];
+        }
+        assert_eq!(roles, vec![0, 0, 0, 3, 0, 0]);
+        assert!(records.windows(2).all(|pair| pair[0].1 <= pair[1].1));
+        for record in &records {
+            let slot = if record.1 == 0 {
+                0
+            } else {
+                general_disp_slot(record.1 - 1)
+            };
+            assert_eq!(record.2, slot);
+        }
+        assert!(two_groups(TraceMode::Off)
+            .run_internal()
+            .unwrap()
+            .groups
+            .is_empty());
+        assert!(
+            path_simulation(AlgorithmSelector::RootedDisp, TraceMode::Full, 100, 0)
+                .run_internal()
+                .unwrap()
+                .groups
+                .is_empty()
+        );
     }
 
     #[test]

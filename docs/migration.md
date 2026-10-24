@@ -44,6 +44,22 @@ one Rust simulation core shared by native and browser consumers.
 - Merged `ccm-help-scouts` and `ccm-p1tree` into `ccm-algorithms`, one module
   per algorithm, and moved the algorithm tests to `ccm-experiments/tests`.
   Fixed-seed sweeps produce byte-identical CSV before and after.
+- Added RootedDisp, the rooted HEO-DFS of Sudo et al. (Section 3, Algorithm 1),
+  written from the paper and built on `AgentStore` and `apply_move_intents`;
+  registered it with the CLI, the experiment runner, the golden sweep and the
+  browser, which also gained per-step phase notes and an algorithm-comparison
+  preset on identical rooted input.
+- Added GeneralDisp, the general HEO-DFS of Sudo et al. (Section 4,
+  Algorithms 2–5), written from the paper on `AgentStore` and
+  `apply_move_intents`. Registered it with:
+  - the CLI, including a `transitions` command for role changes and merges;
+  - the experiment runner, which now refuses rooted-only algorithms on
+    scattered placements with `RequiresRootedStart`;
+  - the golden sweep, the Wasm adapter, the simulator and the dashboard.
+
+  Existing golden rows are unchanged.
+- Replaced the sidebar simulator with a floating-window simulator in a light
+  blue theme, and gave the dashboard and flowchart pages the same layout.
 
 ## Compatibility decisions
 

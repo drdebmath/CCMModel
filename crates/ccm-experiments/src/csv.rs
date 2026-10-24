@@ -120,6 +120,8 @@ mod tests {
             (Algorithm::DropAndFreeze, "legacy_baseline"),
             (Algorithm::HelpByScouts, "legacy_baseline"),
             (Algorithm::P1Tree, "paper"),
+            (Algorithm::RootedDisp, "paper"),
+            (Algorithm::GeneralDisp, "paper"),
         ] {
             let csv = results_to_csv(&[result(algorithm)]);
             let row: Vec<&str> = csv.lines().nth(1).unwrap().split(',').collect();
