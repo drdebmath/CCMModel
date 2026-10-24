@@ -1,5 +1,6 @@
-//! Generates `docs.html`: the flowcharts as themed SVG, with the source of
-//! every function a box stands for.
+//! Generates `docs.html` — the flowcharts as themed SVG, with an explanation of
+//! every box and the source of every function a box stands for — and, from the
+//! same chart data, `docs/algorithm-flowcharts.md` for GitHub.
 //!
 //! The SVG is emitted here rather than by a diagram library so that it can be
 //! written against the application's CSS variables — the diagrams then follow
@@ -7,293 +8,129 @@
 //! carries a stable id the page can hang a click handler on. It also keeps the
 //! page free of a megabyte of renderer.
 //!
-//! Run `./scripts/gen-docs.sh` rather than this binary directly.
+//! Run `./scripts/gen-docs.sh` (or `./scripts/gen-flowcharts.sh`, the same thing)
+//! rather than this binary directly.
 
+mod code;
+mod markdown;
 mod spec;
+mod svg;
+mod text;
 
-use spec::{Chart, Edge, Node, Route, Shape, CHARTS};
-use std::collections::BTreeMap;
+use spec::{Chart, Shape, CHARTS};
+use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
+use text::{escape, inline, json_str, json_strings, paragraphs};
 
-/// Grid unit in pixels.
-const COL: f64 = 260.0;
-const ROW: f64 = 92.0;
-const BOX_W: f64 = 208.0;
-const BOX_H: f64 = 46.0;
-const DIAMOND_W: f64 = 224.0;
-const DIAMOND_H: f64 = 62.0;
-const MARGIN: f64 = 40.0;
+/// Where the "GitHub" button of a code block points.
+const REPO_BLOB: &str = "https://github.com/drdebmath/CCMModel/blob/main";
 
-struct Placed<'a> {
-    node: &'a Node,
-    cx: f64,
-    cy: f64,
-    half_w: f64,
-    half_h: f64,
-}
-
-impl Placed<'_> {
-    /// Where an edge leaving toward `(tx, ty)` should start.
-    ///
-    /// A diamond is treated as its bounding box, which is close enough at this
-    /// size and keeps arrowheads off the corners.
-    fn anchor(&self, tx: f64, ty: f64) -> (f64, f64) {
-        let (dx, dy) = (tx - self.cx, ty - self.cy);
-        if dx.abs() * self.half_h > dy.abs() * self.half_w {
-            let x = self.cx + self.half_w * dx.signum();
-            (x, self.cy + dy * (self.half_w / dx.abs()).min(1.0) * 0.35)
-        } else {
-            let y = self.cy + self.half_h * dy.signum();
-            (self.cx + dx * 0.18, y)
-        }
-    }
-}
-
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
-fn place(chart: &Chart) -> Vec<Placed<'_>> {
-    chart
-        .nodes
-        .iter()
-        .map(|node| {
-            let diamond = node.shape == Shape::Decision;
-            Placed {
-                node,
-                cx: node.col * COL,
-                cy: node.row * ROW,
-                half_w: if diamond { DIAMOND_W } else { BOX_W } / 2.0,
-                half_h: if diamond { DIAMOND_H } else { BOX_H } / 2.0,
-            }
-        })
-        .collect()
-}
-
-fn shape_svg(placed: &Placed<'_>) -> String {
-    let (cx, cy, hw, hh) = (placed.cx, placed.cy, placed.half_w, placed.half_h);
-    match placed.node.shape {
-        Shape::Decision => format!(
-            r#"<polygon points="{cx},{} {},{cy} {cx},{} {},{cy}"/>"#,
-            cy - hh,
-            cx + hw,
-            cy + hh,
-            cx - hw
-        ),
-        Shape::Entry | Shape::Terminal => format!(
-            r#"<rect x="{}" y="{}" width="{}" height="{}" rx="{}"/>"#,
-            cx - hw,
-            cy - hh,
-            hw * 2.0,
-            hh * 2.0,
-            hh
-        ),
-        Shape::Step | Shape::Aside => format!(
-            r#"<rect x="{}" y="{}" width="{}" height="{}" rx="9"/>"#,
-            cx - hw,
-            cy - hh,
-            hw * 2.0,
-            hh * 2.0
-        ),
-    }
-}
-
-fn class_of(node: &Node) -> String {
-    let base = match node.shape {
-        Shape::Entry => "entry",
-        Shape::Step => "step",
-        Shape::Decision => "decision",
-        Shape::Terminal => "terminal",
-        Shape::Aside => "aside",
-    };
-    if node.func.is_some() {
-        format!("node {base} has-code")
-    } else {
-        format!("node {base}")
-    }
-}
-
-fn edge_path(from: &Placed<'_>, to: &Placed<'_>, edge: &Edge) -> (String, f64, f64) {
-    match edge.route {
-        Route::Direct => {
-            let (sx, sy) = from.anchor(to.cx, to.cy);
-            let (tx, ty) = to.anchor(from.cx, from.cy);
-            (
-                format!("M {sx:.1} {sy:.1} L {tx:.1} {ty:.1}"),
-                (sx + tx) / 2.0,
-                (sy + ty) / 2.0,
-            )
-        }
-        Route::Elbow => {
-            let sy = from.cy + from.half_h;
-            let ty = to.cy - to.half_h;
-            let mid = (sy + ty) / 2.0;
-            (
-                format!(
-                    "M {:.1} {sy:.1} L {:.1} {mid:.1} L {:.1} {mid:.1} L {:.1} {ty:.1}",
-                    from.cx, from.cx, to.cx, to.cx
-                ),
-                (from.cx + to.cx) / 2.0,
-                mid,
-            )
-        }
-        Route::Around(side) => {
-            // Out of the side, along a lane clear of the widest box involved,
-            // and back in. The lane has to start beyond that box or the edge
-            // label lands on top of it; the sign picks which side to leave from,
-            // and the magnitude separates lanes that would otherwise overlap.
-            let dir = if side >= 0 { 1.0 } else { -1.0 };
-            let widest = from.half_w.max(to.half_w);
-            let base = if dir > 0.0 {
-                from.cx.max(to.cx)
-            } else {
-                from.cx.min(to.cx)
-            };
-            let lane = base + dir * (widest + COL * 0.16 * f64::from(side.abs()));
-            let sx = from.cx + from.half_w * dir;
-            let tx = to.cx + to.half_w * dir;
-            (
-                format!(
-                    "M {sx:.1} {:.1} L {lane:.1} {:.1} L {lane:.1} {:.1} L {tx:.1} {:.1}",
-                    from.cy, from.cy, to.cy, to.cy
-                ),
-                lane,
-                (from.cy + to.cy) / 2.0,
-            )
-        }
-    }
-}
-
-fn svg_for(chart: &Chart) -> String {
-    let placed = place(chart);
-    let index: BTreeMap<&str, &Placed<'_>> =
-        placed.iter().map(|entry| (entry.node.id, entry)).collect();
-
-    let min_x = placed
-        .iter()
-        .map(|p| p.cx - p.half_w)
-        .fold(f64::INFINITY, f64::min);
-    let max_x = placed
-        .iter()
-        .map(|p| p.cx + p.half_w)
-        .fold(f64::NEG_INFINITY, f64::max);
-    let min_y = placed
-        .iter()
-        .map(|p| p.cy - p.half_h)
-        .fold(f64::INFINITY, f64::min);
-    let max_y = placed
-        .iter()
-        .map(|p| p.cy + p.half_h)
-        .fold(f64::NEG_INFINITY, f64::max);
-    // Loop-back lanes and their labels sit outside the boxes.
-    let pad = COL * 0.62;
-    let (x0, y0) = (min_x - pad, min_y - MARGIN);
-    let (w, h) = (max_x - min_x + pad * 2.0, max_y - min_y + MARGIN * 2.0);
-
-    let mut out = String::new();
-    let _ = write!(
-        out,
-        r#"<svg class="chart" viewBox="{x0:.0} {y0:.0} {w:.0} {h:.0}" role="img" aria-label="{} flowchart" xmlns="http://www.w3.org/2000/svg">
-<defs><marker id="arrow-{}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs>
-<g class="edges">
-"#,
-        escape(chart.title),
-        chart.id
-    );
-
-    for edge in chart.edges {
-        let (Some(from), Some(to)) = (index.get(edge.from), index.get(edge.to)) else {
+/// The order the guided tour visits a chart's boxes in: the flow from the
+/// entry, breadth first, with each helper right after the step that calls it.
+fn tour(chart: &Chart) -> Vec<&'static str> {
+    let mut order = Vec::new();
+    let mut queue = VecDeque::from([chart.nodes[0].id]);
+    while let Some(id) = queue.pop_front() {
+        if order.contains(&id) {
             continue;
-        };
-        let (path, lx, ly) = edge_path(from, to, edge);
-        let class = if edge.aside { "edge aside" } else { "edge" };
-        let _ = write!(
-            out,
-            r#"<path class="{class}" d="{path}" marker-end="url(#arrow-{})"/>"#,
-            chart.id
-        );
-        if let Some(label) = edge.label {
-            let _ = write!(
-                out,
-                r#"<text class="edge-label" x="{lx:.1}" y="{ly:.1}">{}</text>"#,
-                escape(label)
-            );
         }
-        out.push('\n');
+        order.push(id);
+        for edge in chart.edges.iter().filter(|e| e.from == id && e.aside) {
+            if !order.contains(&edge.to) {
+                order.push(edge.to);
+            }
+        }
+        for edge in chart.edges.iter().filter(|e| e.from == id && !e.aside) {
+            queue.push_back(edge.to);
+        }
     }
-    out.push_str("</g>\n<g class=\"nodes\">\n");
+    for node in chart.nodes {
+        if !order.contains(&node.id) {
+            order.push(node.id);
+        }
+    }
+    order
+}
 
-    for entry in &placed {
-        let node = entry.node;
-        let code_attr = node
-            .func
-            .map(|name| format!(r#" data-fn="{name}" tabindex="0" role="button""#))
-            .unwrap_or_default();
+fn legend() -> String {
+    let rows = [
+        (Shape::Entry, "Oval: where the chart starts"),
+        (Shape::Step, "Rectangle: a step"),
+        (Shape::Decision, "Diamond: a question with branches"),
+        (Shape::Terminal, "Oval: how a run ends"),
+        (Shape::Aside, "Dashed box: a helper the step calls"),
+    ];
+    let mut out = String::new();
+    for (shape, label) in rows {
         let _ = write!(
             out,
-            r#"<g id="{}-{}" class="{}"{code_attr}>{}"#,
-            chart.id,
-            node.id,
-            class_of(node),
-            shape_svg(entry)
+            r#"<li><svg width="18" height="18" viewBox="-9 -9 18 18" class="k-{}">{}</svg>{label}</li>"#,
+            svg::kind(shape),
+            svg::icon(shape)
         );
-        let lines: Vec<&str> = node.label.split('|').collect();
-        let count = u32::try_from(lines.len()).unwrap_or(1);
-        let start = entry.cy - (f64::from(count) - 1.0) * 8.0;
-        for (index, line) in lines.iter().enumerate() {
-            let _ = write!(
-                out,
-                r#"<text x="{:.1}" y="{:.1}">{}</text>"#,
-                entry.cx,
-                f64::from(u32::try_from(index).unwrap_or(0)).mul_add(16.0, start),
-                escape(line)
-            );
-        }
-        out.push_str("</g>\n");
     }
-    out.push_str("</g>\n</svg>\n");
+    out.push_str(r#"<li><span class="tag">&lt;/&gt;</span>Opens the function's code</li>"#);
     out
 }
 
-/// Pulls a function out of a source file.
-///
-/// rustfmt puts a function's closing brace at the same indentation as its `fn`,
-/// which makes this exact where brace counting would be defeated by a brace
-/// inside a string literal.
-fn extract(source: &str, name: &str) -> Option<String> {
-    let mut lines = source.lines().peekable();
-    let mut doc: Vec<&str> = Vec::new();
-    while let Some(line) = lines.next() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("///") || trimmed.starts_with("#[") {
-            doc.push(line);
-            continue;
-        }
-        let is_fn = trimmed.starts_with(&format!("fn {name}"))
-            || trimmed.starts_with(&format!("pub fn {name}"));
-        let boundary = is_fn && trimmed[trimmed.find(name)? + name.len()..].starts_with(['<', '(']);
-        if !boundary {
-            doc.clear();
-            continue;
-        }
-        let indent = &line[..line.len() - trimmed.len()];
-        let closing = format!("{indent}}}");
-        let mut body: Vec<&str> = doc.clone();
-        body.push(line);
-        for next in lines.by_ref() {
-            body.push(next);
-            if next == closing {
-                return Some(body.join("\n"));
-            }
-        }
-        return None;
-    }
-    None
+/// One function's entry in the page data: its location, a GitHub link and the
+/// highlighted lines (the page copies their text).
+fn code_json(chart: &Chart, name: &str, found: &code::Extract) -> String {
+    let lines = code::highlight(&found.text);
+    let end = found.line + lines.len() - 1;
+    format!(
+        r#"{}:{{"name":{},"path":{},"line":{},"url":{},"html":{}}}"#,
+        json_str(name),
+        json_str(name.split('@').next().unwrap_or(name)),
+        json_str(chart.source),
+        found.line,
+        json_str(&format!(
+            "{REPO_BLOB}/{}#L{}-L{end}",
+            chart.source, found.line
+        )),
+        json_strings(lines.iter().map(String::as_str))
+    )
+}
+
+/// One node's entry in the page data. `code` names an entry of the chart's
+/// code table, so a function several boxes stand for is stored once.
+fn node_json(chart: &Chart, node: &spec::Node, drawn: &svg::Drawn) -> String {
+    let ins: Vec<&str> = chart
+        .edges
+        .iter()
+        .filter(|e| e.to == node.id)
+        .map(|e| e.from)
+        .collect();
+    let outs: Vec<&str> = chart
+        .edges
+        .iter()
+        .filter(|e| e.from == node.id)
+        .map(|e| e.to)
+        .collect();
+    let labels: Vec<String> = chart
+        .edges
+        .iter()
+        .filter(|e| e.from == node.id)
+        .filter_map(|e| {
+            e.label
+                .map(|label| format!("{}:{}", json_str(e.to), json_str(label)))
+        })
+        .collect();
+    let (x, y, w, h) = drawn.boxes[node.id];
+    format!(
+        r#"{}:{{"title":{},"sub":{},"kind":{},"desc":{},"in":{},"out":{},"labels":{{{}}},"box":[{x:.1},{y:.1},{w:.1},{h:.1}],"code":{}}}"#,
+        json_str(node.id),
+        json_str(node.title),
+        json_str(node.sub),
+        json_str(svg::kind(node.shape)),
+        json_str(&inline(node.desc)),
+        json_strings(ins),
+        json_strings(outs),
+        labels.join(","),
+        node.func.map_or_else(|| "null".to_owned(), json_str)
+    )
 }
 
 fn main() {
@@ -303,46 +140,68 @@ fn main() {
         .expect("workspace root")
         .to_path_buf();
 
-    let mut sections = String::new();
-    let mut code_blocks = String::new();
     let mut nav = String::new();
+    let mut sections = String::new();
+    let mut data = Vec::new();
     let mut missing = Vec::new();
+    let mut sources = Vec::new();
 
-    for chart in CHARTS {
+    for (number, chart) in CHARTS.iter().enumerate() {
         let source = fs::read_to_string(root.join(chart.source)).expect("chart source");
+        sources.push(source.clone());
+        let drawn = svg::draw(chart);
         let _ = write!(
             nav,
-            r#"<button class="chart-tab" type="button" data-chart="{}">{}</button>"#,
-            chart.id,
-            escape(chart.title)
+            r##"<a class="nav-item" href="#{id}" data-chart="{id}"><span class="nav-num">{}</span><span><span class="nav-name">{}</span><span class="nav-short">{}</span></span></a>"##,
+            number + 1,
+            escape(chart.title),
+            escape(chart.short),
+            id = chart.id
         );
+        let mut notes = String::new();
+        for note in chart.notes {
+            let _ = write!(notes, "<li>{}</li>", inline(note));
+        }
         let _ = write!(
             sections,
-            r#"<section class="chart-panel hidden" id="panel-{}" data-crate="{}">
-<p class="chart-blurb">{}</p>
-<div class="chart-frame"><div class="chart-stage">{}</div></div>
+            r#"<section class="chart-panel" id="panel-{id}" data-chart="{id}" hidden>
+<div class="chart-head"><p class="eyebrow">Chart {} of {} · <code>{}</code></p><h1>{}</h1><div class="blurb">{}</div></div>
+<div class="stage-wrap"><div class="stage">{}</div>
+<div class="stage-tools"><button class="primary tour-start" type="button">▶ Guided tour</button><span class="stage-hint">Click a box for details · drag to move · Ctrl + scroll to zoom</span><button class="icon-button" type="button" data-zoom="out" aria-label="Zoom out">−</button><output class="zoom-level">100%</output><button class="icon-button" type="button" data-zoom="in" aria-label="Zoom in">+</button><button class="secondary" type="button" data-zoom="fit">Fit</button></div></div>
+<details class="notes" open><summary>Notes</summary><ul>{notes}</ul></details>
 </section>
 "#,
-            chart.id,
+            number + 1,
+            CHARTS.len(),
             escape(chart.crate_name),
-            escape(chart.blurb),
-            svg_for(chart)
+            escape(chart.title),
+            paragraphs(chart.intro),
+            drawn.svg,
+            id = chart.id
         );
-
-        for node in chart.nodes {
-            let Some(name) = node.func else { continue };
-            match extract(&source, name) {
-                Some(code) => {
-                    let _ = write!(
-                        code_blocks,
-                        r#"<template data-code="{name}" data-source="{}">{}</template>"#,
-                        escape(chart.source),
-                        escape(&code)
-                    );
-                }
+        let entries: Vec<String> = chart
+            .nodes
+            .iter()
+            .map(|node| node_json(chart, node, &drawn))
+            .collect();
+        let mut functions: Vec<&str> = chart.nodes.iter().filter_map(|node| node.func).collect();
+        functions.sort_unstable();
+        functions.dedup();
+        let mut code = Vec::new();
+        for name in functions {
+            match code::extract(&source, name) {
+                Some(found) => code.push(code_json(chart, name, &found)),
                 None => missing.push(format!("{}::{name}", chart.crate_name)),
             }
         }
+        data.push(format!(
+            r#"{}:{{"title":{},"order":{},"nodes":{{{}}},"code":{{{}}}}}"#,
+            json_str(chart.id),
+            json_str(chart.title),
+            json_strings(tour(chart)),
+            entries.join(","),
+            code.join(",")
+        ));
     }
 
     assert!(
@@ -350,12 +209,53 @@ fn main() {
         "these functions are named by a chart but were not found in its source: {missing:?}"
     );
 
-    let template = include_str!("page.html");
-    let page = template
+    let page = include_str!("page.html")
         .replace("<!--NAV-->", &nav)
+        .replace("<!--LEGEND-->", &legend())
         .replace("<!--SECTIONS-->", &sections)
-        .replace("<!--CODE-->", &code_blocks);
+        .replace(
+            "<!--DATA-->",
+            &format!(r#"{{"charts":{{{}}}}}"#, data.join(",")),
+        );
     let out = root.join("docs.html");
     fs::write(&out, page).expect("write docs.html");
     println!("wrote {}", out.display());
+
+    let doc = root.join("docs/algorithm-flowcharts.md");
+    fs::write(&doc, markdown::document(&sources)).expect("write docs/algorithm-flowcharts.md");
+    println!("wrote {}", doc.display());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_tour_visits_every_box_once_starting_at_the_entry() {
+        for chart in CHARTS {
+            let order = tour(chart);
+            assert_eq!(order[0], chart.nodes[0].id);
+            let mut sorted = order.clone();
+            sorted.sort_unstable();
+            sorted.dedup();
+            assert_eq!(sorted.len(), chart.nodes.len(), "{}", chart.id);
+        }
+    }
+
+    #[test]
+    fn every_named_function_exists_in_its_crate() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for chart in CHARTS {
+            let source = fs::read_to_string(root.join(chart.source)).expect("chart source");
+            for node in chart.nodes {
+                if let Some(name) = node.func {
+                    assert!(
+                        code::extract(&source, name).is_some(),
+                        "{}::{name}",
+                        chart.crate_name
+                    );
+                }
+            }
+        }
+    }
 }
