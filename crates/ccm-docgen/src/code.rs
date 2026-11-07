@@ -16,6 +16,20 @@ pub struct Extract {
 /// rustfmt puts a function's closing brace at the same indentation as its `fn`,
 /// which makes this exact where brace counting would be defeated by a brace
 /// inside a string literal.
+/// Where a box's function lives. `name` is in the chart's own source file;
+/// `file.rs:name` is in another file of the same directory, for an algorithm
+/// whose code is a module of several files.
+#[must_use]
+pub fn locate<'a>(chart_source: &str, func: &'a str) -> (String, &'a str) {
+    match func.split_once(':') {
+        Some((file, name)) => {
+            let dir = chart_source.rsplit_once('/').map_or("", |(dir, _)| dir);
+            (format!("{dir}/{file}"), name)
+        }
+        None => (chart_source.to_owned(), func),
+    }
+}
+
 pub fn extract(source: &str, spec: &str) -> Option<Extract> {
     let (name, wanted) = match spec.split_once('@') {
         Some((name, nth)) => (name, nth.parse::<usize>().ok()?),
@@ -33,7 +47,7 @@ pub fn extract(source: &str, spec: &str) -> Option<Extract> {
             index += 1;
             continue;
         }
-        let is_fn = ["fn ", "pub fn ", "pub(crate) fn "]
+        let is_fn = ["fn ", "pub fn ", "pub(crate) fn ", "pub(super) fn "]
             .iter()
             .any(|prefix| trimmed.starts_with(&format!("{prefix}{name}")));
         let boundary = is_fn

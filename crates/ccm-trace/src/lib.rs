@@ -67,6 +67,15 @@ pub enum SimulationEvent {
         node: NodeId,
         occupied: bool,
     },
+    /// The head concluded what lies behind one of its ports. `rule` is an
+    /// algorithm-defined code naming the rule that decided it; `owner` is the
+    /// agent found to own the neighbour, or `None` for an empty one.
+    ProbeConcluded {
+        head: NodeId,
+        port: PortId,
+        rule: u8,
+        owner: Option<AgentId>,
+    },
 }
 
 /// A semantic event annotated with the logical step at which it occurred.
@@ -88,6 +97,10 @@ pub struct Checkpoint {
     pub agent_statuses: Vec<AgentStatus>,
     pub home_nodes: Vec<Option<NodeId>>,
     pub settled_agents: Vec<Option<AgentId>>,
+    /// For an agent on an edge, the node it left; `agent_nodes` then holds the
+    /// node it is heading for. Empty for algorithms that move agents
+    /// atomically, which is all of them except `RootedAsync`.
+    pub transit_from: Vec<Option<NodeId>>,
 }
 
 impl Checkpoint {
@@ -98,6 +111,7 @@ impl Checkpoint {
             + self.agent_statuses.len()
             + self.home_nodes.len()
             + self.settled_agents.len()
+            + self.transit_from.len()
     }
 }
 
@@ -420,6 +434,7 @@ fn event_words(event: &SimulationEvent) -> usize {
         SimulationEvent::AgentSettled { .. } | SimulationEvent::NodeStateChanged { .. } => 2,
         SimulationEvent::AgentStateChanged { .. } => 3,
         SimulationEvent::TreeEdgeAdded { .. } => 6,
+        SimulationEvent::ProbeConcluded { .. } => 4,
     }
 }
 
@@ -441,6 +456,7 @@ mod tests {
             agent_statuses: vec![AgentStatus::Unsettled, AgentStatus::Settled],
             home_nodes: vec![None, Some(NodeId(1))],
             settled_agents: vec![None, Some(AgentId(1))],
+            transit_from: Vec::new(),
         }
     }
 

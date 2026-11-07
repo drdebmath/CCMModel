@@ -19,6 +19,9 @@ hash_files() {
 # crates/*/target/ were enough to make the same sources hash differently on two
 # machines. Tracked files are the same set everywhere by definition. Sorted
 # under a fixed locale so the order does not depend on the machine's collation.
+# Carriage returns are dropped before hashing: a Windows checkout with
+# core.autocrlf holds the same sources with CRLF endings, and hashing those
+# bytes as-is recorded an ID that no Linux checkout could reproduce.
 source_hash() {
   {
     if git -C "$repo_dir" rev-parse --git-dir >/dev/null 2>&1; then
@@ -31,7 +34,7 @@ source_hash() {
     printf '%s\n' Cargo.toml Cargo.lock rust-toolchain.toml scripts/build-wasm.sh
   } | LC_ALL=C sort | while IFS= read -r file; do
     printf '%s\n' "$file"
-    cat "$file"
+    tr -d '\r' < "$file"
   done | sha256 | cut -c1-16
 }
 

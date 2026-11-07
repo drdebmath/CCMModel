@@ -147,9 +147,14 @@ and on a 12-node star from 98 to 24.
 
 ### Retrace
 
-Section 5.1. When the construction ends the scouts are all standing wherever the
-head finished, so a post-order walk of the tree puts each one back on the node it
-owns. `retrace_puts_every_scout_back_on_its_own_node` checks that the run really
+Section 5.1. Vacated scouts travel with the group, so when the construction
+ends they are all standing wherever the head finished. From there a depth-first
+tour of the tree, one edge per step, drops each one at the node it owns: at most
+`2(k - 1)` moves. (An earlier version visited the nodes in post-order and moved
+the scouts straight from one to the next, though consecutive nodes in that
+order need not be neighbours, and it left vacated scouts behind when the head
+moved. `agents_only_move_along_edges_and_retrace_stays_linear` now checks that
+no agent ever moves except along an edge.) `retrace_puts_every_scout_back_on_its_own_node` checks that the run really
 does end with one settled agent standing on each node, not merely owning it from
 a distance.
 

@@ -15,7 +15,7 @@ pub use csv::{results_to_csv, CSV_HEADER};
 pub use graphs::{generate_graph, GraphFamily, GraphGenerationError, GraphSpec};
 pub use placements::{place_agents, PlacementError, PlacementSpec};
 pub use runner::{
-    execute_many_parallel, execute_one, prepare_run, BuiltinRunner, PreparedRun, RunError,
-    RunRequest, RunResult, SimulationRunner,
+    execute_many_parallel, execute_one, prepare_run, rooted_async_schedule, BuiltinRunner,
+    PreparedRun, RunError, RunRequest, RunResult, SimulationRunner,
 };
 pub use sweep::{expand_sweep, run_sweep_parallel, SweepSpec};

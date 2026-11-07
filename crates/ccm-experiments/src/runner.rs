@@ -1,5 +1,8 @@
 use crate::{generate_graph, place_agents, GraphSpec, PlacementSpec};
-use ccm_core::{Algorithm, ComplexityMetrics, NodeId, PortAssignment, PortGraph, Termination};
+use ccm_core::{
+    AgentId, Algorithm, ComplexityMetrics, NodeId, PortAssignment, PortGraph, SchedulerModel,
+    Termination,
+};
 use ccm_trace::NoTrace;
 use core::fmt;
 
@@ -13,6 +16,7 @@ pub struct RunRequest {
     pub agents: usize,
     pub seed: u64,
     pub round_limit: Option<u64>,
+    pub scheduler: SchedulerModel,
 }
 
 impl RunRequest {
@@ -77,9 +81,27 @@ pub struct BuiltinRunner;
 
 impl SimulationRunner for BuiltinRunner {
     fn run(&self, prepared: &PreparedRun) -> Result<RunResult, RunError> {
-        let limit = prepared.request.round_limit.unwrap_or_else(|| {
-            40_u64.saturating_mul(u64::try_from(prepared.request.agents.max(1)).unwrap_or(u64::MAX))
-        });
+        let request = &prepared.request;
+        let agents = u64::try_from(request.agents.max(1)).unwrap_or(u64::MAX);
+        if request.algorithm != Algorithm::RootedAsync
+            && request.scheduler != SchedulerModel::Synchronous
+        {
+            return Err(RunError::Message(format!(
+                "{} runs only under the synchronous scheduler",
+                algorithm_label(request.algorithm)
+            )));
+        }
+        // RootedAsync counts epochs and needs roughly 40 per agent on grids
+        // and random graphs, so it gets more headroom than the 40 rounds per
+        // agent the other algorithms are given.
+        let per_agent = if request.algorithm == Algorithm::RootedAsync {
+            100
+        } else {
+            40
+        };
+        let limit = request
+            .round_limit
+            .unwrap_or_else(|| per_agent * agents.saturating_add(1));
         let (termination, metrics) = match prepared.request.algorithm {
             Algorithm::DropAndFreeze => {
                 let result = ccm_algorithms::drop_and_freeze::simulate(
@@ -105,6 +127,18 @@ impl SimulationRunner for BuiltinRunner {
                 let (result, metrics, _) = ccm_algorithms::p1tree::simulate(
                     &prepared.graph,
                     &prepared.starts,
+                    limit,
+                    ComplexityMetrics::default(),
+                    NoTrace,
+                )
+                .map_err(|error| RunError::Message(error.to_string()))?;
+                (result.termination, metrics)
+            }
+            Algorithm::RootedAsync => {
+                let (result, metrics, _) = ccm_algorithms::rooted_async::simulate(
+                    &prepared.graph,
+                    &prepared.starts,
+                    rooted_async_schedule(request.scheduler, request.seed),
                     limit,
                     ComplexityMetrics::default(),
                     NoTrace,
@@ -138,7 +172,28 @@ impl SimulationRunner for BuiltinRunner {
             starts: prepared.starts.clone(),
             termination,
             metrics,
+            scheduler: request.scheduler,
         })
+    }
+}
+
+/// The schedule a request asks for, seeded from the run's own seed so a run is
+/// reproducible from its CSV row.
+#[must_use]
+pub fn rooted_async_schedule(
+    scheduler: SchedulerModel,
+    seed: u64,
+) -> ccm_algorithms::rooted_async::Schedule {
+    use ccm_algorithms::rooted_async::Schedule;
+    match scheduler {
+        SchedulerModel::Synchronous => Schedule::Synchronous,
+        SchedulerModel::Asynchronous => Schedule::Random { seed },
+        SchedulerModel::Interleaved => Schedule::Interleaved { seed },
+        SchedulerModel::Starved { agent, period } => Schedule::Starve {
+            seed,
+            agent: AgentId(agent),
+            period,
+        },
     }
 }
 
@@ -158,6 +213,7 @@ pub struct RunResult {
     pub starts: Vec<NodeId>,
     pub termination: Termination,
     pub metrics: ComplexityMetrics,
+    pub scheduler: SchedulerModel,
 }
 
 impl RunResult {
@@ -177,6 +233,7 @@ impl RunResult {
             starts: prepared.starts.clone(),
             termination,
             metrics: ComplexityMetrics::default(),
+            scheduler: prepared.request.scheduler,
         }
     }
 
@@ -286,7 +343,32 @@ pub fn algorithm_label(algorithm: Algorithm) -> &'static str {
         Algorithm::DropAndFreeze => "drop_and_freeze",
         Algorithm::HelpByScouts => "help_by_scouts",
         Algorithm::P1Tree => "p1tree",
+        Algorithm::RootedAsync => "rooted_async",
         Algorithm::RootedDisp => "rooted_disp",
+    }
+}
+
+/// The scheduler, as a CSV value: `synchronous`, `asynchronous`,
+/// `interleaved`, or `starved:<agent>:<period>`.
+#[must_use]
+pub fn scheduler_label(scheduler: SchedulerModel) -> String {
+    match scheduler {
+        SchedulerModel::Synchronous => "synchronous".to_owned(),
+        SchedulerModel::Asynchronous => "asynchronous".to_owned(),
+        SchedulerModel::Interleaved => "interleaved".to_owned(),
+        SchedulerModel::Starved { agent, period } => format!("starved:{agent}:{period}"),
+    }
+}
+
+/// What the `rounds` column counts: synchronous rounds, or asynchronous
+/// epochs. The two are not comparable, so every row says which it holds.
+#[must_use]
+pub fn time_unit(scheduler: SchedulerModel) -> &'static str {
+    match scheduler {
+        SchedulerModel::Synchronous => "round",
+        SchedulerModel::Asynchronous
+        | SchedulerModel::Interleaved
+        | SchedulerModel::Starved { .. } => "epoch",
     }
 }
 
@@ -297,7 +379,7 @@ pub fn algorithm_label(algorithm: Algorithm) -> &'static str {
 pub fn algorithm_kind(algorithm: Algorithm) -> &'static str {
     match algorithm {
         Algorithm::DropAndFreeze | Algorithm::HelpByScouts => "legacy_baseline",
-        Algorithm::P1Tree | Algorithm::RootedDisp => "paper",
+        Algorithm::P1Tree | Algorithm::RootedAsync | Algorithm::RootedDisp => "paper",
     }
 }
 
@@ -334,6 +416,7 @@ mod tests {
             agents: 3,
             seed,
             round_limit: Some(20),
+            scheduler: SchedulerModel::Synchronous,
         }
     }
 

@@ -99,6 +99,7 @@ mod tests {
             agents: 2,
             seed: 10,
             round_limit: None,
+            scheduler: ccm_core::SchedulerModel::Synchronous,
         }
     }
 

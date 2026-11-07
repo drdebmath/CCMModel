@@ -1,7 +1,7 @@
-use ccm_core::{Algorithm, NodeId, PortAssignment};
+use ccm_core::{Algorithm, ComplexityMetrics, NodeId, PortAssignment, SchedulerModel};
 use ccm_experiments::{
-    execute_one, prepare_run, results_to_csv, run_sweep_parallel, BuiltinRunner, GraphFamily,
-    GraphSpec, PlacementSpec, RunRequest, SweepSpec,
+    execute_one, prepare_run, results_to_csv, rooted_async_schedule, run_sweep_parallel,
+    BuiltinRunner, GraphFamily, GraphSpec, PlacementSpec, RunRequest, SweepSpec,
 };
 use std::env;
 use std::fmt;
@@ -48,6 +48,7 @@ fn run() -> Result<(), CliError> {
         "validate" => validate(&options),
         "run" => run_plan(&options),
         "sweep" => sweep_plan(&options),
+        "events" => events_plan(&options),
         _ => Err(CliError::Usage(format!("unknown command {command:?}"))),
     }
 }
@@ -63,6 +64,7 @@ struct Options {
     placement: PlacementSpec,
     round_limit: Option<u64>,
     workers: usize,
+    scheduler: SchedulerModel,
 }
 
 impl Options {
@@ -77,6 +79,7 @@ impl Options {
             placement: PlacementSpec::SingleNode { node: NodeId(0) },
             round_limit: None,
             workers: 1,
+            scheduler: SchedulerModel::Synchronous,
         };
         let mut index = 0;
         while index < values.len() {
@@ -98,6 +101,7 @@ impl Options {
                 "--placement" => options.placement = parse_placement(value(&mut index)?)?,
                 "--round-limit" => options.round_limit = Some(parse_value(value(&mut index)?)?),
                 "--workers" => options.workers = parse_value(value(&mut index)?)?,
+                "--scheduler" => options.scheduler = parse_scheduler(value(&mut index)?)?,
                 "--help" | "-h" => {
                     print_help();
                     return Err(CliError::Help);
@@ -175,6 +179,93 @@ fn request(options: &Options, nodes: usize, agents: usize, seed: u64) -> RunRequ
         agents,
         seed,
         round_limit: options.round_limit,
+        scheduler: options.scheduler,
+    }
+}
+
+/// One `RootedAsync` run's trace: every DFS step and every probe the head
+/// concluded, in order, as CSV. Rows carry the epoch (round, under the
+/// synchronous scheduler) at which they happened.
+fn events_plan(options: &Options) -> Result<(), CliError> {
+    if options.algorithm != Algorithm::RootedAsync {
+        return Err(CliError::Usage(
+            "events traces rooted-async only; pass --algorithm rooted-async".to_owned(),
+        ));
+    }
+    let request = request(
+        options,
+        options.nodes[0],
+        options.agents[0],
+        options.seed[0],
+    );
+    let schedule = rooted_async_schedule(request.scheduler, request.seed);
+    let limit = options.round_limit.unwrap_or(u64::MAX);
+    let prepared =
+        prepare_run(request).map_err(|error| CliError::Preparation(format!("{error:?}")))?;
+    let (result, _, _) = ccm_algorithms::rooted_async::simulate(
+        &prepared.graph,
+        &prepared.starts,
+        schedule,
+        limit,
+        ComplexityMetrics::default(),
+        ccm_trace::NoTrace,
+    )
+    .map_err(|error| CliError::Preparation(error.to_string()))?;
+
+    let mut rows: Vec<(u64, String)> = result
+        .probes
+        .iter()
+        .map(|p| {
+            let owner = p.owner.map_or_else(String::new, |id| id.0.to_string());
+            let row = format!(
+                "probe,{},{},{},{:?},{owner},,,",
+                p.epoch, p.head.0, p.port.0, p.rule
+            );
+            (p.epoch, row)
+        })
+        .collect();
+    rows.extend(result.steps.iter().map(|s| {
+        let direction = if s.forward { "forward" } else { "back" };
+        let row = format!(
+            "step,{},{},,,,{direction},{},{}",
+            s.epoch, s.node.0, s.batches, s.scouts
+        );
+        (s.epoch, row)
+    }));
+    // Stable, so a step's probes stay ahead of the step that used them.
+    rows.sort_by_key(|(epoch, _)| *epoch);
+    println!("event,epoch,node,port,rule,owner,direction,batches,scouts");
+    for (_, row) in rows {
+        println!("{row}");
+    }
+    println!(
+        "# {:?}: {} epochs, {} activations, construction ended at epoch {}",
+        result.termination,
+        result.epochs,
+        result.activations,
+        result.constructed_at.unwrap_or(result.epochs)
+    );
+    Ok(())
+}
+
+fn parse_scheduler(value: &str) -> Result<SchedulerModel, CliError> {
+    match value {
+        "synchronous" | "sync" => Ok(SchedulerModel::Synchronous),
+        "asynchronous" | "async" => Ok(SchedulerModel::Asynchronous),
+        "interleaved" => Ok(SchedulerModel::Interleaved),
+        value if value.starts_with("starved:") => {
+            let mut parts = value[8..].split(':');
+            match (parts.next(), parts.next(), parts.next()) {
+                (Some(agent), Some(period), None) => Ok(SchedulerModel::Starved {
+                    agent: parse_value(agent)?,
+                    period: parse_value(period)?,
+                }),
+                _ => Err(CliError::Parse(format!(
+                    "expected starved:AGENT:PERIOD, got {value:?}"
+                ))),
+            }
+        }
+        _ => Err(CliError::Parse(format!("unknown scheduler {value:?}"))),
     }
 }
 
@@ -183,6 +274,7 @@ fn parse_algorithm(value: &str) -> Result<Algorithm, CliError> {
         "drop-and-freeze" | "drop_and_freeze" => Ok(Algorithm::DropAndFreeze),
         "help-by-scouts" | "help_by_scouts" => Ok(Algorithm::HelpByScouts),
         "p1tree" | "p1-tree" | "dfs-p1tree" => Ok(Algorithm::P1Tree),
+        "rooted-async" | "rooted_async" | "rootedasync" => Ok(Algorithm::RootedAsync),
         "rooted-disp" | "rooted_disp" | "rooteddisp" | "heo-dfs" | "rooted-heo-dfs" => {
             Ok(Algorithm::RootedDisp)
         }
@@ -275,6 +367,6 @@ where
 
 fn print_help() {
     println!(
-        "ccm commands:\n  validate [options]  generate and validate one deterministic run\n  run [options]       execute one run and emit CSV\n  sweep [options]     execute independent runs and emit CSV\n\noptions:\n  --algorithm drop-and-freeze|help-by-scouts|p1tree|rooted-disp\n  --graph path|cycle|star|complete|tree[:branching]|grid[:columns]|random-connected:extra|random-bounded:max-degree\n  --nodes N[,N...] --agents A[,A...] --seed S[,S...]\n  --ports canonical|random|adversarial\n  --placement single[:node]|uniform:K|clustered:n,n|explicit:n,n\n  --round-limit R --workers W"
+        "ccm commands:\n  validate [options]  generate and validate one deterministic run\n  run [options]       execute one run and emit CSV\n  sweep [options]     execute independent runs and emit CSV\n  events [options]    trace one rooted-async run: every DFS step and probe, as CSV\n\noptions:\n  --algorithm drop-and-freeze|help-by-scouts|p1tree|rooted-async|rooted-disp\n  --scheduler synchronous|asynchronous|interleaved|starved:AGENT:PERIOD  (non-synchronous:\n              rooted-async only; interleaved splits each cycle's look and write; time is then\n              counted in epochs, and the CSV time_unit column says so)\n  --graph path|cycle|star|complete|tree[:branching]|grid[:columns]|random-connected:extra|random-bounded:max-degree\n  --nodes N[,N...] --agents A[,A...] --seed S[,S...]\n  --ports canonical|random|adversarial\n  --placement single[:node]|uniform:K|clustered:n,n|explicit:n,n\n  --round-limit R --workers W"
     );
 }

@@ -59,13 +59,23 @@ function takeFromExternrefTable0(idx) {
 }
 /**
  * Algorithm selector shared by native and browser callers.
- * @enum {0 | 1 | 2 | 3}
+ * @enum {0 | 1 | 2 | 3 | 4 | 5}
  */
 export const AlgorithmSelector = Object.freeze({
     HelpByScouts: 0, "0": "HelpByScouts",
     DropAndFreeze: 1, "1": "DropAndFreeze",
     P1Tree: 2, "2": "P1Tree",
     RootedDisp: 3, "3": "RootedDisp",
+    /**
+     * `RootedAsync` under the synchronous scheduler: one cycle per agent per
+     * round.
+     */
+    RootedAsync: 4, "4": "RootedAsync",
+    /**
+     * `RootedAsync` under the paper's asynchronous schedule, seeded by
+     * [`WasmSimulation::set_schedule_seed`]. Time is counted in epochs.
+     */
+    RootedAsyncRandom: 5, "5": "RootedAsyncRandom",
 });
 /**
  * Trace policy. `Bounded` uses the supplied record and sampling limits.
@@ -284,6 +294,14 @@ export class WasmSimulation {
             throw takeFromExternrefTable0(ret[1]);
         }
         return WasmSimulation.__wrap(ret[0]);
+    }
+    /**
+     * Seeds the random activation order used by
+     * [`AlgorithmSelector::RootedAsyncRandom`]; other algorithms ignore it.
+     * @param {bigint} seed
+     */
+    set_schedule_seed(seed) {
+        wasm.wasmsimulation_set_schedule_seed(this.__wbg_ptr, seed);
     }
     /**
      * Creates a canonical-port graph from `[source, destination, ...]` edge

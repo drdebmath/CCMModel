@@ -11,8 +11,10 @@ name = "ccm"
 path = "src/main.rs"
 
 [dependencies]
+ccm-algorithms = { path = "../ccm-algorithms" }
 ccm-core = { path = "../ccm-core" }
 ccm-experiments = { path = "../ccm-experiments" }
+ccm-trace = { path = "../ccm-trace" }
 
 [lints]
 workspace = true

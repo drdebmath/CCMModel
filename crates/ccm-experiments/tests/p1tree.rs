@@ -6,7 +6,7 @@ use ccm_algorithms::p1tree::{
     simulate, simulate_with_stop, EdgeType, NodeType, P1Error, P1Result, P1Status, Stop,
 };
 use ccm_core::{ComplexityMetrics, NodeId, PortGraph, PortId, Termination};
-use ccm_trace::NoTrace;
+use ccm_trace::{FullTrace, NoTrace};
 use common::{graph, random_port_graph, rooted};
 
 fn run_until(
@@ -393,4 +393,72 @@ fn retrace_puts_every_scout_back_on_its_own_node() {
             );
         }
     }
+}
+
+#[test]
+fn agents_only_move_along_edges_and_retrace_stays_linear() {
+    // Two teleports used to hide here. Vacated scouts were left behind when
+    // the head moved and reappeared at its next probe, and Retrace visited the
+    // nodes in post-order, moving the scouts straight from one to the next
+    // though consecutive nodes in that order need not be neighbours. Every
+    // agent must now cross a real edge whenever it moves, and Retrace is
+    // bounded by a tour of the k-node tree.
+    let mut graphs: Vec<PortGraph> = (0..30_u64)
+        .map(|seed| {
+            random_port_graph(
+                5 + usize::try_from(seed % 9).unwrap(),
+                usize::try_from(seed % 6).unwrap(),
+                seed,
+            )
+        })
+        .collect();
+    graphs.push(graph(
+        &(0..12_u32)
+            .flat_map(|a| (a + 1..12).map(move |b| (a, b)))
+            .collect::<Vec<_>>(),
+        12,
+    ));
+    let mut retraced = 0;
+    for (case, g) in graphs.iter().enumerate() {
+        let k = g.node_count();
+        let (result, metrics, recorder) = simulate(
+            g,
+            &rooted(k),
+            100_000,
+            ComplexityMetrics::default(),
+            FullTrace::new(),
+        )
+        .unwrap();
+        assert_eq!(result.termination, Termination::Completed, "case {case}");
+        assert!(
+            metrics.retraces <= 2 * (k as u64 - 1),
+            "case {case}: {} retrace moves for k = {k}",
+            metrics.retraces
+        );
+        if metrics.retraces > 0 {
+            retraced += 1;
+        }
+        let trace = recorder.into_trace();
+        for pair in trace.checkpoints.windows(2) {
+            for (agent, (&from, &to)) in pair[0]
+                .agent_nodes
+                .iter()
+                .zip(&pair[1].agent_nodes)
+                .enumerate()
+            {
+                let adjacent = from == to
+                    || (0..g.degree(from).unwrap())
+                        .any(|port| g.traverse(from, PortId(port)).unwrap().neighbor == to);
+                assert!(
+                    adjacent,
+                    "case {case}: agent {agent} jumped from {from:?} to {to:?} at step {}",
+                    pair[1].step
+                );
+            }
+        }
+    }
+    assert!(
+        retraced > 5,
+        "too few runs needed a retrace to test it ({retraced})"
+    );
 }
