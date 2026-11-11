@@ -635,20 +635,35 @@ fn final_frame(result: &ResultData) -> Frame {
     }
 }
 
+// Phase codes as `ccm-wasm`'s `phase_code` writes them into the trace stream.
+// They must match it byte for byte; this crate does not depend on the engine.
+const PHASE_MACRO_ROUND: u8 = 0;
+const PHASE_PROBE_OUT: u8 = 1;
+const PHASE_PROBE_BACK: u8 = 2;
+const PHASE_MOVEMENT: u8 = 3;
+const PHASE_SCOUT: u8 = 4;
+const PHASE_VACATE: u8 = 5;
+const PHASE_CHASE: u8 = 6;
+const PHASE_FOLLOW: u8 = 7;
+const PHASE_RETRACE: u8 = 8;
+/// `Phase::Other`, which the engines use only for the start of a run.
+const PHASE_START: u8 = 9;
+const PHASE_HELPERS_HOME: u8 = 10;
+
 /// Name of a phase code as `ccm-wasm` encodes it.
 fn phase_name(code: u8) -> &'static str {
     match code {
-        0 => "macro-round",
-        1 => "probe out",
-        2 => "probe back",
-        3 => "movement",
-        4 => "scout",
-        5 => "vacate",
-        6 => "chase",
-        7 => "follow",
-        8 => "retrace",
-        9 => "start",
-        10 => "helpers home",
+        PHASE_MACRO_ROUND => "macro-round",
+        PHASE_PROBE_OUT => "probe out",
+        PHASE_PROBE_BACK => "probe back",
+        PHASE_MOVEMENT => "movement",
+        PHASE_SCOUT => "scout",
+        PHASE_VACATE => "vacate",
+        PHASE_CHASE => "chase",
+        PHASE_FOLLOW => "follow",
+        PHASE_RETRACE => "retrace",
+        PHASE_START => "start",
+        PHASE_HELPERS_HOME => "helpers home",
         _ => "unknown phase",
     }
 }
@@ -696,10 +711,10 @@ pub fn frame_notes(frames: &[Frame], algorithm: &str) -> Vec<String> {
         let note = match phase {
             None if step == 0 => "Start".to_owned(),
             None => format!("Step {step}"),
-            Some(9) => "Start".to_owned(),
+            Some(PHASE_START) => "Start".to_owned(),
             Some(code) if !rooted => format!("Step {step} · {}", phase_name(code)),
-            Some(1) => {
-                if previous_phase == Some(2) {
+            Some(PHASE_PROBE_OUT) => {
+                if previous_phase == Some(PHASE_PROBE_BACK) {
                     pass += 1;
                 } else {
                     probe += 1;
@@ -710,12 +725,12 @@ pub fn frame_notes(frames: &[Frame], algorithm: &str) -> Vec<String> {
                     helper_summary(last)
                 )
             }
-            Some(2) => format!(
+            Some(PHASE_PROBE_BACK) => format!(
                 "Step {step} · Probe {probe}, pass {pass} · probe back · {}",
                 helper_summary(last)
             ),
-            Some(10) => format!("Step {step} · Probe {probe} · helpers home"),
-            Some(3) => {
+            Some(PHASE_HELPERS_HOME) => format!("Step {step} · Probe {probe} · helpers home"),
+            Some(PHASE_MOVEMENT) => {
                 let before = previous_end.map(|index| &frames[index].statuses);
                 let settled = last.statuses.iter().enumerate().find(|&(agent, status)| {
                     *status == 0 && before.and_then(|b| b.get(agent)) == Some(&1)
