@@ -70,17 +70,23 @@ self.onmessage = async ({ data }) => {
           job.nodeCount, new Uint32Array(job.edges), new Uint32Array(job.starts),
           algorithm, wasm.TraceMode.Off, BigInt(job.roundLimit), 0, 1,
         );
-        simulation.set_schedule_seed(BigInt(job.seed ?? i));
-        const output = simulation.run();
-        results.push({
-          rounds: Number(output.rounds()),
-          moves: Number(output.moves()),
-          probes: Number(output.probes()),
-          completed: output.termination_code() === 0,
-          positions: output.positions(),
-        });
-        output.free();
-        simulation.free();
+        try {
+          simulation.set_schedule_seed(BigInt(job.seed ?? i));
+          const output = simulation.run();
+          try {
+            results.push({
+              rounds: Number(output.rounds()),
+              moves: Number(output.moves()),
+              probes: Number(output.probes()),
+              completed: output.termination_code() === 0,
+              positions: output.positions(),
+            });
+          } finally {
+            output.free();
+          }
+        } finally {
+          simulation.free();
+        }
         if ((i + 1) % 8 === 0 || i + 1 === data.jobs.length) {
           self.postMessage({ type: 'sweep-progress', done: i + 1, total: data.jobs.length });
         }
@@ -140,19 +146,22 @@ function runOne(name, data) {
     // Seeds the asynchronous order of RootedAsync; other algorithms ignore it.
     simulation.set_schedule_seed(BigInt(data.scheduleSeed ?? 0));
     const output = simulation.run();
-    const result = {
-      positions: output.positions(),
-      statuses: output.statuses(),
-      homes: output.homes(),
-      terminationCode: output.termination_code(),
-      rounds: Number(output.rounds()), moves: Number(output.moves()), probes: Number(output.probes()),
-      renderRecordCount: output.render_record_count(),
-      renderTruncated: output.render_truncated(),
-      renderBytes: output.render_bytes(),
-      groupBytes: output.group_bytes(),
-    };
-    output.free();
-    return result;
+    // Freed even when a read throws, so a failed run does not leak WASM memory.
+    try {
+      return {
+        positions: output.positions(),
+        statuses: output.statuses(),
+        homes: output.homes(),
+        terminationCode: output.termination_code(),
+        rounds: Number(output.rounds()), moves: Number(output.moves()), probes: Number(output.probes()),
+        renderRecordCount: output.render_record_count(),
+        renderTruncated: output.render_truncated(),
+        renderBytes: output.render_bytes(),
+        groupBytes: output.group_bytes(),
+      };
+    } finally {
+      output.free();
+    }
   } finally {
     simulation.free();
   }
