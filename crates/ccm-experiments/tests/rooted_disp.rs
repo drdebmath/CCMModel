@@ -455,6 +455,11 @@ fn inputs_outside_the_rooted_setting_are_rejected() {
         run(&g, &[NodeId(0), NodeId(2)], 100),
         Err(RootedError::NonRootedStart)
     );
+    // The page and the CLI show this one to users, so it is a sentence.
+    assert_eq!(
+        RootedError::NonRootedStart.to_string(),
+        "RootedDisp needs a rooted start: every agent must begin on the same node."
+    );
     assert_eq!(run(&g, &[], 100), Err(RootedError::NoAgents));
     assert_eq!(
         run(&g, &rooted(5), 100),

@@ -2503,6 +2503,14 @@ fn create_worker(state: &Rc<RefCell<AppState>>) {
             set_class(&app.document, "engineState", "engine-state error");
             say(&app.document, &message, "error");
             drop(app);
+            // A failed run leaves nothing to show. A failed schedule sweep
+            // does not touch the run on screen, so it stays.
+            let phase = Reflect::get(&data, &"phase".into())
+                .ok()
+                .and_then(|v| v.as_string());
+            if phase.as_deref() == Some("run") {
+                clear_view(&ready_state);
+            }
             set_busy(&ready_state, false);
         } else if typ == "sweep-result" {
             let seed = app.compare_seed.unwrap_or(0);
@@ -2641,10 +2649,12 @@ fn prepare(state: &Rc<RefCell<AppState>>, rooted: bool) -> Option<(Config, Graph
     let mut config = read_config(&document);
     if config.agent_count > config.node_count {
         say(&document, "Agents cannot exceed nodes.", "error");
+        clear_view(state);
         return None;
     }
     if needs_rooted_start(&select_value(&document, "algorithm")) && config.placement != "rooted" {
         say(&document, "Help by Scouts, P1Tree, RootedDisp and RootedAsync need every agent to start at node 0. Choose \u{201c}Rooted at node 0\u{201d}.", "error");
+        clear_view(state);
         return None;
     }
     if config.family == "complete" && config.node_count > 500 {
@@ -2653,6 +2663,7 @@ fn prepare(state: &Rc<RefCell<AppState>>, rooted: bool) -> Option<(Config, Graph
             "Complete graphs are limited to 500 nodes here.",
             "error",
         );
+        clear_view(state);
         return None;
     }
     if config.node_count > 1000 && config.trace_mode == "full" {
@@ -2708,6 +2719,7 @@ fn prepare(state: &Rc<RefCell<AppState>>, rooted: bool) -> Option<(Config, Graph
             ),
             "error",
         );
+        clear_view(state);
         return None;
     }
     if config.algorithm == "general" {
@@ -2720,20 +2732,58 @@ fn prepare(state: &Rc<RefCell<AppState>>, rooted: bool) -> Option<(Config, Graph
         app.config = Some(config.clone());
         app.graph = Some(graph.clone());
         app.starts = starts.clone();
-        app.result = None;
-        app.groups = None;
-        app.frames.clear();
-        app.notes.clear();
-        app.comparison.clear();
-        app.compare_selected = None;
-        app.layout.clear();
-        app.layout_size = (0.0, 0.0);
-        set_disabled(&element::<HtmlElement>(&app.document, "export"), true);
-        let _ = element::<Element>(&app.document, "comparePanel")
-            .class_list()
-            .add_1("hidden");
+        forget_run(&mut app);
     }
     Some((config, graph, starts))
+}
+
+/// Drops the loaded execution: its result, frames, GeneralDisp groups, notes,
+/// comparison rows, any glide in progress and the cached layout. The graph,
+/// starts and config are the caller's to replace.
+fn forget_run(app: &mut AppState) {
+    app.result = None;
+    app.groups = None;
+    app.frames.clear();
+    app.frame = 0;
+    app.glide = None;
+    app.notes.clear();
+    app.comparison.clear();
+    app.compare_selected = None;
+    app.layout.clear();
+    app.layout_size = (0.0, 0.0);
+    set_disabled(&element::<HtmlElement>(&app.document, "export"), true);
+    let _ = element::<Element>(&app.document, "comparePanel")
+        .class_list()
+        .add_1("hidden");
+}
+
+/// Puts the live view back to how it looks before the first run: no graph, no
+/// metrics, the empty-state card. A run that is refused or fails calls this,
+/// so the last run is never left on screen next to the error.
+fn clear_view(state: &Rc<RefCell<AppState>>) {
+    {
+        let mut app = state.borrow_mut();
+        if let Some(timer) = app.timer.take() {
+            if let Some(window) = web_sys::window() {
+                window.clear_interval_with_handle(timer);
+            }
+            set_text(&app.document, "play", "▶");
+        }
+        forget_run(&mut app);
+        app.config = None;
+        app.graph = None;
+        app.starts.clear();
+        for id in ["rounds", "moves", "probes", "recordCount"] {
+            set_text(&app.document, id, "\u{2014}");
+        }
+        set_text(&app.document, "roundsUnit", "rounds");
+        set_text(&app.document, "runTitle", "Ready to simulate");
+        let _ = element::<Element>(&app.document, "emptyState")
+            .class_list()
+            .remove_1("hidden");
+        set_timeline(&app);
+    }
+    render(state);
 }
 
 /// One row of a comparison: the algorithm's UI value and its result, or the
