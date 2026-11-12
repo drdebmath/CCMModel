@@ -42,6 +42,14 @@ pub struct Groups {
 }
 
 impl Groups {
+    /// Whether a group changed at `step`: a zombie, a settlement, a takeover
+    /// or a level-up.
+    pub fn changed_at(&self, step: u64) -> bool {
+        self.events
+            .iter()
+            .any(|event| event.frame == step && event.code <= 3)
+    }
+
     /// `None` for an empty or malformed stream.
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         let mut reader = Reader::new(bytes);

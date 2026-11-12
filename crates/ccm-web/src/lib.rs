@@ -1248,11 +1248,69 @@ fn set_frame(state: &Rc<RefCell<AppState>>, index: isize) {
     render(state);
 }
 
-/// Moves one frame forward, gliding the agents that moved instead of
+/// Whether any agent stands somewhere else in `frame` than in `before`.
+fn moved(before: &Frame, frame: &Frame) -> bool {
+    before.positions != frame.positions || before.transit != frame.transit
+}
+
+/// Whether playback with still steps skipped shows frame `j`: it has a move,
+/// ends a run of still frames, or `marked` says something happened there.
+fn shown_when_skipping(frames: &[Frame], j: usize, marked: &dyn Fn(usize) -> bool) -> bool {
+    let last = frames.len().saturating_sub(1);
+    j == 0
+        || j >= last
+        || moved(&frames[j - 1], &frames[j])
+        || moved(&frames[j], &frames[j + 1])
+        || marked(j)
+}
+
+/// The frame after `index`. With `skip_still`, a run of frames in which
+/// nobody moves shows only as its last frame and its `marked` frames.
+fn next_frame(
+    frames: &[Frame],
+    index: usize,
+    skip_still: bool,
+    marked: &dyn Fn(usize) -> bool,
+) -> usize {
+    let mut next = (index + 1).min(frames.len().saturating_sub(1));
+    while skip_still && !shown_when_skipping(frames, next, marked) {
+        next += 1;
+    }
+    next
+}
+
+/// The frame before `index`, skipping still frames as [`next_frame`] does.
+fn prev_frame(
+    frames: &[Frame],
+    index: usize,
+    skip_still: bool,
+    marked: &dyn Fn(usize) -> bool,
+) -> usize {
+    let mut prev = index.saturating_sub(1);
+    while skip_still && !shown_when_skipping(frames, prev, marked) {
+        prev -= 1;
+    }
+    prev
+}
+
+/// Frames the GeneralDisp note line has a group change for.
+fn group_change(app: &AppState, j: usize) -> bool {
+    match (&app.groups, app.frames.get(j)) {
+        (Some(groups), Some(frame)) => groups.changed_at(frame.step),
+        _ => false,
+    }
+}
+
+/// Moves to the next frame, gliding the agents that moved instead of
 /// jumping them, over `min(260, speed × 0.8)` ms.
 fn step_forward(state: &Rc<RefCell<AppState>>) {
-    let from = state.borrow().frame;
-    set_frame(state, from as isize + 1);
+    let (from, to) = {
+        let app = state.borrow();
+        let skip = checked(&app.document, "skipStill");
+        let marked = |j| group_change(&app, j);
+        (app.frame, next_frame(&app.frames, app.frame, skip, &marked))
+    };
+    set_frame(state, to as isize);
     let started = {
         let mut app = state.borrow_mut();
         let large = app
@@ -3336,8 +3394,17 @@ pub fn start() -> Result<(), JsValue> {
     hook_click(&state, "compareSchedules", compare_schedules);
     hook_click(&state, "export", export_json);
     hook_click(&state, "prev", |s| {
-        let next = s.borrow().frame as isize - 1;
-        set_frame(s, next);
+        let prev = {
+            let app = s.borrow();
+            let marked = |j| group_change(&app, j);
+            prev_frame(
+                &app.frames,
+                app.frame,
+                checked(&app.document, "skipStill"),
+                &marked,
+            )
+        };
+        set_frame(s, prev as isize);
     });
     hook_click(&state, "next", step_forward);
     hook_click(&state, "play", toggle_play);
@@ -4134,6 +4201,35 @@ mod tests {
         assert_eq!(payload.graph.node_count, 2);
         assert_eq!(payload.frames.len(), 2);
         assert_eq!(payload.result.positions, vec![1]);
+    }
+
+    #[test]
+    fn skipping_still_steps_keeps_moves_run_ends_and_marked_frames() {
+        // Positions per frame: a move, three still frames, then a move.
+        let frames: Vec<Frame> = [[0, 0], [1, 0], [1, 0], [1, 0], [1, 0], [1, 1]]
+            .iter()
+            .enumerate()
+            .map(|(step, nodes)| Frame {
+                step: step as u64,
+                ..initial_frame(nodes)
+            })
+            .collect();
+        let none = |_| false;
+        let order: Vec<usize> = std::iter::successors(Some(0), |&i| {
+            let next = next_frame(&frames, i, true, &none);
+            (next != i).then_some(next)
+        })
+        .collect();
+        assert_eq!(order, vec![0, 1, 4, 5]);
+        assert_eq!(prev_frame(&frames, 5, true, &none), 4);
+        assert_eq!(prev_frame(&frames, 4, true, &none), 1);
+        assert_eq!(next_frame(&frames, 1, false, &none), 2);
+        assert_eq!(prev_frame(&frames, 4, false, &none), 3);
+        let at_three = |j| j == 3;
+        assert_eq!(next_frame(&frames, 1, true, &at_three), 3);
+        assert_eq!(prev_frame(&frames, 4, true, &at_three), 3);
+        assert_eq!(next_frame(&frames, 5, true, &none), 5);
+        assert_eq!(prev_frame(&frames, 0, true, &none), 0);
     }
 
     #[test]
