@@ -17,8 +17,8 @@ pub use graphs::{generate_graph, GraphFamily, GraphGenerationError, GraphSpec};
 pub use placements::{place_agents, PlacementError, PlacementSpec};
 pub use runner::{
     check_placement, default_round_limit, execute_many_parallel, execute_one, prepare_run,
-    requires_rooted_start, BuiltinRunner, PreparedRun, RunError, RunRequest, RunResult,
-    SimulationRunner,
+    requires_rooted_start, rooted_async_schedule, BuiltinRunner, PreparedRun, RunError, RunRequest,
+    RunResult, SimulationRunner,
 };
 pub use sweep::{expand_sweep, run_sweep_parallel, SweepSpec};
 pub use transitions::{

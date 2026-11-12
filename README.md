@@ -1,11 +1,12 @@
 # CCMModel
 
-CCMModel is a deterministic research simulator and browser visualizer for five
+CCMModel is a deterministic research simulator and browser visualizer for six
 mobile-agent dispersion algorithms:
 
 - Drop-and-Freeze (legacy baseline);
 - Help-by-Scouts (legacy baseline);
 - P1Tree (`DFS_P1Tree`), from Pattanayak et al.;
+- RootedAsync, the same paper's asynchronous algorithm, run agent by agent;
 - RootedDisp, the rooted HEO-DFS of Sudo et al.;
 - GeneralDisp, the general HEO-DFS of Sudo et al. with the Zombie method, for
   agents starting on any nodes.
@@ -186,17 +187,19 @@ tree; it is retained as the record of why the migration was undertaken.
 
 - `ccm-core`: dense IDs, reciprocal port graph, deterministic RNG, indexes,
   termination, metrics, and scheduler primitives.
-- `ccm-algorithms`: the five algorithms, one module each:
+- `ccm-algorithms`: the six algorithms, one module each:
   `drop_and_freeze`, `help_by_scouts`, `p1tree` (P1Tree dispersion, from
-  Pattanayak et al.; see [docs/p1tree.md](docs/p1tree.md)), `rooted_disp`
-  (RootedDisp, from Sudo et al.; see [docs/rooted-disp.md](docs/rooted-disp.md))
-  and `general_disp` (GeneralDisp, from Sudo et al.; see
-  [docs/general-disp.md](docs/general-disp.md)).
-  Their tests live in `ccm-experiments/tests`.
+  Pattanayak et al.; see [docs/p1tree.md](docs/p1tree.md)), `rooted_async`
+  (the same paper's asynchronous `RootedAsync`, agent by agent; see
+  [docs/2507.01298-optimal-dispersion-under-asynchrony/](docs/2507.01298-optimal-dispersion-under-asynchrony/)),
+  `rooted_disp` (RootedDisp, from Sudo et al.; see
+  [docs/rooted-disp.md](docs/rooted-disp.md)) and `general_disp` (GeneralDisp,
+  from Sudo et al.; see [docs/general-disp.md](docs/general-disp.md)). Their
+  tests live in `ccm-experiments/tests`.
 
 All documentation is indexed in [docs/README.md](docs/README.md). For how each
 algorithm actually runs, [`docs.html`](docs.html) — linked from either app
-page's header — has the five flowcharts as a page you can pan and zoom, where
+page's header — has the six flowcharts as a page you can pan and zoom, where
 clicking a box opens the source of the function it stands for. The same charts
 in markdown are in [docs/algorithm-flowcharts.md](docs/algorithm-flowcharts.md)
 has a flowchart per algorithm with the code of every function it names, pulled

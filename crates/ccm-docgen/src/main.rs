@@ -77,19 +77,17 @@ fn legend() -> String {
 
 /// One function's entry in the page data: its location, a GitHub link and the
 /// highlighted lines (the page copies their text).
-fn code_json(chart: &Chart, name: &str, found: &code::Extract) -> String {
+fn code_json(name: &str, path: &str, found: &code::Extract) -> String {
     let lines = code::highlight(&found.text);
     let end = found.line + lines.len() - 1;
+    let (_, func) = code::locate(path, name);
     format!(
         r#"{}:{{"name":{},"path":{},"line":{},"url":{},"html":{}}}"#,
         json_str(name),
-        json_str(name.split('@').next().unwrap_or(name)),
-        json_str(chart.source),
+        json_str(func.split('@').next().unwrap_or(func)),
+        json_str(path),
         found.line,
-        json_str(&format!(
-            "{REPO_BLOB}/{}#L{}-L{end}",
-            chart.source, found.line
-        )),
+        json_str(&format!("{REPO_BLOB}/{path}#L{}-L{end}", found.line)),
         json_strings(lines.iter().map(String::as_str))
     )
 }
@@ -144,11 +142,8 @@ fn main() {
     let mut sections = String::new();
     let mut data = Vec::new();
     let mut missing = Vec::new();
-    let mut sources = Vec::new();
 
     for (number, chart) in CHARTS.iter().enumerate() {
-        let source = fs::read_to_string(root.join(chart.source)).expect("chart source");
-        sources.push(source.clone());
         let drawn = svg::draw(chart);
         let _ = write!(
             nav,
@@ -189,9 +184,11 @@ fn main() {
         functions.dedup();
         let mut code = Vec::new();
         for name in functions {
-            match code::extract(&source, name) {
-                Some(found) => code.push(code_json(chart, name, &found)),
-                None => missing.push(format!("{}::{name}", chart.crate_name)),
+            let (path, func) = code::locate(chart.source, name);
+            let source = fs::read_to_string(root.join(&path)).expect("chart source");
+            match code::extract(&source, func) {
+                Some(found) => code.push(code_json(name, &path, &found)),
+                None => missing.push(format!("{path}::{func}")),
             }
         }
         data.push(format!(
@@ -222,7 +219,7 @@ fn main() {
     println!("wrote {}", out.display());
 
     let doc = root.join("docs/algorithm-flowcharts.md");
-    fs::write(&doc, markdown::document(&sources)).expect("write docs/algorithm-flowcharts.md");
+    fs::write(&doc, markdown::document(&root)).expect("write docs/algorithm-flowcharts.md");
     println!("wrote {}", doc.display());
 }
 
@@ -246,14 +243,11 @@ mod tests {
     fn every_named_function_exists_in_its_crate() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         for chart in CHARTS {
-            let source = fs::read_to_string(root.join(chart.source)).expect("chart source");
             for node in chart.nodes {
                 if let Some(name) = node.func {
-                    assert!(
-                        code::extract(&source, name).is_some(),
-                        "{}::{name}",
-                        chart.crate_name
-                    );
+                    let (path, func) = code::locate(chart.source, name);
+                    let source = fs::read_to_string(root.join(&path)).expect("chart source");
+                    assert!(code::extract(&source, func).is_some(), "{path}::{func}");
                 }
             }
         }

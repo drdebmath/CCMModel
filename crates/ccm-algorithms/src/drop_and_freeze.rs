@@ -145,6 +145,7 @@ impl<R: ccm_trace::Recorder> Recorder for SharedRecorder<R> {
                 .collect(),
             home_nodes: vec![None; state.agents.len()],
             settled_agents: state.settled_agent_at.clone(),
+            transit_from: Vec::new(),
         });
     }
 

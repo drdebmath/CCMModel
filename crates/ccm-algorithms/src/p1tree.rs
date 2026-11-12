@@ -160,11 +160,10 @@ pub struct P1Result {
     pub logical_steps: u64,
     /// Step at which the last agent settled, i.e. when dispersion was achieved.
     ///
-    /// The construction keeps running after this to finish the tree: Section 4
-    /// terminates when every node is `fullyVisited`, and it is that tail that
-    /// reconfigures the remaining `partiallyVisited` nodes. Dispersion is the
-    /// earlier event, so it is reported separately rather than being conflated
-    /// with termination.
+    /// Under the default [`Stop::AtDispersion`] the construction stops here.
+    /// Under [`Stop::AtFullTree`] it keeps running until the root is popped,
+    /// which is the tail that reconfigures the remaining `partiallyVisited`
+    /// nodes, so dispersion is reported separately from termination.
     pub dispersed_at_step: Option<u64>,
 }
 
@@ -247,8 +246,6 @@ struct Simulation<'a, M: Metrics, R: Recorder> {
     /// Whether a node already has a port-1 incident tree edge.
     port_one_tree_edge: Vec<bool>,
     head: NodeId,
-    /// The node the run started from. Retrace walks the tree from here.
-    root: NodeId,
     stop: Stop,
     round_limit: u64,
     step: u64,
@@ -301,7 +298,6 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
             parent: vec![None; node_count],
             port_one_tree_edge: vec![false; node_count],
             head: root,
-            root,
             stop,
             round_limit,
             step: 0,
@@ -348,11 +344,12 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
     /// The `while S != {}` loop of Algorithm 2, with the stack realised by the
     /// parent pointers the settled agents hold.
     ///
-    /// The loop runs until the root is popped, which is Algorithm 2's own
-    /// termination. Stopping earlier, as soon as every agent had settled, left
-    /// nodes `partiallyVisited` with a `tpq` parent edge and so broke
-    /// Definition 1: it is exactly the walk back to the root that reconfigures
-    /// them.
+    /// Under [`Stop::AtDispersion`], the default, the loop ends as soon as every
+    /// agent has settled (Section 5). Under [`Stop::AtFullTree`] it runs until
+    /// the root is popped, Algorithm 2's own termination, which is the walk
+    /// that reconfigures any node still `partiallyVisited` and so makes the
+    /// tree satisfy Definition 1. Popping the root also ends the default run
+    /// if it comes first. Either way the caller runs Retrace afterwards.
     fn traverse(&mut self) -> Result<Termination, P1Error> {
         let mut rounds = 0_u64;
         loop {
@@ -631,9 +628,9 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
         let was = self.node_type[target.index()];
 
         self.metrics.logical_rounds(RoundKind::Movement, 1);
-        self.metrics.group_move(self.unsettled_count());
-        self.metrics.agent_moves(self.unsettled_count() as u64);
-        self.move_unsettled_to(target);
+        self.metrics.group_move(self.group_count());
+        self.metrics.agent_moves(self.group_count() as u64);
+        self.move_group_to(target);
         self.head = target;
 
         // The edge as seen from the target, which is the direction Definition 1
@@ -650,8 +647,8 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
             }
             NodeType::PartiallyVisited => {
                 // Reconfiguration (rule (D4)): the old tpq parent edge is
-                // dropped in set_parent above and this port-1 edge takes its
-                // place, which makes the node visited.
+                // replaced by this port-1 edge in set_parent below, which
+                // makes the node visited.
                 self.node_type[target.index()] = NodeType::Visited;
             }
             NodeType::Visited | NodeType::FullyVisited => {}
@@ -709,9 +706,9 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
         }
         self.metrics.logical_rounds(RoundKind::Movement, 1);
         self.metrics.backtrack();
-        self.metrics.group_move(self.unsettled_count());
-        self.metrics.agent_moves(self.unsettled_count() as u64);
-        self.move_unsettled_to(parent);
+        self.metrics.group_move(self.group_count());
+        self.metrics.agent_moves(self.group_count() as u64);
+        self.move_group_to(parent);
         self.head = parent;
         self.checkpoint(Phase::Movement);
         Ok(true)
@@ -779,17 +776,17 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
                 // Algorithm 3 lines 4-8: visit the port-1 neighbour and return.
                 self.metrics.agent_moves(2);
                 self.metrics.vacate();
-                self.agents[owner.index()].status = P1Status::SettledScout;
+                self.join_group(owner);
             }
             // (V3) a fullyVisited node vacates unless a neighbour is leaning on
             // it, and (V4) a partiallyVisited node always vacates.
             NodeType::FullyVisited if !vacated_neighbor => {
                 self.metrics.vacate();
-                self.agents[owner.index()].status = P1Status::SettledScout;
+                self.join_group(owner);
             }
             NodeType::PartiallyVisited => {
                 self.metrics.vacate();
-                self.agents[owner.index()].status = P1Status::SettledScout;
+                self.join_group(owner);
             }
             _ => {}
         }
@@ -823,15 +820,17 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
         // Algorithm 3 lines 16-21: visit the parent and return.
         self.metrics.agent_moves(2);
         self.metrics.vacate();
-        self.agents[parent_owner.index()].status = P1Status::SettledScout;
+        self.join_group(parent_owner);
         self.agents[owner.index()].vacated_neighbor = true;
     }
 
-    /// Section 5.1. A post-order walk of the finished tree that puts every
-    /// travelling scout back on the node it owns.
+    /// Section 5.1. Walks the travelling scouts home along the tree.
     ///
-    /// The scouts are all standing wherever the head finished, so the walk
-    /// visits the tree bottom-up and drops each one as its home comes past.
+    /// The scouts are all standing wherever the head finished. From there the
+    /// walk is a depth-first tour of the tree, one edge per step, and each
+    /// scout steps off when it reaches the node it owns. A tour crosses every
+    /// tree edge at most twice, so this is at most `2(k - 1)` moves, and it
+    /// stops as soon as nobody is left travelling.
     fn retrace(&mut self) {
         let mut travelling: Vec<usize> = self
             .agents
@@ -844,28 +843,33 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
             return;
         }
 
-        // Children of each node, in the order the DFS added them, so the walk
-        // below is the same post-order the construction took.
-        let mut children: Vec<Vec<NodeId>> = vec![Vec::new(); self.graph.node_count()];
+        // The tree as undirected adjacency: each node's children in the order
+        // the DFS added them, then its parent.
+        let mut neighbours: Vec<Vec<NodeId>> = vec![Vec::new(); self.graph.node_count()];
         for index in 0..self.graph.node_count() {
             if let Some((parent, _, _)) = self.parent[index] {
-                children[parent.index()].push(NodeId(
+                neighbours[parent.index()].push(NodeId(
                     u32::try_from(index).expect("node count fits the dense ID domain"),
                 ));
             }
         }
-
-        let mut order = Vec::new();
-        Self::post_order(self.root, &children, &mut order);
-
-        for node in order {
-            self.metrics.logical_rounds(RoundKind::Retrace, 1);
-            self.metrics.retrace();
-            self.metrics.agent_moves(travelling.len() as u64);
-            for &index in &travelling {
-                self.agents[index].node = node;
+        for (list, link) in neighbours.iter_mut().zip(&self.parent) {
+            if let Some((parent, _, _)) = link {
+                list.push(*parent);
             }
-            self.head = node;
+        }
+
+        let walk = Self::tour(self.head, &neighbours);
+        for (step, &node) in walk.iter().enumerate() {
+            if step > 0 {
+                self.metrics.logical_rounds(RoundKind::Retrace, 1);
+                self.metrics.retrace();
+                self.metrics.agent_moves(travelling.len() as u64);
+                for &index in &travelling {
+                    self.agents[index].node = node;
+                }
+                self.head = node;
+            }
             if let Some(owner) = self.settled_at[node.index()] {
                 if let Some(position) = travelling.iter().position(|&i| i == owner.index()) {
                     travelling.remove(position);
@@ -873,18 +877,38 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
                     self.agents[owner.index()].node = node;
                 }
             }
-            self.checkpoint(Phase::Retrace);
+            if step > 0 {
+                self.checkpoint(Phase::Retrace);
+            }
             if travelling.is_empty() {
                 break;
             }
         }
     }
 
-    fn post_order(node: NodeId, children: &[Vec<NodeId>], out: &mut Vec<NodeId>) {
-        for &child in &children[node.index()] {
-            Self::post_order(child, children, out);
+    /// A depth-first tour of the tree from `start`: every node it reaches,
+    /// including the steps back up, so consecutive entries are always
+    /// neighbours.
+    fn tour(start: NodeId, neighbours: &[Vec<NodeId>]) -> Vec<NodeId> {
+        let mut walk = vec![start];
+        // (node, the node it was entered from, next neighbour to try)
+        let mut stack: Vec<(NodeId, Option<NodeId>, usize)> = vec![(start, None, 0)];
+        while let Some(top) = stack.last_mut() {
+            let (node, from, next) = *top;
+            let Some(&neighbour) = neighbours[node.index()].get(next) else {
+                stack.pop();
+                if let Some(&(parent, _, _)) = stack.last() {
+                    walk.push(parent);
+                }
+                continue;
+            };
+            top.2 += 1;
+            if Some(neighbour) != from {
+                walk.push(neighbour);
+                stack.push((neighbour, Some(node), 0));
+            }
         }
-        out.push(node);
+        walk
     }
 
     /// The agents that travel to perform a neighbourhood search.
@@ -913,11 +937,31 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
             .unwrap_or_default()
     }
 
-    fn move_unsettled_to(&mut self, node: NodeId) {
+    /// Moves the travelling group, `A_scout`: the unsettled agents and the
+    /// vacated settlers travelling with them.
+    fn move_group_to(&mut self, node: NodeId) {
         for agent in &mut self.agents {
-            if agent.status == P1Status::Unsettled {
+            if agent.status != P1Status::Settled {
                 agent.node = node;
             }
+        }
+    }
+
+    fn group_count(&self) -> usize {
+        self.agents
+            .iter()
+            .filter(|agent| agent.status != P1Status::Settled)
+            .count()
+    }
+
+    /// A settler that has just vacated joins the group at the head. It is
+    /// either already there, or on the node the group has just come from, one
+    /// edge away.
+    fn join_group(&mut self, agent: AgentId) {
+        self.agents[agent.index()].status = P1Status::SettledScout;
+        if self.agents[agent.index()].node != self.head {
+            self.agents[agent.index()].node = self.head;
+            self.metrics.agent_moves(1);
         }
     }
 
@@ -973,6 +1017,7 @@ impl<'a, M: Metrics, R: Recorder> Simulation<'a, M, R> {
                 .collect(),
             home_nodes: self.agents.iter().map(|agent| agent.home).collect(),
             settled_agents: self.settled_at.clone(),
+            transit_from: Vec::new(),
         });
         self.step = self.step.saturating_add(1);
     }

@@ -29,8 +29,10 @@ dependencies = [
 name = "ccm-cli"
 version = "0.1.0"
 dependencies = [
+ "ccm-algorithms",
  "ccm-core",
  "ccm-experiments",
+ "ccm-trace",
 ]
 
 [[package]]

@@ -1,26 +1,30 @@
 //! Golden-file check: a fixed sweep over every algorithm must reproduce
-//! `tests/golden/sweep.csv` byte for byte. Rooted runs of all five come first,
-//! then a multi-start comparison of the algorithms defined for scattered
-//! starts on identical inputs.
+//! `tests/golden/sweep.csv` byte for byte. Rooted runs of every algorithm
+//! come first, then a multi-start comparison of the algorithms defined for
+//! scattered starts on identical inputs.
 //!
 //! A refactor passes only if it changes no result and no metric. A change that
 //! is meant to alter behaviour regenerates the file in the same commit, with
 //! `CCM_UPDATE_GOLDEN=1 cargo test -p ccm-experiments --test golden`, so the
 //! difference is reviewed rather than discovered.
 
-use ccm_core::{Algorithm, NodeId, PortAssignment};
+use ccm_core::{Algorithm, NodeId, PortAssignment, SchedulerModel};
 use ccm_experiments::{
     results_to_csv, run_sweep_parallel, BuiltinRunner, GraphFamily, GraphSpec, PlacementSpec,
     RunRequest, SweepSpec,
 };
 use std::path::PathBuf;
 
-const ALGORITHMS: [Algorithm; 5] = [
-    Algorithm::DropAndFreeze,
-    Algorithm::HelpByScouts,
-    Algorithm::P1Tree,
-    Algorithm::RootedDisp,
-    Algorithm::GeneralDisp,
+/// Every algorithm under the synchronous scheduler, and `RootedAsync` also
+/// under a random one, so its asynchronous behaviour is pinned too.
+const RUNS: [(Algorithm, SchedulerModel); 7] = [
+    (Algorithm::DropAndFreeze, SchedulerModel::Synchronous),
+    (Algorithm::HelpByScouts, SchedulerModel::Synchronous),
+    (Algorithm::P1Tree, SchedulerModel::Synchronous),
+    (Algorithm::RootedAsync, SchedulerModel::Synchronous),
+    (Algorithm::RootedAsync, SchedulerModel::Asynchronous),
+    (Algorithm::RootedDisp, SchedulerModel::Synchronous),
+    (Algorithm::GeneralDisp, SchedulerModel::Synchronous),
 ];
 
 /// Algorithms the runner accepts with agents on several nodes.
@@ -45,7 +49,7 @@ const PORTS: [PortAssignment; 3] = [
 
 fn sweep_csv() -> String {
     let mut results = Vec::new();
-    for algorithm in ALGORITHMS {
+    for (algorithm, scheduler) in RUNS {
         for family in FAMILIES {
             for port_assignment in PORTS {
                 let base = RunRequest {
@@ -56,6 +60,7 @@ fn sweep_csv() -> String {
                     agents: 6,
                     seed: 1,
                     round_limit: None,
+                    scheduler,
                 };
                 let spec = SweepSpec::new(base)
                     .with_node_counts(vec![12, 40])
@@ -89,6 +94,7 @@ fn sweep_csv() -> String {
                         agents: 6,
                         seed: 1,
                         round_limit: None,
+                        scheduler: SchedulerModel::Synchronous,
                     };
                     let spec = SweepSpec::new(base)
                         .with_node_counts(vec![12, 40])

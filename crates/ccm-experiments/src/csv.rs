@@ -1,7 +1,9 @@
-use crate::runner::{algorithm_kind, algorithm_label, termination_label, RunResult};
+use crate::runner::{
+    algorithm_kind, algorithm_label, scheduler_label, termination_label, time_unit, RunResult,
+};
 
 /// Stable tabular schema: exactly one row per independent simulation trial.
-pub const CSV_HEADER: &str = "algorithm,algorithm_version,git_commit,graph_model,port_assignment,placement,nodes,edges,agents,seed,starts,completed,termination,rounds,macro_rounds,probe_rounds,movement_rounds,agent_moves,edge_traversals,port_probes,probe_out_traversals,probe_back_traversals,settlements,backtracks,group_moves,maximum_group_size,maximum_simultaneously_unsettled,maximum_tree_depth,peak_owned_nodes,scout_operations,vacates,chase_operations,follow_operations,retraces,peak_logical_memory_words,algorithm_kind\n";
+pub const CSV_HEADER: &str = "algorithm,algorithm_version,git_commit,graph_model,port_assignment,placement,nodes,edges,agents,seed,starts,completed,termination,rounds,macro_rounds,probe_rounds,movement_rounds,agent_moves,edge_traversals,port_probes,probe_out_traversals,probe_back_traversals,settlements,backtracks,group_moves,maximum_group_size,maximum_simultaneously_unsettled,maximum_tree_depth,peak_owned_nodes,scout_operations,vacates,chase_operations,follow_operations,retraces,peak_logical_memory_words,algorithm_kind,scheduler,time_unit\n";
 
 /// Serializes rows without adding a filesystem or CSV-library dependency.
 /// Values containing commas, quotes, or newlines are RFC-4180 escaped.
@@ -53,6 +55,8 @@ pub fn results_to_csv(results: &[RunResult]) -> String {
             result.metrics.retraces.to_string(),
             result.metrics.peak_logical_memory_words.to_string(),
             algorithm_kind(result.algorithm).to_owned(),
+            scheduler_label(result.scheduler),
+            time_unit(result.scheduler).to_owned(),
         ];
         for (index, value) in values.iter().enumerate() {
             if index != 0 {
@@ -81,7 +85,7 @@ fn write_csv_value(output: &mut String, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ccm_core::{Algorithm, ComplexityMetrics, NodeId, Termination};
+    use ccm_core::{Algorithm, ComplexityMetrics, NodeId, SchedulerModel, Termination};
 
     fn result(algorithm: Algorithm) -> RunResult {
         RunResult {
@@ -98,6 +102,7 @@ mod tests {
             starts: vec![NodeId(0), NodeId(0), NodeId(0)],
             termination: Termination::Completed,
             metrics: ComplexityMetrics::default(),
+            scheduler: SchedulerModel::Synchronous,
         }
     }
 
@@ -112,21 +117,74 @@ mod tests {
         ));
     }
 
+    fn column(name: &str) -> usize {
+        CSV_HEADER
+            .trim_end()
+            .split(',')
+            .position(|column| column == name)
+            .unwrap_or_else(|| panic!("no {name} column"))
+    }
+
+    fn cell(row: &RunResult, name: &str) -> String {
+        let csv = results_to_csv(std::slice::from_ref(row));
+        let cells: Vec<String> = csv
+            .lines()
+            .nth(1)
+            .unwrap()
+            .split(',')
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(cells.len(), CSV_HEADER.trim_end().split(',').count());
+        cells[column(name)].clone()
+    }
+
+    /// New columns are appended, so every older column keeps its position.
     #[test]
-    fn algorithm_kind_is_the_last_column_and_marks_legacy_baselines() {
-        let header: Vec<&str> = CSV_HEADER.trim_end().split(',').collect();
-        assert_eq!(header.last(), Some(&"algorithm_kind"));
+    fn columns_are_only_ever_appended() {
+        assert_eq!(column("peak_logical_memory_words"), 34);
+        assert_eq!(column("algorithm_kind"), 35);
+        assert_eq!(column("scheduler"), 36);
+        assert_eq!(column("time_unit"), 37);
+    }
+
+    #[test]
+    fn algorithm_kind_marks_legacy_baselines() {
         for (algorithm, kind) in [
             (Algorithm::DropAndFreeze, "legacy_baseline"),
             (Algorithm::HelpByScouts, "legacy_baseline"),
             (Algorithm::P1Tree, "paper"),
+            (Algorithm::RootedAsync, "paper"),
             (Algorithm::RootedDisp, "paper"),
             (Algorithm::GeneralDisp, "paper"),
         ] {
-            let csv = results_to_csv(&[result(algorithm)]);
-            let row: Vec<&str> = csv.lines().nth(1).unwrap().split(',').collect();
-            assert_eq!(row.len(), header.len());
-            assert_eq!(row.last(), Some(&kind), "{algorithm:?}");
+            assert_eq!(
+                cell(&result(algorithm), "algorithm_kind"),
+                kind,
+                "{algorithm:?}"
+            );
+        }
+    }
+
+    /// Rounds and epochs are not comparable, so each row says which it holds.
+    #[test]
+    fn every_row_names_its_scheduler_and_time_unit() {
+        let mut row = result(Algorithm::RootedAsync);
+        for (scheduler, label, unit) in [
+            (SchedulerModel::Synchronous, "synchronous", "round"),
+            (SchedulerModel::Asynchronous, "asynchronous", "epoch"),
+            (SchedulerModel::Interleaved, "interleaved", "epoch"),
+            (
+                SchedulerModel::Starved {
+                    agent: 2,
+                    period: 9,
+                },
+                "starved:2:9",
+                "epoch",
+            ),
+        ] {
+            row.scheduler = scheduler;
+            assert_eq!(cell(&row, "scheduler"), label);
+            assert_eq!(cell(&row, "time_unit"), unit);
         }
     }
 }

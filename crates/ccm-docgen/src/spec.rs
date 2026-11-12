@@ -901,7 +901,8 @@ pub static CHARTS: &[Chart] = &[
                 (1.45, 11.0),
                 Step,
                 Some("advance"),
-                "The unsettled agents move through the chosen port and the head follows.",
+                "The travelling group, unsettled agents and vacated scouts, moves through the \
+                 chosen port and the head follows.",
             ),
             node(
                 "vacate",
@@ -972,9 +973,9 @@ pub static CHARTS: &[Chart] = &[
                 (-1.45, 3.0),
                 Step,
                 Some("retrace"),
-                "Section 5.1: the scouts visit the tree's nodes in post-order from the root \
-                 (children by node number), one round per node, and each is dropped as its home \
-                 comes up; it stops when none is left.",
+                "Section 5.1: from wherever the head finished, the scouts take a depth-first \
+                 tour of the tree, one edge per round, and each is dropped as it reaches its \
+                 home; it stops when none is left, after at most 2(k - 1) moves.",
             ),
             node(
                 "done",
@@ -1016,6 +1017,305 @@ pub static CHARTS: &[Chart] = &[
             e("parent", "release", None, Auto),
             e("release", "trav", Some("next pass"), Outer(1)),
             e("retrace", "done", None, Auto),
+        ],
+    },
+    // ----------------------------------------------------------- RootedAsync
+    Chart {
+        id: "rootedasync",
+        title: "RootedAsync",
+        short: "The P1Tree DFS run agent by agent, under any schedule",
+        crate_name: "ccm-algorithms",
+        source: "crates/ccm-algorithms/src/rooted_async/lead.rs",
+        intro: &[
+            "`RootedAsync` from Pattanayak, Kshemkalyani, Kumar, Molla and Sharma, *Optimal \
+             Dispersion Under Asynchrony*, Sections 4–5 and Algorithms 2–6: the P1Tree DFS run \
+             **agent by agent**. One activation is one Communicate-Compute-Move cycle: the agent \
+             reads the agents at its own node, writes its own memory and at most one other's, \
+             and leaves along at most one port. Under the interleaved schedule the read and the \
+             write are separate steps, with other agents acting in between.",
+            "One agent **leads**. It settles the highest unsettled ID at each new node, sends \
+             the group out in probe batches, concludes each probe by rules R1–R3c from what the \
+             group remembers, and decides the next edge and who vacates; members carry out its \
+             numbered commands. When nobody is left unsettled the lead role passes to a scout \
+             and the scouts walk the tree home. The [gap and trace \
+             note](2507.01298-optimal-dispersion-under-asynchrony/gap-and-trace-note.md) has the \
+             model, the eleven repairs to the pseudocode, and the validation.",
+        ],
+        notes: &[
+            "No decision reads the simulator's ownership index. The simulator checks every \
+             probe's conclusion, every settle and every arrival against the truth, and stops \
+             the run on any disagreement (`LocalViewDisagrees`, `WrongHead`, \
+             `NodeClaimedTwice`, `SettledAwayFromHome`).",
+            "Under `Interleaved`, a commit that would write over memory someone else changed \
+             since its look fails the run as `WriteConflict`; it never happens in the sweeps.",
+            "At a node of degree at least `k - 1`, `plan_probe` takes Algorithm 5's shortcut: \
+             probe enough ports for every unsettled agent to find an empty neighbour, and \
+             scatter them there.",
+            "Every vacate needs an occupied node within two port-1 hops, which is then barred \
+             from vacating (repair 11), so R3b and R3c-i never misread a vacated node as empty.",
+            "Rooted only: a placement that is not all on one node is refused with \
+             `NonRootedStart`. The run stops at the epoch limit as RoundLimitReached.",
+        ],
+        lanes: Lanes::Rows(&[
+            ("Schedule", 0.0, 2.0),
+            ("One cycle", 3.0, 4.0),
+            ("The lead's step", 5.0, 12.0),
+        ]),
+        nodes: &[
+            node(
+                "start",
+                "Run RootedAsync",
+                "simulate()",
+                (0.0, 0.0),
+                Entry,
+                Some("mod.rs:simulate"),
+                "Checks the input (a non-empty graph, no more agents than nodes, every agent on \
+                 one node), gives agent 0 the lead, and runs the chosen schedule.",
+            ),
+            node(
+                "sched",
+                "Which schedule?",
+                "Schedule",
+                (0.0, 1.0),
+                Decision,
+                None,
+                "Synchronous rounds, a random order with atomic cycles, or the random order with \
+                 each cycle's look and write apart. Time is counted in epochs: the shortest \
+                 intervals in which every agent completes a cycle.",
+            ),
+            node(
+                "sync",
+                "Every agent, one round",
+                "run_synchronous()",
+                (-1.5, 2.0),
+                Step,
+                Some("run.rs:run_synchronous"),
+                "Every agent acts on the state the round began with; the writes land together, \
+                 and two writes to one agent are an error.",
+            ),
+            node(
+                "rand",
+                "One agent at a time",
+                "run_asynchronous()",
+                (0.0, 2.0),
+                Step,
+                Some("run.rs:run_asynchronous"),
+                "A seeded random order, each cycle atomic. A moving agent is on the edge, seen at \
+                 neither end, until its next activation lands it.",
+            ),
+            node(
+                "inter",
+                "Look now, write later",
+                "run_interleaved()",
+                (1.5, 2.0),
+                Step,
+                Some("run.rs:run_interleaved"),
+                "The paper's ASYNC in full: a look reads and computes, and a later commit writes \
+                 and leaves, with any number of other agents' steps in between.",
+            ),
+            node(
+                "act",
+                "One agent's cycle",
+                "activate()",
+                (0.0, 3.0),
+                Step,
+                Some("agent.rs:activate"),
+                "Reads only the agents at this node, and dispatches on the agent's own task.",
+            ),
+            node(
+                "task",
+                "Lead, or a task?",
+                "memory.task",
+                (0.0, 4.0),
+                Decision,
+                None,
+                "The lead runs the DFS; a waiting member follows its commands; a scout or an \
+                 errand walks one hop.",
+            ),
+            node(
+                "follow",
+                "Carry out the newest command",
+                "follow()",
+                (1.6, 5.0),
+                Step,
+                Some("agent.rs:follow"),
+                "Rank, probe a port, collect, move, or scatter, once per command number.",
+            ),
+            node(
+                "probe",
+                "One hop of a probe",
+                "probe_step()",
+                (1.6, 6.0),
+                Step,
+                Some("agent.rs:probe_step"),
+                "R1–R3: who is home at the neighbour, and if nobody, its port-1 neighbour and \
+                 once more if needed; then the walk back.",
+            ),
+            node(
+                "errand",
+                "A vacate excursion",
+                "errand_step()",
+                (1.6, 7.0),
+                Step,
+                Some("agent.rs:errand_step"),
+                "V2–V5: the owner walks the port-1 chain to find an occupied anchor, marks it, and \
+                 comes back with the answer.",
+            ),
+            node(
+                "arrive",
+                "Settle, or reconfigure",
+                "arrive()",
+                (0.0, 5.0),
+                Step,
+                Some("arrive"),
+                "At a new node the highest unsettled ID settles; at a partiallyVisited node \
+                 reached by its port 1, rule D4 swaps in the port-1 parent edge.",
+            ),
+            node(
+                "left",
+                "Anyone unsettled?",
+                "lead.unsettled",
+                (0.0, 6.0),
+                Decision,
+                None,
+                "Once the last agent settles, the construction is done and the walk home \
+                 begins.",
+            ),
+            node(
+                "plan",
+                "Plan the probes",
+                "plan_probe()",
+                (0.0, 7.0),
+                Step,
+                Some("plan_probe"),
+                "Every port but the parent's, in batches of the group's size; or the scatter \
+                 shortcut at a node of degree at least k − 1.",
+            ),
+            node(
+                "batch",
+                "Conclude each probe",
+                "finish_batch()",
+                (0.0, 8.0),
+                Step,
+                Some("finish_batch"),
+                "Once every scout is back, resolves each probe from the group's memory and keeps \
+                 the best eligible edge, by (priority, port).",
+            ),
+            node(
+                "resolve",
+                "Rules R1–R3c",
+                "resolve()",
+                (1.6, 8.0),
+                Aside,
+                Some("probe.rs:resolve"),
+                "Occupied, empty, or vacated: a vacated node is recognised by the group member \
+                 whose stored port-1 neighbour is the one the scout saw.",
+            ),
+            node(
+                "more",
+                "Ports left to probe?",
+                "next_batch_or_decide()",
+                (0.0, 9.0),
+                Decision,
+                None,
+                "Another batch while ports remain; then the decision.",
+            ),
+            node(
+                "decide",
+                "Choose the next edge",
+                "decide()",
+                (0.0, 10.0),
+                Step,
+                Some("decide"),
+                "Classifies the head (visited, partiallyVisited or fullyVisited), picks forward \
+                 or back as Algorithm 2 does, and the vacate rule to try.",
+            ),
+            node(
+                "vacate",
+                "Who vacates",
+                "errand_done()",
+                (0.0, 11.0),
+                Step,
+                Some("errand_done"),
+                "Reads the owner's errand result: anchored, two hops, refused, or the parent \
+                 joining under V5.",
+            ),
+            node(
+                "move",
+                "The group moves",
+                "begin_move()",
+                (0.0, 12.0),
+                Step,
+                Some("begin_move"),
+                "Issues the move; every member leaves through the port and the lead goes last, \
+                 so no member loses sight of the command.",
+            ),
+            node(
+                "retrace",
+                "Lead passes to a scout",
+                "begin_retrace()",
+                (-1.5, 6.0),
+                Step,
+                Some("begin_retrace"),
+                "Algorithm 6 begins: the lowest-ID travelling scout takes the lead.",
+            ),
+            node(
+                "rstep",
+                "Next node home",
+                "retrace_step()",
+                (-1.5, 7.0),
+                Step,
+                Some("retrace_step"),
+                "A local post-order walk using each node's stored child, sibling and parent \
+                 links; a scout steps off at its own home.",
+            ),
+            node(
+                "travel",
+                "Scouts still travelling?",
+                "group",
+                (-1.5, 8.0),
+                Decision,
+                None,
+                "The walk ends when the last scout is home.",
+            ),
+            node(
+                "done",
+                "Completed",
+                "Termination::Completed",
+                (-1.5, 9.0),
+                Terminal,
+                None,
+                "Every agent settled and standing on its own node.",
+            ),
+        ],
+        edges: &[
+            e("start", "sched", None, Auto),
+            e("sched", "sync", Some("synchronous"), Auto),
+            e("sched", "rand", Some("random"), Auto),
+            e("sched", "inter", Some("interleaved"), Auto),
+            e("sync", "act", None, Auto),
+            e("rand", "act", None, Auto),
+            e("inter", "act", None, Auto),
+            e("act", "task", None, Auto),
+            e("task", "arrive", Some("lead"), Auto),
+            e("task", "follow", Some("member, waiting"), Auto),
+            e("task", "probe", Some("probing"), Around(2)),
+            e("task", "errand", Some("on an errand"), Around(3)),
+            e("arrive", "left", None, Auto),
+            e("left", "retrace", Some("no"), Auto),
+            e("left", "plan", Some("yes"), Auto),
+            e("plan", "batch", None, Auto),
+            e("batch", "more", None, Auto),
+            e("more", "batch", Some("yes"), Around(1)),
+            e("more", "decide", Some("no"), Auto),
+            e("decide", "vacate", None, Auto),
+            e("vacate", "move", None, Auto),
+            e("move", "arrive", Some("next node"), Around(-1)),
+            e("retrace", "rstep", None, Auto),
+            e("rstep", "travel", None, Auto),
+            e("travel", "rstep", Some("yes"), Around(-1)),
+            e("travel", "done", Some("no"), Auto),
+            aside("batch", "resolve", Some("rules")),
         ],
     },
     // ------------------------------------------------------------ RootedDisp

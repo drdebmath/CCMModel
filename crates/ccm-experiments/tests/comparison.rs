@@ -1,6 +1,6 @@
 //! Multi-start comparison of every algorithm through the runner.
 
-use ccm_core::{Algorithm, NodeId, PortAssignment, Termination};
+use ccm_core::{Algorithm, NodeId, PortAssignment, SchedulerModel, Termination};
 use ccm_experiments::{
     default_round_limit, execute_one, general_disp_transitions, prepare_run, requires_rooted_start,
     BuiltinRunner, GraphFamily, GraphSpec, PlacementSpec, RunError, RunRequest,
@@ -30,6 +30,7 @@ fn request(
         agents,
         seed,
         round_limit: None,
+        scheduler: SchedulerModel::Synchronous,
     }
 }
 
@@ -156,9 +157,10 @@ fn the_default_limit_is_unchanged_for_the_other_algorithms() {
         Algorithm::P1Tree,
         Algorithm::RootedDisp,
     ] {
-        assert_eq!(default_round_limit(algorithm, 9), 360, "{algorithm:?}");
+        assert_eq!(default_round_limit(algorithm, 9), 400, "{algorithm:?}");
     }
-    assert!(default_round_limit(Algorithm::GeneralDisp, 9) > 360);
+    assert_eq!(default_round_limit(Algorithm::RootedAsync, 9), 1_000);
+    assert!(default_round_limit(Algorithm::GeneralDisp, 9) > 1_000);
 }
 
 #[test]

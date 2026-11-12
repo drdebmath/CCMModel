@@ -127,7 +127,7 @@ fn read_config(document: &Document) -> SweepConfig {
     let agent_from = number(document, "agentFrom", 2, 1, nodes);
     let agent_to = number(document, "agentTo", nodes, agent_from, nodes);
     SweepConfig {
-        algorithm: select_value(document, "algorithm"),
+        algorithm: crate::effective_algorithm(document),
         families: FAMILIES
             .iter()
             .enumerate()
@@ -218,11 +218,7 @@ fn run_sweep(state: &Rc<RefCell<DashState>>) {
         app.hover = None;
     }
     set_busy(state, true);
-    say(
-        &document,
-        &format!("Running {total} simulations in the worker…"),
-        "busy",
-    );
+    say(&document, &format!("Running {total} simulations…"), "busy");
     set_text(&document, "runTitle", "Sweeping…");
 
     create_worker(state);
@@ -242,7 +238,7 @@ fn create_worker(state: &Rc<RefCell<DashState>>) {
     let url = format!("./worker.js?session={:.0}", js_sys::Date::now());
     let Ok(worker) = Worker::new(&url) else {
         let document = state.borrow().document.clone();
-        say(&document, "Could not start the worker.", "error");
+        say(&document, "Could not start the simulator.", "error");
         set_busy(state, false);
         return;
     };
@@ -279,13 +275,13 @@ fn create_worker(state: &Rc<RefCell<DashState>>) {
                 let message = Reflect::get(&data, &"message".into())
                     .ok()
                     .and_then(|v| v.as_string())
-                    .unwrap_or_else(|| "Worker error".into());
+                    .unwrap_or_else(|| "The simulator stopped unexpectedly.".into());
                 say(&document, &message, "error");
                 set_class(&document, "engineState", "engine-state error");
                 set_busy(&handler_state, false);
             }
             "ready" => {
-                set_text(&document, "engineState", "WASM ready");
+                set_text(&document, "engineState", "Ready");
                 set_class(&document, "engineState", "engine-state ready");
             }
             _ => {}
@@ -300,7 +296,7 @@ fn create_worker(state: &Rc<RefCell<DashState>>) {
 fn accept_results(state: &Rc<RefCell<DashState>>, rows: &JsValue) {
     let document = state.borrow().document.clone();
     let Ok(array) = rows.clone().dyn_into::<Array>() else {
-        say(&document, "The worker returned no results.", "error");
+        say(&document, "No results came back. Try again.", "error");
         set_busy(state, false);
         return;
     };
@@ -839,13 +835,20 @@ pub fn start_dashboard() -> Result<(), JsValue> {
     {
         let family: web_sys::HtmlSelectElement = element(&document, "algorithm");
         let document = document.clone();
+        let schedule: web_sys::HtmlSelectElement = element(&document, "schedule");
         let closure = Closure::<dyn FnMut()>::new(move || {
-            let algorithm = select_value(&document, "algorithm");
+            crate::sync_schedule_menu(&document);
+            let algorithm = crate::effective_algorithm(&document);
             set_text(
                 &document,
                 "algorithmNote",
-                if algorithm == "p1tree" {
-                    "P1Tree requires a rooted start; every sweep places all agents at node 0."
+                if algorithm == "rooted_async_random" {
+                    "RootedAsync needs a rooted start, so every sweep places all agents at node \
+                     0. Under the asynchronous schedule the cost is counted in epochs, which are \
+                     not comparable with other algorithms' rounds."
+                } else if algorithm == "p1tree" || algorithm == "rooted_async" {
+                    "This algorithm requires a rooted start; every sweep places all agents at \
+                     node 0."
                 } else if algorithm == "rooted" {
                     "RootedDisp requires a rooted start; every sweep places all agents at node 0."
                 } else {
@@ -854,6 +857,8 @@ pub fn start_dashboard() -> Result<(), JsValue> {
             );
         });
         let _ = family.add_event_listener_with_callback("change", closure.as_ref().unchecked_ref());
+        let _ =
+            schedule.add_event_listener_with_callback("change", closure.as_ref().unchecked_ref());
         closure.forget();
     }
     {

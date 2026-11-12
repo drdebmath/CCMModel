@@ -1172,6 +1172,7 @@ impl<'g, M: Metrics, R: Recorder> Simulation<'g, M, R> {
             settled_agents: (0..self.graph.node_count())
                 .map(|n| self.store.settled_agent_at(node_id(n)))
                 .collect(),
+            transit_from: Vec::new(),
         };
         self.recorder.record_checkpoint(checkpoint);
     }

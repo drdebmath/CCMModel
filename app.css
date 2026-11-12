@@ -1804,6 +1804,48 @@ html[data-theme="light"] {
   background: var(--danger);
 }
 
+.dot.home {
+  background: transparent;
+  border: 1.5px dashed var(--warn);
+}
+
+.dot.probing {
+  background: transparent;
+  border: 2px solid #7c8cff;
+}
+
+.probe-info {
+  flex: 1 1 100%;
+  color: var(--muted);
+  font-size: 12px;
+  min-height: 1em;
+}
+
+.compare {
+  display: grid;
+  gap: 6px;
+}
+
+.compare .hint,
+#placementNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 3px 4px;
+  text-align: left;
+  border-bottom: 1px solid rgba(127, 127, 127, .25);
+}
+
 .legend-tip {
   font-style: italic;
   opacity: .85;

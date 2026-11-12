@@ -27,7 +27,14 @@ pub enum AlgorithmSelector {
     DropAndFreeze = 1,
     P1Tree = 2,
     RootedDisp = 3,
-    GeneralDisp = 4,
+    /// `RootedAsync` under the synchronous scheduler: one cycle per agent per
+    /// round.
+    RootedAsync = 4,
+    /// `RootedAsync` under the paper's asynchronous schedule, seeded by
+    /// [`WasmSimulation::set_schedule_seed`]. Time is counted in epochs.
+    RootedAsyncRandom = 5,
+    /// `GeneralDisp`: agents may start on any nodes.
+    GeneralDisp = 6,
 }
 
 /// Trace policy. `Bounded` uses the supplied record and sampling limits.
@@ -46,6 +53,7 @@ enum AdapterError {
     Help(String),
     Drop(String),
     P1Tree(String),
+    RootedAsync(String),
     RootedDisp(String),
     GeneralDisp(String),
     Trace(String),
@@ -59,6 +67,7 @@ impl fmt::Display for AdapterError {
             | Self::Help(message)
             | Self::Drop(message)
             | Self::P1Tree(message)
+            | Self::RootedAsync(message)
             | Self::RootedDisp(message)
             | Self::GeneralDisp(message)
             | Self::Trace(message) => f.write_str(message),
@@ -78,6 +87,8 @@ pub struct WasmSimulation {
     max_trace_records: usize,
     sample_every: u64,
     cancelled: bool,
+    /// Seeds the random order of [`AlgorithmSelector::RootedAsyncRandom`].
+    schedule_seed: u64,
 }
 
 #[wasm_bindgen]
@@ -153,6 +164,12 @@ impl WasmSimulation {
         self.cancelled = true;
     }
 
+    /// Seeds the random activation order used by
+    /// [`AlgorithmSelector::RootedAsyncRandom`]; other algorithms ignore it.
+    pub fn set_schedule_seed(&mut self, seed: u64) {
+        self.schedule_seed = seed;
+    }
+
     pub fn clear_cancelled(&mut self) {
         self.cancelled = false;
     }
@@ -215,6 +232,7 @@ impl WasmSimulation {
             max_trace_records: max_trace_records as usize,
             sample_every: sample_every as u64,
             cancelled: false,
+            schedule_seed: 0,
         })
     }
 
@@ -239,6 +257,85 @@ impl WasmSimulation {
             AlgorithmSelector::P1Tree => self.run_p1tree(),
             AlgorithmSelector::RootedDisp => self.run_rooted_disp(),
             AlgorithmSelector::GeneralDisp => self.run_general_disp(),
+            AlgorithmSelector::RootedAsync | AlgorithmSelector::RootedAsyncRandom => {
+                self.run_rooted_async()
+            }
+        }
+    }
+
+    fn run_rooted_async(&self) -> Result<SimulationOutput, AdapterError> {
+        use ccm_algorithms::rooted_async::{simulate, Schedule};
+        // The page's asynchronous schedule is the paper's ASYNC in full: a
+        // random order in which each cycle's look and write are separate
+        // steps, so other agents act in between.
+        let schedule = if self.algorithm == AlgorithmSelector::RootedAsyncRandom {
+            Schedule::Interleaved {
+                seed: self.schedule_seed,
+            }
+        } else {
+            Schedule::Synchronous
+        };
+        let error = |e: ccm_algorithms::rooted_async::RootedAsyncError| {
+            AdapterError::RootedAsync(e.to_string())
+        };
+        let (graph, starts, limit) = (&self.graph, &self.starts, self.round_limit);
+        match self.trace_mode {
+            TraceMode::Off => {
+                let (result, metrics, _) = simulate(
+                    graph,
+                    starts,
+                    schedule,
+                    limit,
+                    ComplexityMetrics::default(),
+                    NoTrace,
+                )
+                .map_err(error)?;
+                Ok(output_from_rooted_async(
+                    self.algorithm,
+                    result,
+                    metrics,
+                    None,
+                ))
+            }
+            TraceMode::Full => {
+                let (result, metrics, recorder) = simulate(
+                    graph,
+                    starts,
+                    schedule,
+                    limit,
+                    ComplexityMetrics::default(),
+                    FullTrace::new(),
+                )
+                .map_err(error)?;
+                let trace = encode_trace(&recorder.into_trace(), false);
+                Ok(output_from_rooted_async(
+                    self.algorithm,
+                    result,
+                    metrics,
+                    Some(trace),
+                ))
+            }
+            TraceMode::Bounded => {
+                let recorder = BoundedTrace::new(self.trace_budget())
+                    .map_err(|e| AdapterError::Trace(e.to_string()))?;
+                let (result, metrics, recorder) = simulate(
+                    graph,
+                    starts,
+                    schedule,
+                    limit,
+                    ComplexityMetrics::default(),
+                    recorder,
+                )
+                .map_err(error)?;
+                let truncated = trace_was_truncated(&recorder);
+                let trace = encode_trace(&recorder.into_trace(), truncated);
+                Ok(output_from_rooted_async(
+                    self.algorithm,
+                    result,
+                    metrics,
+                    Some(trace),
+                ))
+            }
         }
     }
 
@@ -982,6 +1079,47 @@ fn general_event_fields(
     }
 }
 
+/// `RootedAsync`'s final state. Its round counter holds epochs under the
+/// asynchronous schedule; the page labels it accordingly.
+fn output_from_rooted_async(
+    algorithm: AlgorithmSelector,
+    result: ccm_algorithms::rooted_async::RootedAsyncResult,
+    metrics: ComplexityMetrics,
+    trace: Option<RenderPayload>,
+) -> SimulationOutput {
+    use ccm_algorithms::rooted_async::AgentState;
+    SimulationOutput {
+        algorithm,
+        termination_code: termination_code(&result.termination),
+        positions: result
+            .agents
+            .iter()
+            .map(|agent| agent.position.node().0)
+            .collect(),
+        statuses: result
+            .agents
+            .iter()
+            .map(|agent| match agent.memory.state {
+                AgentState::Settled => 0,
+                AgentState::Unsettled => 1,
+                // The renderer's third status is "settled but away", which is
+                // what a travelling scout is.
+                AgentState::SettledScout => 2,
+            })
+            .collect(),
+        homes: result
+            .agents
+            .iter()
+            .map(|agent| agent.home.map_or(-1, |node| node.0 as i32))
+            .collect(),
+        rounds: metrics.rounds,
+        moves: metrics.agent_moves,
+        probes: metrics.port_probes,
+        trace: trace.unwrap_or_else(empty_payload),
+        groups: Vec::new(),
+    }
+}
+
 fn empty_payload() -> RenderPayload {
     RenderPayload {
         bytes: Vec::new(),
@@ -1121,11 +1259,27 @@ fn encode_event(bytes: &mut Vec<u8>, step: u64, event: &SimulationEvent) {
             put_u32(bytes, node.0);
             bytes.push(u8::from(*occupied));
         }
+        SimulationEvent::ProbeConcluded {
+            head,
+            port,
+            rule,
+            owner,
+        } => {
+            bytes.push(7);
+            put_u32(bytes, head.0);
+            put_u16(bytes, port.0);
+            bytes.push(*rule);
+            put_optional_u32(bytes, owner.map(|agent| agent.0));
+        }
     }
 }
 
+/// Record type 3 is a checkpoint. Type 4 is the same followed by, for each
+/// agent, the node it left if it is on an edge: only `RootedAsync` writes it,
+/// so every other algorithm's stream is unchanged.
 fn encode_checkpoint(bytes: &mut Vec<u8>, checkpoint: &Checkpoint) {
-    bytes.push(3);
+    let in_transit = checkpoint.transit_from.iter().any(Option::is_some);
+    bytes.push(if in_transit { 4 } else { 3 });
     put_u64(bytes, checkpoint.step);
     put_u32(bytes, checkpoint.agent_nodes.len() as u32);
     for (index, node) in checkpoint.agent_nodes.iter().enumerate() {
@@ -1143,6 +1297,12 @@ fn encode_checkpoint(bytes: &mut Vec<u8>, checkpoint: &Checkpoint) {
                 .get(index)
                 .and_then(|node| node.map(|value| value.0)),
         );
+    }
+    if in_transit {
+        for index in 0..checkpoint.agent_nodes.len() {
+            let from = checkpoint.transit_from.get(index).copied().flatten();
+            put_optional_u32(bytes, from.map(|node| node.0));
+        }
     }
 }
 
@@ -1244,6 +1404,31 @@ mod tests {
         assert!(help_output.trace.record_count > 0);
     }
 
+    /// The browser path for `RootedAsync`: both schedules disperse, agree on
+    /// where agents end, and give playback something to replay.
+    #[test]
+    fn rooted_async_runs_under_both_schedules() {
+        let mut outputs = Vec::new();
+        for (selector, seed) in [
+            (AlgorithmSelector::RootedAsync, 0),
+            (AlgorithmSelector::RootedAsyncRandom, 7),
+            (AlgorithmSelector::RootedAsyncRandom, 8),
+        ] {
+            let mut simulation = path_simulation(selector, TraceMode::Full, 10_000, 0);
+            simulation.set_schedule_seed(seed);
+            let output = simulation.run_internal().unwrap();
+            assert_eq!(output.termination_code, 0, "{selector:?}");
+            assert_eq!(output.algorithm, selector);
+            assert!(output.trace.record_count > 0, "{selector:?}");
+            assert_eq!(output.statuses, vec![0, 0, 0], "{selector:?}");
+            outputs.push(output.positions);
+        }
+        let mut sorted = outputs[0].clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, vec![0, 1, 2], "one agent per node");
+        assert!(outputs.iter().all(|p| *p == outputs[0]), "{outputs:?}");
+    }
+
     #[test]
     fn off_trace_has_no_render_bytes_and_bounded_trace_is_deterministic() {
         let mut off = path_simulation(AlgorithmSelector::DropAndFreeze, TraceMode::Off, 3, 0);
@@ -1282,6 +1467,7 @@ mod tests {
                 agent_statuses: Vec::new(),
                 home_nodes: Vec::new(),
                 settled_agents: Vec::new(),
+                transit_from: Vec::new(),
             }],
         };
         let payload = encode_trace(&trace, false);
