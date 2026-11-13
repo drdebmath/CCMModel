@@ -545,6 +545,11 @@ fn sync_groups_input(document: &Document) {
             .class_list()
             .toggle_with_force("hidden", placement != "groups");
     }
+    if let Some(wrap) = document.get_element_by_id("startNodesWrap") {
+        let _ = wrap
+            .class_list()
+            .toggle_with_force("hidden", placement != "uniform");
+    }
     if let Some(hint) = document.get_element_by_id("clickHint") {
         let _ = hint
             .class_list()
@@ -564,7 +569,7 @@ fn sync_placement(document: &Document, rooted_only: bool) {
     if rooted_only {
         placement.set_value("rooted");
     }
-    for value in ["groups", "click"] {
+    for value in ["groups", "uniform", "click"] {
         if let Ok(Some(option)) = placement.query_selector(&format!("option[value={value}]")) {
             let _ = if rooted_only {
                 option.set_attribute("disabled", "")
@@ -2647,6 +2652,15 @@ fn prepare(state: &Rc<RefCell<AppState>>, rooted: bool) -> Option<(Config, Graph
         );
     }
     let (graph, mut starts) = prepared_input(&config);
+    if config.placement == "uniform" {
+        let distinct = number(&document, "startNodes", 3, 1, config.node_count);
+        starts = general::uniform_starts(
+            config.node_count,
+            config.agent_count,
+            distinct,
+            u64::from(config.seed),
+        );
+    }
     if config.placement == "click" {
         let picked: Vec<u32> = state
             .borrow()

@@ -17,8 +17,9 @@ the paper, not from earlier code in this repository.
 > transitions and merges.
 >
 > In the browser:
-> - **Simulator:** choose GeneralDisp, then "Seeded groups" or "Click on graph",
->   or the Two groups and Three groups presets. Agents are coloured by role with
+> - **Simulator:** choose GeneralDisp, then "Seeded groups", "Seeded start
+>   nodes" (the same starts as `ccm run --placement uniform:K` with that seed)
+>   or "Click on graph", or the Two groups and Three groups presets. Agents are coloured by role with
 >   a ring for their group, and the line under the playback bar gives the slot,
 >   the unit and the merges of each step. "Skip still steps", on by default,
 >   plays only the steps in which an agent moves or a group changes, and the

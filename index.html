@@ -44,10 +44,11 @@
         </section>
 
         <section class="control-section"><h2><span class="step" aria-hidden="true">3</span>Agents</h2>
-          <label>Initial placement<select id="placement"><option value="rooted">Rooted at node 0</option><option value="groups">Seeded groups</option><option value="click">Click on graph</option></select></label>
+          <label>Initial placement<select id="placement"><option value="rooted">Rooted at node 0</option><option value="groups">Seeded groups</option><option value="uniform">Seeded start nodes (CLI uniform:K)</option><option value="click">Click on graph</option></select></label>
           <p id="placementNote" class="hint hidden">Help by Scouts, P1Tree, RootedDisp and RootedAsync start every agent at node 0; only Drop and Freeze and GeneralDisp take scattered starts.</p>
           <div class="two-col"><label>Agents<input id="agents" type="number" min="1" max="10000" value="5" inputmode="numeric"></label><label>Seed<input id="seed" type="number" min="0" max="4294967295" value="42" inputmode="numeric"></label></div>
           <label id="groupsWrap" class="hidden">Groups<input id="groups" type="number" min="1" max="10000" value="3" inputmode="numeric" title="Agents are dealt round-robin onto this many seeded nodes"></label>
+          <label id="startNodesWrap" class="hidden" title="Each agent starts on one of this many seeded nodes, as ccm run --placement uniform:K with the same seed">Start nodes<input id="startNodes" type="number" min="1" max="10000" value="3" inputmode="numeric"></label>
           <p id="clickHint" class="help-note hidden">Click a node on the graph to add an agent, shift-click to remove one.</p>
         </section>
 

@@ -165,9 +165,56 @@ pub fn round_limit(agents: usize) -> u64 {
     480 * k * log * log
 }
 
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut value = self.0;
+        value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        value ^ (value >> 31)
+    }
+
+    fn index(&mut self, upper: usize) -> usize {
+        let upper = upper as u64;
+        let threshold = upper.wrapping_neg() % upper;
+        loop {
+            let value = self.next();
+            if value >= threshold {
+                return (value % upper) as usize;
+            }
+        }
+    }
+}
+
+/// The CLI's `--placement uniform:distinct --seed seed` starts.
+pub fn uniform_starts(nodes: usize, agents: usize, distinct: usize, seed: u64) -> Vec<u32> {
+    let mut rng = Rng(seed);
+    let mut candidates: Vec<u32> = (0..nodes as u32).collect();
+    for end in (1..candidates.len()).rev() {
+        let selected = rng.index(end + 1);
+        candidates.swap(end, selected);
+    }
+    candidates.truncate(distinct.clamp(1, nodes.max(1)));
+    (0..agents)
+        .map(|_| candidates[rng.index(candidates.len())])
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn uniform_starts_match_the_cli() {
+        assert_eq!(uniform_starts(12, 8, 3, 1), vec![6, 7, 6, 6, 7, 4, 7, 7]);
+        assert_eq!(uniform_starts(9, 9, 9, 42), vec![4, 8, 1, 3, 6, 4, 1, 8, 6]);
+        assert_eq!(
+            uniform_starts(30, 10, 2, 123_456_789),
+            vec![14, 14, 14, 25, 14, 14, 25, 25, 14, 14]
+        );
+    }
 
     #[test]
     fn a_stream_decodes_and_replays_roles() {
