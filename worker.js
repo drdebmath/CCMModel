@@ -42,6 +42,7 @@ function algorithmSelector(name) {
     case 'help': return wasm.AlgorithmSelector.HelpByScouts;
     case 'p1tree': return wasm.AlgorithmSelector.P1Tree;
     case 'rooted': return wasm.AlgorithmSelector.RootedDisp;
+    case 'general': return wasm.AlgorithmSelector.GeneralDisp;
     case 'rooted_async': return wasm.AlgorithmSelector.RootedAsync;
     case 'rooted_async_random': return wasm.AlgorithmSelector.RootedAsyncRandom;
     default: return wasm.AlgorithmSelector.DropAndFreeze;
@@ -148,6 +149,7 @@ function runOne(name, data) {
       renderRecordCount: output.render_record_count(),
       renderTruncated: output.render_truncated(),
       renderBytes: output.render_bytes(),
+      groupBytes: output.group_bytes(),
     };
     output.free();
     return result;
@@ -157,5 +159,5 @@ function runOne(name, data) {
 }
 
 function transferables(result) {
-  return [result.positions.buffer, result.statuses.buffer, result.homes.buffer, result.renderBytes.buffer];
+  return [result.positions.buffer, result.statuses.buffer, result.homes.buffer, result.renderBytes.buffer, result.groupBytes.buffer];
 }

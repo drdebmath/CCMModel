@@ -1,5 +1,7 @@
 //! Golden-file check: a fixed sweep over every algorithm must reproduce
-//! `tests/golden/sweep.csv` byte for byte.
+//! `tests/golden/sweep.csv` byte for byte. Rooted runs of every algorithm
+//! come first, then a multi-start comparison of the algorithms defined for
+//! scattered starts on identical inputs.
 //!
 //! A refactor passes only if it changes no result and no metric. A change that
 //! is meant to alter behaviour regenerates the file in the same commit, with
@@ -15,14 +17,18 @@ use std::path::PathBuf;
 
 /// Every algorithm under the synchronous scheduler, and `RootedAsync` also
 /// under a random one, so its asynchronous behaviour is pinned too.
-const RUNS: [(Algorithm, SchedulerModel); 6] = [
+const RUNS: [(Algorithm, SchedulerModel); 7] = [
     (Algorithm::DropAndFreeze, SchedulerModel::Synchronous),
     (Algorithm::HelpByScouts, SchedulerModel::Synchronous),
     (Algorithm::P1Tree, SchedulerModel::Synchronous),
     (Algorithm::RootedAsync, SchedulerModel::Synchronous),
     (Algorithm::RootedAsync, SchedulerModel::Asynchronous),
     (Algorithm::RootedDisp, SchedulerModel::Synchronous),
+    (Algorithm::GeneralDisp, SchedulerModel::Synchronous),
 ];
+
+/// Algorithms the runner accepts with agents on several nodes.
+const MULTI_START: [Algorithm; 2] = [Algorithm::DropAndFreeze, Algorithm::GeneralDisp];
 
 const FAMILIES: [GraphFamily; 8] = [
     GraphFamily::Path,
@@ -65,6 +71,40 @@ fn sweep_csv() -> String {
                     // The build commit is not a simulation result.
                     result.git_commit = "unknown";
                     results.push(result);
+                }
+            }
+        }
+    }
+    // Multi-start comparison: the same graphs, seeds and starts for each.
+    let placements = [
+        PlacementSpec::UniformRandom { distinct_nodes: 3 },
+        PlacementSpec::Clustered {
+            centers: vec![NodeId(0), NodeId(7)],
+        },
+    ];
+    for algorithm in MULTI_START {
+        for family in FAMILIES {
+            for port_assignment in PORTS {
+                for placement in &placements {
+                    let base = RunRequest {
+                        algorithm,
+                        graph: GraphSpec::new(family.clone(), 12),
+                        port_assignment,
+                        placement: placement.clone(),
+                        agents: 6,
+                        seed: 1,
+                        round_limit: None,
+                        scheduler: SchedulerModel::Synchronous,
+                    };
+                    let spec = SweepSpec::new(base)
+                        .with_node_counts(vec![12, 40])
+                        .with_agent_counts(vec![6, 12])
+                        .with_seeds(vec![1, 2, 3]);
+                    for result in run_sweep_parallel(&BuiltinRunner, &spec, 4) {
+                        let mut result = result.expect("every golden configuration runs");
+                        result.git_commit = "unknown";
+                        results.push(result);
+                    }
                 }
             }
         }

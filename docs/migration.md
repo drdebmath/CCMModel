@@ -49,6 +49,17 @@ one Rust simulation core shared by native and browser consumers.
   registered it with the CLI, the experiment runner, the golden sweep and the
   browser, which also gained per-step phase notes and an algorithm-comparison
   preset on identical rooted input.
+- Added GeneralDisp, the general HEO-DFS of Sudo et al. (Section 4,
+  Algorithms 2–5), written from the paper on `AgentStore` and
+  `apply_move_intents`. Registered it with:
+  - the CLI, including a `transitions` command for role changes and merges;
+  - the experiment runner, which now refuses rooted-only algorithms on
+    scattered placements with `RequiresRootedStart`;
+  - the golden sweep, the Wasm adapter, the simulator and the dashboard.
+
+  Existing golden rows are unchanged.
+- Playback glides each agent from its old node to its new one over
+  `min(260, speed × 0.8)` ms instead of jumping, for every algorithm.
 
 ## Compatibility decisions
 

@@ -1506,4 +1506,212 @@ pub static CHARTS: &[Chart] = &[
             aside("pass", "commit", Some("each step")),
         ],
     },
+    // ----------------------------------------------------------- GeneralDisp
+    Chart {
+        id: "generaldisp",
+        title: "GeneralDisp",
+        short: "The general HEO-DFS: groups, zombies and twelve-slot units",
+        crate_name: "ccm-algorithms",
+        source: "crates/ccm-algorithms/src/general_disp.rs",
+        intro: &[
+            "`GeneralDisp` from the same paper, Section 4 and Algorithms 2–5: the general \
+             HEO-DFS with the Zombie method. Agents may start on any nodes. Every group of \
+             co-located agents, labelled `(level, leader)`, runs its own HEO-DFS. When two groups \
+             meet, the weaker leader becomes a **zombie** that chases the stronger group until \
+             that group's leader settles it. [general-disp.md](general-disp.md) has the slot \
+             table, the decisions taken where the pseudocode leaves a choice, and two hand \
+             traces.",
+            "Time runs in units of twelve slots. Each slot is one step, committed through \
+             `apply_move_intents` even when nobody moves. One probing pass fits in a unit: \
+             recruited settlers walk over through `help`, everyone at the node except its \
+             settler probes one port, and the probers double each pass.",
+        ],
+        notes: &[
+            "Any placement: no start is refused. A probe counts a node as visited only if its \
+             settler belongs to the probing leader's own group.",
+            "Termination is detected by the simulator, not the agents: the run ends at the \
+             first legitimate configuration, as the paper allows in this setting \
+             (general-disp.md, decision 6).",
+            "Round limit: checked before every step; the runner's default for GeneralDisp is \
+             480·k·(⌈log₂ k⌉ + 1)².",
+        ],
+        lanes: Lanes::Rows(&[
+            ("Start", 0.0, 1.0),
+            ("Meet and settle", 2.0, 3.0),
+            ("Probe", 4.0, 9.0),
+            ("Chase", 10.0, 10.0),
+            ("Move", 11.0, 12.0),
+        ]),
+        nodes: &[
+            node(
+                "start",
+                "Run GeneralDisp",
+                "simulate()",
+                (0.0, 0.0),
+                Entry,
+                Some("simulate"),
+                "Checks the input (a non-empty graph, no more agents than nodes, every start \
+                 inside the graph) and builds the agent store. Any placement is allowed.",
+            ),
+            node(
+                "legit",
+                "Legitimate configuration?",
+                "legitimate()",
+                (0.0, 1.0),
+                Decision,
+                Some("legitimate"),
+                "Checked before every step: every agent on its own node, no zombie, every \
+                 settler home and not asked to help, and no prober out. From there no agent \
+                 moves again.",
+            ),
+            node(
+                "done",
+                "Completed",
+                "Termination::Completed",
+                (-1.5, 1.0),
+                Terminal,
+                None,
+                "The simulator detects the legitimate configuration; the agents themselves do \
+                 not.",
+            ),
+            node(
+                "s1",
+                "Weaker leaders become zombies",
+                "slot 1 · slot1_election()",
+                (0.0, 2.0),
+                Step,
+                Some("slot1_election"),
+                "Each leader compares its group (level, leader) with the strongest leader or \
+                 settler on its node; a beaten leader becomes a zombie of the stronger group.",
+            ),
+            node(
+                "s2",
+                "Settle, take over, level up",
+                "slot 2 · slot2_settle()",
+                (0.0, 3.0),
+                Step,
+                Some("slot2_settle"),
+                "A leader with company settles its smallest zombie on an unsettled node, or \
+                 takes over a weaker group's settler. Meeting a zombie of its own level raises \
+                 its level. Then it starts or continues a probe.",
+            ),
+            node(
+                "s3",
+                "Helpers walk over",
+                "slot 3 · slot3_helpers_go()",
+                (0.0, 4.0),
+                Step,
+                Some("slot3_helpers_go"),
+                "Settlers recruited in the last pass walk from home to the probing leader's \
+                 node through their help port.",
+            ),
+            node(
+                "s4",
+                "Check the helpers",
+                "slot 4 · slot4_check()",
+                (0.0, 5.0),
+                Step,
+                Some("slot4_check"),
+                "A recruited helper that did not arrive marks its port as leading out of the \
+                 territory; helpers of a weaker group go home for good; the probe ends if a \
+                 port was found or every port is checked.",
+            ),
+            node(
+                "s5",
+                "Finish a probe",
+                "slot 5 · slot5_finish()",
+                (0.0, 6.0),
+                Step,
+                Some("slot5_finish"),
+                "A finished probe sends its helpers home and marks the settler done.",
+            ),
+            node(
+                "s6",
+                "Probers go out",
+                "slot 6 · slot6_probe_out()",
+                (0.0, 7.0),
+                Step,
+                Some("slot6_probe_out"),
+                "Everyone at the node except its settler takes one unchecked port: the leader, \
+                 its zombies and the helpers, so the probers double each pass.",
+            ),
+            node(
+                "commit",
+                "Commit one step",
+                "commit()",
+                (-1.5, 7.0),
+                Aside,
+                Some("commit"),
+                "Every slot's moves are validated and applied together; a slot in which nobody \
+                 moves is still one step.",
+            ),
+            node(
+                "s7",
+                "Probers come back",
+                "slot 7 · slot7_probe_back()",
+                (0.0, 8.0),
+                Step,
+                Some("slot7_probe_back"),
+                "Each prober returns. One that found a settler of the leader's own group \
+                 recruits it as a helper; another group's settler counts as unvisited.",
+            ),
+            node(
+                "s8",
+                "Tally the pass",
+                "slot 8 · slot8_tally()",
+                (0.0, 9.0),
+                Step,
+                Some("slot8_tally"),
+                "The smallest port whose prober found no same-group settler becomes next; \
+                 checked advances; helpers walk home.",
+            ),
+            node(
+                "chase",
+                "Zombies chase",
+                "slots 9–10 · chase()",
+                (0.0, 10.0),
+                Step,
+                Some("chase"),
+                "Zombies away from a leader follow their settler's next port: weak zombies in \
+                 both slots, strong ones only in slot 10.",
+            ),
+            node(
+                "s11",
+                "Move forward or back",
+                "slot 11 · slot11_move()",
+                (0.0, 11.0),
+                Step,
+                Some("slot11_move"),
+                "When the probe is done, the leader and its zombies move through next, or back \
+                 to the parent if no port was found.",
+            ),
+            node(
+                "s12",
+                "Remember the way back",
+                "slot 12 · slot12_parent()",
+                (0.0, 12.0),
+                Step,
+                Some("slot12_parent"),
+                "Leaders that moved record their incoming port as the parent and start a fresh \
+                 probe.",
+            ),
+        ],
+        edges: &[
+            e("start", "legit", None, Auto),
+            e("legit", "done", Some("yes"), Auto),
+            e("legit", "s1", Some("no"), Auto),
+            e("s1", "s2", None, Auto),
+            e("s2", "s3", None, Auto),
+            e("s3", "s4", None, Auto),
+            e("s4", "s5", None, Auto),
+            e("s5", "s6", None, Auto),
+            e("s6", "s7", None, Auto),
+            e("s7", "s8", None, Auto),
+            e("s8", "chase", None, Auto),
+            e("chase", "s11", None, Auto),
+            e("s11", "s12", None, Auto),
+            e("s12", "legit", Some("next step"), Outer(2)),
+            aside("s6", "commit", Some("each slot")),
+        ],
+    },
 ];

@@ -6,6 +6,7 @@
 
 mod dashboard;
 mod docs;
+mod general;
 
 use js_sys::{Array, Int32Array, Object, Reflect, Uint32Array, Uint8Array};
 use serde::{Deserialize, Serialize};
@@ -153,6 +154,8 @@ pub struct ResultData {
     pub render_truncated: bool,
     #[serde(rename = "renderBytes", default, skip_serializing)]
     pub render_bytes: Vec<u8>,
+    #[serde(rename = "groupBytes", default, skip_serializing)]
+    pub group_bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -205,6 +208,8 @@ struct AppState {
     config: Option<Config>,
     result: Option<ResultData>,
     frames: Vec<Frame>,
+    /// GeneralDisp roles, groups and merge events of the loaded result.
+    groups: Option<general::Groups>,
     /// One line per frame from [`frame_notes`], shown under the playback bar.
     notes: Vec<String>,
     /// The last comparison's rows, and which of them is loaded for playback.
@@ -212,12 +217,66 @@ struct AppState {
     compare_selected: Option<usize>,
     frame: usize,
     timer: Option<i32>,
+    /// The move being animated from frame `from` to the current frame.
+    glide: Option<Glide>,
     layout: Vec<(f64, f64)>,
     /// CSS size the cached layout was computed for, so a resize event that does
     /// not actually change the box does not rebuild it.
     layout_size: (f64, f64),
     /// The seed of the schedule comparison in flight, if one is.
     compare_seed: Option<u32>,
+}
+
+/// Agents gliding from where they were in frame `from` to the current frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Glide {
+    from: usize,
+    /// `Date.now()` when it started; also tells one glide from the next.
+    started: f64,
+    duration: f64,
+}
+
+/// How far a glide has got at `now`, from 0 to 1.
+fn glide_progress(glide: &Glide, now: f64) -> f64 {
+    if glide.duration <= 0.0 {
+        return 1.0;
+    }
+    ((now - glide.started) / glide.duration).clamp(0.0, 1.0)
+}
+
+/// Slow at both ends, so a move starts and settles gently.
+fn ease(t: f64) -> f64 {
+    if t < 0.5 {
+        2.0 * t * t
+    } else {
+        1.0 - (-2.0 * t + 2.0).powi(2) / 2.0
+    }
+}
+
+/// Where each agent is drawn: on a ring around its node.
+fn ring_positions(
+    by_node: &[Vec<usize>],
+    points: &[(f64, f64)],
+    radius: f64,
+    agents: usize,
+) -> Vec<Option<(f64, f64)>> {
+    let mut out = vec![None; agents];
+    for (node, bucket) in by_node.iter().enumerate() {
+        let Some(point) = points.get(node) else {
+            continue;
+        };
+        let distance = radius + 5.0 + bucket.len().min(10) as f64;
+        for (index, &agent) in bucket.iter().enumerate() {
+            let angle = index as f64 * std::f64::consts::TAU / bucket.len().max(1) as f64;
+            if let Some(slot) = out.get_mut(agent) {
+                *slot = Some((
+                    point.0 + angle.cos() * distance,
+                    point.1 + angle.sin() * distance,
+                ));
+            }
+        }
+    }
+    out
 }
 
 fn element<T: JsCast>(document: &Document, id: &str) -> T {
@@ -440,6 +499,7 @@ fn algorithm_label(value: &str) -> &'static str {
         "help" => "Help by Scouts",
         "p1tree" => "P1Tree",
         "rooted" => "RootedDisp",
+        "general" => "GeneralDisp",
         "rooted_async" => "RootedAsync (synchronous)",
         "rooted_async_random" => "RootedAsync (asynchronous)",
         _ => "Drop and Freeze",
@@ -476,11 +536,24 @@ fn needs_rooted_start(algorithm: &str) -> bool {
     matches!(algorithm, "help" | "p1tree" | "rooted" | "rooted_async")
 }
 
-/// Shows the Groups count only for the grouped placement.
+/// Shows the Groups count only for the grouped placement, and the click hint
+/// only for placement by clicking.
 fn sync_groups_input(document: &Document) {
+    let placement = select_value(document, "placement");
     if let Some(wrap) = document.get_element_by_id("groupsWrap") {
-        let hidden = select_value(document, "placement") != "groups";
-        let _ = wrap.class_list().toggle_with_force("hidden", hidden);
+        let _ = wrap
+            .class_list()
+            .toggle_with_force("hidden", placement != "groups");
+    }
+    if let Some(wrap) = document.get_element_by_id("startNodesWrap") {
+        let _ = wrap
+            .class_list()
+            .toggle_with_force("hidden", placement != "uniform");
+    }
+    if let Some(hint) = document.get_element_by_id("clickHint") {
+        let _ = hint
+            .class_list()
+            .toggle_with_force("hidden", placement != "click");
     }
 }
 
@@ -496,12 +569,14 @@ fn sync_placement(document: &Document, rooted_only: bool) {
     if rooted_only {
         placement.set_value("rooted");
     }
-    if let Ok(Some(groups)) = placement.query_selector("option[value=groups]") {
-        let _ = if rooted_only {
-            groups.set_attribute("disabled", "")
-        } else {
-            groups.remove_attribute("disabled")
-        };
+    for value in ["groups", "uniform", "click"] {
+        if let Ok(Some(option)) = placement.query_selector(&format!("option[value={value}]")) {
+            let _ = if rooted_only {
+                option.set_attribute("disabled", "")
+            } else {
+                option.remove_attribute("disabled")
+            };
+        }
     }
     sync_groups_input(document);
     if let Some(note) = document.get_element_by_id("placementNote") {
@@ -1032,7 +1107,122 @@ fn refresh_notes(app: &mut AppState) {
         .config
         .as_ref()
         .map_or("", |config| config.algorithm.as_str());
-    app.notes = frame_notes(&app.frames, algorithm);
+    app.notes = match &app.groups {
+        Some(groups) if algorithm == "general" => general::notes(&app.frames, groups),
+        _ => frame_notes(&app.frames, algorithm),
+    };
+    set_legend(
+        &app.document,
+        app.groups.is_some() && algorithm == "general",
+    );
+}
+
+fn set_legend(document: &Document, general: bool) {
+    let _ = element::<Element>(document, "statusLegend")
+        .class_list()
+        .toggle_with_force("hidden", general);
+    let _ = element::<Element>(document, "generalLegend")
+        .class_list()
+        .toggle_with_force("hidden", !general);
+}
+
+/// Shows the graph from the controls with the clicked starts, before a run.
+fn preview(state: &Rc<RefCell<AppState>>) {
+    let document = state.borrow().document.clone();
+    if state.borrow().busy || select_value(&document, "placement") != "click" {
+        return;
+    }
+    let config = read_config(&document);
+    let graph = make_graph_full(
+        &config.family,
+        config.node_count,
+        config.grid_columns,
+        config.tree_branching,
+        config.seed,
+    );
+    {
+        let mut app = state.borrow_mut();
+        let nodes = graph.node_count;
+        app.starts.retain(|node| (*node as usize) < nodes);
+        let starts = app.starts.clone();
+        element::<HtmlInputElement>(&document, "agents")
+            .set_value(&starts.len().max(1).to_string());
+        app.frames = vec![initial_frame(&starts)];
+        app.frame = 0;
+        app.notes = vec![format!(
+            "{} agents placed · click a node to add one, shift-click to remove one",
+            starts.len()
+        )];
+        app.graph = Some(graph);
+        app.config = Some(config);
+        app.result = None;
+        app.groups = None;
+        app.layout.clear();
+        app.layout_size = (0.0, 0.0);
+        let _ = element::<Element>(&document, "emptyState")
+            .class_list()
+            .add_1("hidden");
+        set_disabled(&element::<HtmlElement>(&document, "export"), true);
+        set_text(&document, "runTitle", "Placing agents");
+        set_legend(&document, false);
+        set_timeline(&app);
+    }
+    resize(state);
+}
+
+fn place_click(state: &Rc<RefCell<AppState>>, event: &MouseEvent) {
+    let node = {
+        let app = state.borrow();
+        if app.busy || select_value(&app.document, "placement") != "click" {
+            return;
+        }
+        let rect = app.canvas.get_bounding_client_rect();
+        let x = f64::from(event.client_x()) - rect.left();
+        let y = f64::from(event.client_y()) - rect.top();
+        app.layout
+            .iter()
+            .enumerate()
+            .map(|(node, point)| ((point.0 - x).hypot(point.1 - y), node))
+            .filter(|(distance, _)| *distance < 14.0)
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, node)| node as u32)
+    };
+    let Some(node) = node else {
+        return;
+    };
+    {
+        let mut app = state.borrow_mut();
+        let nodes = app.graph.as_ref().map_or(0, |graph| graph.node_count);
+        if event.shift_key() {
+            if let Some(index) = app.starts.iter().rposition(|start| *start == node) {
+                app.starts.remove(index);
+            }
+        } else if app.starts.len() < nodes {
+            app.starts.push(node);
+        }
+    }
+    preview(state);
+}
+
+/// A GeneralDisp preset: the graph and starts of a tested fixture, then a run.
+fn general_preset(state: &Rc<RefCell<AppState>>, family: &str, nodes: usize, starts: &[u32]) {
+    let document = state.borrow().document.clone();
+    element::<HtmlSelectElement>(&document, "algorithm").set_value("general");
+    element::<HtmlSelectElement>(&document, "family").set_value(family);
+    element::<HtmlSelectElement>(&document, "placement").set_value("click");
+    element::<HtmlSelectElement>(&document, "traceMode").set_value("full");
+    element::<HtmlInputElement>(&document, "nodes").set_value(&nodes.to_string());
+    for id in ["gridColumnsWrap", "treeBranchingWrap", "sampleEveryWrap"] {
+        let _ = element::<Element>(&document, id)
+            .class_list()
+            .add_1("hidden");
+    }
+    let _ = element::<Element>(&document, "traceLimitWrap")
+        .class_list()
+        .remove_1("hidden");
+    sync_groups_input(&document);
+    state.borrow_mut().starts = starts.to_vec();
+    run(state);
 }
 
 fn set_timeline(app: &AppState) {
@@ -1055,11 +1245,129 @@ fn set_frame(state: &Rc<RefCell<AppState>>, index: isize) {
         return;
     }
     app.frame = index.clamp(0, app.frames.len() as isize - 1) as usize;
+    app.glide = None;
     let timeline = element::<HtmlInputElement>(&app.document, "timeline");
     timeline.set_value(&app.frame.to_string());
     update_frame_label(&app);
     drop(app);
     render(state);
+}
+
+/// Whether any agent stands somewhere else in `frame` than in `before`.
+fn moved(before: &Frame, frame: &Frame) -> bool {
+    before.positions != frame.positions || before.transit != frame.transit
+}
+
+/// Whether playback with still steps skipped shows frame `j`: it has a move,
+/// ends a run of still frames, or `marked` says something happened there.
+fn shown_when_skipping(frames: &[Frame], j: usize, marked: &dyn Fn(usize) -> bool) -> bool {
+    let last = frames.len().saturating_sub(1);
+    j == 0
+        || j >= last
+        || moved(&frames[j - 1], &frames[j])
+        || moved(&frames[j], &frames[j + 1])
+        || marked(j)
+}
+
+/// The frame after `index`. With `skip_still`, a run of frames in which
+/// nobody moves shows only as its last frame and its `marked` frames.
+fn next_frame(
+    frames: &[Frame],
+    index: usize,
+    skip_still: bool,
+    marked: &dyn Fn(usize) -> bool,
+) -> usize {
+    let mut next = (index + 1).min(frames.len().saturating_sub(1));
+    while skip_still && !shown_when_skipping(frames, next, marked) {
+        next += 1;
+    }
+    next
+}
+
+/// The frame before `index`, skipping still frames as [`next_frame`] does.
+fn prev_frame(
+    frames: &[Frame],
+    index: usize,
+    skip_still: bool,
+    marked: &dyn Fn(usize) -> bool,
+) -> usize {
+    let mut prev = index.saturating_sub(1);
+    while skip_still && !shown_when_skipping(frames, prev, marked) {
+        prev -= 1;
+    }
+    prev
+}
+
+/// Frames the GeneralDisp note line has a group change for.
+fn group_change(app: &AppState, j: usize) -> bool {
+    match (&app.groups, app.frames.get(j)) {
+        (Some(groups), Some(frame)) => groups.changed_at(frame.step),
+        _ => false,
+    }
+}
+
+/// Moves to the next frame, gliding the agents that moved instead of
+/// jumping them, over `min(260, speed × 0.8)` ms.
+fn step_forward(state: &Rc<RefCell<AppState>>) {
+    let (from, to) = {
+        let app = state.borrow();
+        let skip = checked(&app.document, "skipStill");
+        let marked = |j| group_change(&app, j);
+        (app.frame, next_frame(&app.frames, app.frame, skip, &marked))
+    };
+    set_frame(state, to as isize);
+    let started = {
+        let mut app = state.borrow_mut();
+        let large = app
+            .graph
+            .as_ref()
+            .map_or(true, |graph| graph.node_count > 2500);
+        if app.frame == from || large || !checked(&app.document, "showAgents") {
+            return;
+        }
+        let speed = value(&app.document, "speed")
+            .parse::<f64>()
+            .unwrap_or(240.0);
+        let started = js_sys::Date::now();
+        app.glide = Some(Glide {
+            from,
+            started,
+            duration: 260.0_f64.min(speed * 0.8),
+        });
+        started
+    };
+    animate(state, started);
+}
+
+/// Redraws on every animation frame until the glide that began at `started`
+/// ends or a newer one replaces it.
+fn animate(state: &Rc<RefCell<AppState>>, started: f64) {
+    let state = Rc::clone(state);
+    let next = Closure::once_into_js(move || {
+        let running = {
+            let app = state.borrow();
+            match app.glide {
+                Some(glide) if glide.started == started => {
+                    Some(glide_progress(&glide, js_sys::Date::now()) < 1.0)
+                }
+                _ => None,
+            }
+        };
+        match running {
+            Some(true) => {
+                render(&state);
+                animate(&state, started);
+            }
+            Some(false) => {
+                state.borrow_mut().glide = None;
+                render(&state);
+            }
+            None => {}
+        }
+    });
+    if let Some(window) = web_sys::window() {
+        let _ = window.request_animation_frame(next.unchecked_ref());
+    }
 }
 
 fn layout_for(graph: &Graph, width: f64, height: f64) -> Vec<(f64, f64)> {
@@ -1609,28 +1917,28 @@ fn render(state: &Rc<RefCell<AppState>>) {
     );
     let show_agents = checked(&app.document, "showAgents");
     let draw_individuals = show_agents && graph.node_count <= 2500;
-    let mut by_node: Vec<Vec<usize>> = vec![Vec::new(); points.len()];
+    let by_node = if show_agents {
+        visible_by_node(&app.document, frame, points.len())
+    } else {
+        vec![Vec::new(); points.len()]
+    };
     // Agents on an edge are drawn along it rather than at either end.
-    let mut moving: Vec<(usize, usize, usize)> = Vec::new();
-    if show_agents {
-        for (agent, node) in frame.positions.iter().enumerate() {
-            let status = frame.statuses.get(agent).copied().unwrap_or(1);
-            let visible = match status {
-                0 => checked(&app.document, "showSettled"),
-                2 => checked(&app.document, "showScout"),
-                _ => checked(&app.document, "showUnsettled"),
-            };
-            if visible {
-                let from = frame.transit.get(agent).copied().unwrap_or(-1);
-                if from >= 0 {
-                    moving.push((agent, from as usize, *node as usize));
-                } else if let Some(bucket) = by_node.get_mut(*node as usize) {
-                    bucket.push(agent);
-                }
-            }
-        }
-    }
+    let moving = if show_agents {
+        in_transit(&app.document, frame)
+    } else {
+        Vec::new()
+    };
     let radius = (2.5_f64).max((9.0_f64).min(12.0 - graph.node_count as f64 / 1800.0));
+    let shown = app
+        .groups
+        .as_ref()
+        .map(|groups| groups.at(frame.step, frame.positions.len()));
+    let agent_color = |agent: usize| -> String {
+        match shown.as_ref().and_then(|roles| roles.get(agent)) {
+            Some(&(role, _, _)) => general::ROLE_COLORS[role as usize % 6].to_owned(),
+            None => COLORS[frame.statuses.get(agent).copied().unwrap_or(0) as usize % 3].to_owned(),
+        }
+    };
     if show_edges {
         context.set_stroke_style_str(&border);
         context.set_line_width(if graph.node_count > 800 { 0.55 } else { 1.0 });
@@ -1674,11 +1982,10 @@ fn render(state: &Rc<RefCell<AppState>>) {
     if graph.node_count > 2500 {
         for (node, point) in points.iter().enumerate() {
             let agents = &by_node[node];
-            context.set_fill_style_str(if let Some(agent) = agents.first() {
-                COLORS[frame.statuses.get(*agent).copied().unwrap_or(0) as usize % 3]
-            } else {
-                &empty_fill
-            });
+            let fill = agents
+                .first()
+                .map_or_else(|| empty_fill.clone(), |agent| agent_color(*agent));
+            context.set_fill_style_str(&fill);
             context.fill_rect(point.0 - 1.0, point.1 - 1.0, 2.0, 2.0);
         }
         return;
@@ -1687,14 +1994,13 @@ fn render(state: &Rc<RefCell<AppState>>) {
         let agents = &by_node[node];
         let color = agents
             .first()
-            .map(|a| COLORS[frame.statuses.get(*a).copied().unwrap_or(0) as usize % 3])
-            .unwrap_or(&border);
+            .map_or_else(|| border.clone(), |agent| agent_color(*agent));
         context.set_fill_style_str(if agents.is_empty() {
             &empty_fill
         } else {
             "#314875"
         });
-        context.set_stroke_style_str(color);
+        context.set_stroke_style_str(&color);
         context.set_line_width(if agents.is_empty() { 1.0 } else { 2.0 });
         context.begin_path();
         let _ = context.arc(
@@ -1706,26 +2012,94 @@ fn render(state: &Rc<RefCell<AppState>>) {
         );
         context.fill();
         context.stroke();
-        if draw_individuals {
-            for (index, agent) in agents.iter().enumerate() {
-                let angle = index as f64 * std::f64::consts::TAU / agents.len().max(1) as f64;
-                let distance = radius + 5.0 + agents.len().min(10) as f64;
-                context.set_fill_style_str(
-                    COLORS[frame.statuses.get(*agent).copied().unwrap_or(0) as usize % 3],
-                );
-                context.begin_path();
-                let _ = context.arc(
-                    point.0 + angle.cos() * distance,
-                    point.1 + angle.sin() * distance,
-                    (2.0_f64).max(radius * 0.58),
-                    0.0,
-                    std::f64::consts::TAU,
-                );
-                context.fill();
-            }
+    }
+    if !draw_individuals {
+        draw_rooted_async_overlay(&context, frame, &points, radius, &moving, &app.document);
+        return;
+    }
+    let agent_count = frame.positions.len();
+    let target = ring_positions(&by_node, &points, radius, agent_count);
+    let glide = app.glide.and_then(|glide| {
+        let before = app.frames.get(glide.from)?;
+        let t = ease(glide_progress(&glide, js_sys::Date::now()));
+        let start = visible_by_node(&app.document, before, points.len());
+        Some((ring_positions(&start, &points, radius, agent_count), t))
+    });
+    for (agent, to) in target.iter().enumerate() {
+        let Some(to) = to else {
+            continue;
+        };
+        let (x, y) = match &glide {
+            Some((start, t)) => match start.get(agent).copied().flatten() {
+                Some(from) => (from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t),
+                None => *to,
+            },
+            None => *to,
+        };
+        context.set_fill_style_str(&agent_color(agent));
+        context.begin_path();
+        let _ = context.arc(
+            x,
+            y,
+            (2.0_f64).max(radius * 0.58),
+            0.0,
+            std::f64::consts::TAU,
+        );
+        context.fill();
+        if let Some(&(_, _, leader)) = shown.as_ref().and_then(|roles| roles.get(agent)) {
+            context.set_stroke_style_str(&general::group_color(leader));
+            context.set_line_width(1.5);
+            context.stroke();
         }
     }
     draw_rooted_async_overlay(&context, frame, &points, radius, &moving, &app.document);
+}
+
+/// Whether each agent passes the settled/unsettled/scout filters.
+fn visible_agents(document: &Document, frame: &Frame) -> Vec<bool> {
+    let show = [
+        checked(document, "showSettled"),
+        checked(document, "showUnsettled"),
+        checked(document, "showScout"),
+    ];
+    (0..frame.positions.len())
+        .map(
+            |agent| match frame.statuses.get(agent).copied().unwrap_or(1) {
+                0 => show[0],
+                2 => show[2],
+                _ => show[1],
+            },
+        )
+        .collect()
+}
+
+/// The shown agents standing at each node; agents on an edge are left out.
+fn visible_by_node(document: &Document, frame: &Frame, nodes: usize) -> Vec<Vec<usize>> {
+    let visible = visible_agents(document, frame);
+    let mut by_node = vec![Vec::new(); nodes];
+    for (agent, node) in frame.positions.iter().enumerate() {
+        let on_edge = frame.transit.get(agent).is_some_and(|&from| from >= 0);
+        if visible[agent] && !on_edge {
+            if let Some(bucket) = by_node.get_mut(*node as usize) {
+                bucket.push(agent);
+            }
+        }
+    }
+    by_node
+}
+
+/// The shown agents on an edge, as `(agent, from, to)`.
+fn in_transit(document: &Document, frame: &Frame) -> Vec<(usize, usize, usize)> {
+    let visible = visible_agents(document, frame);
+    frame
+        .positions
+        .iter()
+        .enumerate()
+        .filter_map(|(agent, &node)| {
+            let from = frame.transit.get(agent).copied().unwrap_or(-1);
+            (visible[agent] && from >= 0).then_some((agent, from as usize, node as usize))
+        })
+        .collect()
 }
 
 /// `RootedAsync`'s extra layer: a dashed ring on the home of every scout that
@@ -1891,6 +2265,11 @@ fn result_from_message(data: &JsValue) -> Result<ResultData, String> {
             .as_bool()
             .ok_or_else(|| "worker render truncation flag is invalid".to_owned())?,
         render_bytes: Uint8Array::new(&render_bytes).to_vec(),
+        group_bytes: reflected_value(data, "groupBytes")
+            .ok()
+            .filter(|bytes| bytes.is_instance_of::<Uint8Array>())
+            .map(|bytes| Uint8Array::new(&bytes).to_vec())
+            .unwrap_or_default(),
     })
 }
 
@@ -1911,6 +2290,7 @@ fn accept_result(state: &Rc<RefCell<AppState>>, result: ResultData) {
     let starts = app.starts.clone();
     let (frames, understood) = read_trace(&result.render_bytes, &starts, &result);
     app.frames = frames;
+    app.groups = general::Groups::decode(&result.group_bytes);
     app.frame = 0;
     app.result = Some(result.clone());
     refresh_notes(&mut app);
@@ -1970,7 +2350,14 @@ fn accept_result(state: &Rc<RefCell<AppState>>, result: ResultData) {
 }
 
 /// Algorithms the comparison runs, RootedDisp first so its row loads first.
-const COMPARED: [&str; 5] = ["rooted", "rooted_async", "drop", "help", "p1tree"];
+const COMPARED: [&str; 6] = [
+    "rooted",
+    "rooted_async",
+    "drop",
+    "help",
+    "p1tree",
+    "general",
+];
 
 /// Sends one job to the worker: `"run"` for the configured algorithm, or
 /// `"compare"` for every algorithm in `algorithms` on the same inputs.
@@ -2264,13 +2651,62 @@ fn prepare(state: &Rc<RefCell<AppState>>, rooted: bool) -> Option<(Config, Graph
             "busy",
         );
     }
-    let (graph, starts) = prepared_input(&config);
+    let (graph, mut starts) = prepared_input(&config);
+    if config.placement == "uniform" {
+        let distinct = number(&document, "startNodes", 3, 1, config.node_count);
+        starts = general::uniform_starts(
+            config.node_count,
+            config.agent_count,
+            distinct,
+            u64::from(config.seed),
+        );
+    }
+    if config.placement == "click" {
+        let picked: Vec<u32> = state
+            .borrow()
+            .starts
+            .iter()
+            .copied()
+            .filter(|node| (*node as usize) < config.node_count)
+            .collect();
+        if picked.is_empty() {
+            say(
+                &document,
+                "Click nodes on the graph to place agents.",
+                "error",
+            );
+            return None;
+        }
+        config.agent_count = picked.len();
+        element::<HtmlInputElement>(&document, "agents").set_value(&picked.len().to_string());
+        starts = picked;
+    }
+    let scattered = starts.windows(2).any(|pair| pair[0] != pair[1]);
+    let rooted_only =
+        needs_rooted_start(&config.algorithm) || config.algorithm == "rooted_async_random";
+    if scattered && rooted_only {
+        say(
+            &document,
+            &format!(
+                "{} needs every agent on one node. Choose “Rooted at node 0”, or GeneralDisp for scattered starts.",
+                algorithm_label(&config.algorithm)
+            ),
+            "error",
+        );
+        return None;
+    }
+    if config.algorithm == "general" {
+        config.round_limit = config
+            .round_limit
+            .max(general::round_limit(config.agent_count));
+    }
     {
         let mut app = state.borrow_mut();
         app.config = Some(config.clone());
         app.graph = Some(graph.clone());
         app.starts = starts.clone();
         app.result = None;
+        app.groups = None;
         app.frames.clear();
         app.notes.clear();
         app.comparison.clear();
@@ -2368,6 +2804,7 @@ fn show_comparison(state: &Rc<RefCell<AppState>>, index: usize) {
     {
         let mut app = state.borrow_mut();
         app.compare_selected = Some(index);
+        app.groups = None;
         if let Some(config) = app.config.as_mut() {
             config.algorithm.clone_from(&algorithm);
         }
@@ -2600,8 +3037,7 @@ fn toggle_play(state: &Rc<RefCell<AppState>>) {
             }
             set_text(&app.document, "play", "▶");
         } else {
-            let next = weak.borrow().frame as isize + 1;
-            set_frame(&weak, next);
+            step_forward(&weak);
         }
     });
     let timer = web_sys::window()
@@ -2711,6 +3147,7 @@ fn import_file(state: &Rc<RefCell<AppState>>, event: Event) {
                 app.starts = data.starts;
                 app.result = Some(data.result.clone());
                 app.frames = data.frames;
+                app.groups = None;
                 app.frame = 0;
                 refresh_notes(&mut app);
                 app.layout.clear();
@@ -2906,11 +3343,13 @@ pub fn start() -> Result<(), JsValue> {
         config: None,
         result: None,
         frames: Vec::new(),
+        groups: None,
         notes: Vec::new(),
         comparison: Vec::new(),
         compare_selected: None,
         frame: 0,
         timer: None,
+        glide: None,
         layout: Vec::new(),
         layout_size: (0.0, 0.0),
         compare_seed: None,
@@ -2918,6 +3357,34 @@ pub fn start() -> Result<(), JsValue> {
     hook_click(&state, "run", run);
     hook_click(&state, "compare", compare);
     hook_click(&state, "comparePreset", compare_preset);
+    hook_click(&state, "presetTwoGroups", |s| {
+        general_preset(s, "path", 6, &[0, 0, 0, 0, 3, 3]);
+    });
+    hook_click(&state, "presetThreeGroups", |s| {
+        general_preset(s, "cycle", 8, &[1, 5, 5, 4, 4, 1, 4, 1]);
+    });
+    for id in [
+        "placement",
+        "family",
+        "nodes",
+        "gridColumns",
+        "treeBranching",
+        "seed",
+    ] {
+        let target: Element = element(&document, id);
+        let state = Rc::clone(&state);
+        let placement = id == "placement";
+        let closure = Closure::<dyn FnMut(Event)>::new(move |_| {
+            let document = state.borrow().document.clone();
+            sync_groups_input(&document);
+            if placement {
+                state.borrow_mut().starts.clear();
+            }
+            preview(&state);
+        });
+        let _ = target.add_event_listener_with_callback("change", closure.as_ref().unchecked_ref());
+        closure.forget();
+    }
     {
         // One listener for the whole comparison table: a row's Play button
         // carries its index in `data-compare`.
@@ -2941,13 +3408,19 @@ pub fn start() -> Result<(), JsValue> {
     hook_click(&state, "compareSchedules", compare_schedules);
     hook_click(&state, "export", export_json);
     hook_click(&state, "prev", |s| {
-        let next = s.borrow().frame as isize - 1;
-        set_frame(s, next);
+        let prev = {
+            let app = s.borrow();
+            let marked = |j| group_change(&app, j);
+            prev_frame(
+                &app.frames,
+                app.frame,
+                checked(&app.document, "skipStill"),
+                &marked,
+            )
+        };
+        set_frame(s, prev as isize);
     });
-    hook_click(&state, "next", |s| {
-        let next = s.borrow().frame as isize + 1;
-        set_frame(s, next);
-    });
+    hook_click(&state, "next", step_forward);
     hook_click(&state, "play", toggle_play);
     let timeline: HtmlInputElement = element(&document, "timeline");
     {
@@ -3074,6 +3547,14 @@ pub fn start() -> Result<(), JsValue> {
     }
     {
         let state = Rc::clone(&state);
+        let closure = Closure::<dyn FnMut(MouseEvent)>::new(move |event: MouseEvent| {
+            place_click(&state, &event)
+        });
+        let _ = canvas.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
+        closure.forget();
+    }
+    {
+        let state = Rc::clone(&state);
         let closure = Closure::<dyn FnMut(Event)>::new(move |_| {
             let app = state.borrow();
             let _ = element::<Element>(&app.document, "tooltip").set_attribute("hidden", "");
@@ -3151,6 +3632,10 @@ fn tooltip(state: &Rc<RefCell<AppState>>, event: MouseEvent) {
         ["settled", "unsettled", "waiting"]
     };
     let leader = frame.positions.len().saturating_sub(1);
+    let shown = app
+        .groups
+        .as_ref()
+        .map(|groups| groups.at(frame.step, frame.positions.len()));
     let agents: Vec<String> = frame
         .positions
         .iter()
@@ -3158,7 +3643,14 @@ fn tooltip(state: &Rc<RefCell<AppState>>, event: MouseEvent) {
         .filter(|(_, position)| **position as usize == node)
         .map(|(i, position)| {
             let status = names[frame.statuses.get(i).copied().unwrap_or(1) as usize % 3];
-            let status = if rooted && i == leader {
+            let status = if let Some(&(role, level, group)) =
+                shown.as_ref().and_then(|roles| roles.get(i))
+            {
+                format!(
+                    "{} · group {level}:{group}",
+                    general::ROLE_NAMES[role as usize % 6]
+                )
+            } else if rooted && i == leader {
                 format!("{status} · leader a_max")
             } else {
                 status.to_owned()
@@ -3285,6 +3777,7 @@ mod tests {
             render_record_count: 1,
             render_truncated: false,
             render_bytes: vec![1, 2, 0, 0, 1],
+            group_bytes: Vec::new(),
         };
         assert_eq!(trace_frames(&result.render_bytes, &[0], &result).len(), 2);
     }
@@ -3304,6 +3797,7 @@ mod tests {
             render_record_count: 1,
             render_truncated: false,
             render_bytes: vec![1, 2, 0, 0, 1, 0, 0, 0, 99, 1, 0, 0, 0, 0, 0, 0, 0],
+            group_bytes: Vec::new(),
         };
         let (frames, understood) = read_trace(&result.render_bytes, &[0], &result);
         assert!(!understood);
@@ -3615,6 +4109,7 @@ mod tests {
             render_record_count: 2,
             render_truncated: false,
             render_bytes: bytes,
+            group_bytes: Vec::new(),
         };
         let frames = trace_frames(&result.render_bytes, &[0], &result);
         assert_eq!(
@@ -3649,6 +4144,7 @@ mod tests {
             render_record_count: 2,
             render_truncated: false,
             render_bytes: bytes,
+            group_bytes: Vec::new(),
         };
         let frames = trace_frames(&result.render_bytes, &[0], &result);
         let phases: Vec<Option<u8>> = frames.iter().map(|frame| frame.phase).collect();
@@ -3719,5 +4215,70 @@ mod tests {
         assert_eq!(payload.graph.node_count, 2);
         assert_eq!(payload.frames.len(), 2);
         assert_eq!(payload.result.positions, vec![1]);
+    }
+
+    #[test]
+    fn skipping_still_steps_keeps_moves_run_ends_and_marked_frames() {
+        // Positions per frame: a move, three still frames, then a move.
+        let frames: Vec<Frame> = [[0, 0], [1, 0], [1, 0], [1, 0], [1, 0], [1, 1]]
+            .iter()
+            .enumerate()
+            .map(|(step, nodes)| Frame {
+                step: step as u64,
+                ..initial_frame(nodes)
+            })
+            .collect();
+        let none = |_| false;
+        let order: Vec<usize> = std::iter::successors(Some(0), |&i| {
+            let next = next_frame(&frames, i, true, &none);
+            (next != i).then_some(next)
+        })
+        .collect();
+        assert_eq!(order, vec![0, 1, 4, 5]);
+        assert_eq!(prev_frame(&frames, 5, true, &none), 4);
+        assert_eq!(prev_frame(&frames, 4, true, &none), 1);
+        assert_eq!(next_frame(&frames, 1, false, &none), 2);
+        assert_eq!(prev_frame(&frames, 4, false, &none), 3);
+        let at_three = |j| j == 3;
+        assert_eq!(next_frame(&frames, 1, true, &at_three), 3);
+        assert_eq!(prev_frame(&frames, 4, true, &at_three), 3);
+        assert_eq!(next_frame(&frames, 5, true, &none), 5);
+        assert_eq!(prev_frame(&frames, 0, true, &none), 0);
+    }
+
+    #[test]
+    fn glides_ease_from_the_old_ring_to_the_new_one() {
+        let glide = Glide {
+            from: 0,
+            started: 1000.0,
+            duration: 200.0,
+        };
+        assert_eq!(glide_progress(&glide, 900.0), 0.0);
+        assert_eq!(glide_progress(&glide, 1100.0), 0.5);
+        assert_eq!(glide_progress(&glide, 5000.0), 1.0);
+        assert_eq!(
+            glide_progress(
+                &Glide {
+                    duration: 0.0,
+                    ..glide
+                },
+                1000.0
+            ),
+            1.0
+        );
+        assert_eq!(ease(0.0), 0.0);
+        assert_eq!(ease(0.5), 0.5);
+        assert_eq!(ease(1.0), 1.0);
+        assert!(ease(0.25) < 0.25 && ease(0.75) > 0.75);
+
+        let points = [(0.0, 0.0), (100.0, 0.0)];
+        let by_node = vec![vec![2], vec![0]];
+        let ring = ring_positions(&by_node, &points, 4.0, 3);
+        assert_eq!(ring[0], Some((110.0, 0.0)));
+        assert_eq!(ring[1], None);
+        assert_eq!(ring[2], Some((10.0, 0.0)));
+        let pair = ring_positions(&[vec![0, 1], vec![]], &points, 4.0, 2);
+        let (a, b) = (pair[0].unwrap(), pair[1].unwrap());
+        assert!((a.0 - 11.0).abs() < 1e-9 && (b.0 + 11.0).abs() < 1e-9);
     }
 }
