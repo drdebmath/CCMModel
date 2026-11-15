@@ -596,7 +596,9 @@ fn time_unit(algorithm: &str) -> &'static str {
 
 fn read_config(document: &Document) -> Config {
     let node_count = number(document, "nodes", 26, 1, 10_000);
-    let agent_count = number(document, "agents", 5.min(node_count), 1, node_count);
+    // Bounded like the node count, not by it: more agents than nodes is kept
+    // so the run is refused with a message rather than quietly reset to 5.
+    let agent_count = number(document, "agents", 5.min(node_count), 1, 10_000);
     element::<HtmlInputElement>(document, "agents").set_value(&agent_count.to_string());
     Config {
         algorithm: effective_algorithm(document),
