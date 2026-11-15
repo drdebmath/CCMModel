@@ -155,6 +155,7 @@ mod tests {
             (Algorithm::P1Tree, "paper"),
             (Algorithm::RootedAsync, "paper"),
             (Algorithm::RootedDisp, "paper"),
+            (Algorithm::GeneralDisp, "paper"),
         ] {
             assert_eq!(
                 cell(&result(algorithm), "algorithm_kind"),

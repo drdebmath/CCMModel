@@ -26,7 +26,9 @@ Help-by-Scouts preserves the current repository's rooted activation order and
 uses explicit logical traversal counts. RootedDisp commits every synchronous
 step through `apply_move_intents` on an `AgentStore`, so all moves of a step are
 validated before any is applied and incoming ports follow the paper's model
-([rooted-disp.md](rooted-disp.md)). See [behavior-spec.md](behavior-spec.md)
+([rooted-disp.md](rooted-disp.md)). GeneralDisp does the same, in units of
+twelve slots. Each slot is one step even when nobody moves
+([general-disp.md](general-disp.md)). See [behavior-spec.md](behavior-spec.md)
 for the exact compatibility semantics and discrepancies from Sudo et al.
 
 ## State and indexes

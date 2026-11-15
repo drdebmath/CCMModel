@@ -1721,6 +1721,20 @@ html[data-theme="light"] {
   min-width: 60px;
 }
 
+.skip-still {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.skip-still input {
+  accent-color: var(--accent);
+}
+
 /* Legend on the left, view toggles on the right: both describe the canvas. */
 .view-bar {
   flex: 0 0 auto;
@@ -2354,6 +2368,10 @@ footer a {
     padding-left: 0;
     border-left: 0;
   }
+
+  .skip-still {
+    order: 4;
+  }
 }
 
 /* Short viewports (landscape phones, split-screen): shed chrome so the
@@ -2429,4 +2447,8 @@ footer a {
   .panel-scrim.open {
     backdrop-filter: none;
   }
+}
+
+.legend-group {
+  display: contents;
 }

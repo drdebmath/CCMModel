@@ -27,6 +27,7 @@ question (its arrows are the answers), dashed = a helper the step calls.
 - [P1Tree](#p1tree) — `ccm-algorithms`
 - [RootedAsync](#rootedasync) — `ccm-algorithms`
 - [RootedDisp](#rooteddisp) — `ccm-algorithms`
+- [GeneralDisp](#generaldisp) — `ccm-algorithms`
 
 ---
 
@@ -3350,6 +3351,690 @@ pub fn simulate<M: Metrics, R: Recorder>(
         self.stats.backward_moves += 1;
         self.record(Phase::Movement);
         Ok(())
+    }
+```
+
+
+---
+
+## GeneralDisp
+
+`GeneralDisp` from the same paper, Section 4 and Algorithms 2–5: the general HEO-DFS with the Zombie method. Agents may start on any nodes. Every group of co-located agents, labelled `(level, leader)`, runs its own HEO-DFS. When two groups meet, the weaker leader becomes a **zombie** that chases the stronger group until that group's leader settles it. [general-disp.md](general-disp.md) has the slot table, the decisions taken where the pseudocode leaves a choice, and two hand traces.
+
+Time runs in units of twelve slots. Each slot is one step, committed through `apply_move_intents` even when nobody moves. One probing pass fits in a unit: recruited settlers walk over through `help`, everyone at the node except its settler probes one port, and the probers double each pass.
+
+```mermaid
+flowchart TD
+    classDef k_entry fill:#e8eaff,stroke:#5b6cf0,color:#111,stroke-width:1.5px
+    classDef k_step fill:#ffffff,stroke:#8b98b3,color:#111
+    classDef k_decision fill:#fff4dc,stroke:#c98a12,color:#111
+    classDef k_end fill:#ddf6ef,stroke:#0f9e82,color:#111,stroke-width:1.5px
+    classDef k_aside fill:#f6f7fa,stroke:#8b98b3,color:#333,stroke-dasharray:4 3
+    subgraph lane0["Start"]
+        start(["Run GeneralDisp<br/><small>simulate()</small>"])
+        legit{"Legitimate configuration?<br/><small>legitimate()</small>"}
+        done(["Completed<br/><small>Termination::Completed</small>"])
+    end
+    subgraph lane1["Meet and settle"]
+        s1["Weaker leaders become zombies<br/><small>slot 1 · slot1_election()</small>"]
+        s2["Settle, take over, level up<br/><small>slot 2 · slot2_settle()</small>"]
+    end
+    subgraph lane2["Probe"]
+        s3["Helpers walk over<br/><small>slot 3 · slot3_helpers_go()</small>"]
+        s4["Check the helpers<br/><small>slot 4 · slot4_check()</small>"]
+        s5["Finish a probe<br/><small>slot 5 · slot5_finish()</small>"]
+        s6["Probers go out<br/><small>slot 6 · slot6_probe_out()</small>"]
+        commit["Commit one step<br/><small>commit()</small>"]
+        s7["Probers come back<br/><small>slot 7 · slot7_probe_back()</small>"]
+        s8["Tally the pass<br/><small>slot 8 · slot8_tally()</small>"]
+    end
+    subgraph lane3["Chase"]
+        chase["Zombies chase<br/><small>slots 9–10 · chase()</small>"]
+    end
+    subgraph lane4["Move"]
+        s11["Move forward or back<br/><small>slot 11 · slot11_move()</small>"]
+        s12["Remember the way back<br/><small>slot 12 · slot12_parent()</small>"]
+    end
+    start --> legit
+    legit -- "yes" --> done
+    legit -- "no" --> s1
+    s1 --> s2
+    s2 --> s3
+    s3 --> s4
+    s4 --> s5
+    s5 --> s6
+    s6 --> s7
+    s7 --> s8
+    s8 --> chase
+    chase --> s11
+    s11 --> s12
+    s12 -- "next step" --> legit
+    s6 -. "each slot" .-> commit
+    class start k_entry
+    class legit k_decision
+    class done k_end
+    class s1 k_step
+    class s2 k_step
+    class s3 k_step
+    class s4 k_step
+    class s5 k_step
+    class s6 k_step
+    class commit k_aside
+    class s7 k_step
+    class s8 k_step
+    class chase k_step
+    class s11 k_step
+    class s12 k_step
+```
+
+**Notes**
+
+- Any placement: no start is refused. A probe counts a node as visited only if its settler belongs to the probing leader's own group.
+- Termination is detected by the simulator, not the agents: the run ends at the first legitimate configuration, as the paper allows in this setting (general-disp.md, decision 6).
+- Round limit: checked before every step; the runner's default for GeneralDisp is 480·k·(⌈log₂ k⌉ + 1)².
+
+### Code
+
+`simulate` — [crates/ccm-algorithms/src/general_disp.rs:286](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L286-L300)
+
+```rust
+/// Runs `GeneralDisp` with agent `i` starting on `starts[i]`, for at most
+/// `round_limit` time steps.
+///
+/// # Errors
+///
+/// Returns an error for invalid input or a broken invariant.
+pub fn simulate<M: Metrics, R: Recorder>(
+    graph: &PortGraph,
+    starts: &[NodeId],
+    round_limit: u64,
+    metrics: M,
+    recorder: R,
+) -> Result<(GeneralResult, M, R), GeneralError> {
+    Simulation::new(graph, starts, round_limit, metrics, recorder)?.run()
+}
+```
+
+`legitimate` — [crates/ccm-algorithms/src/general_disp.rs:1124](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L1124-L1147)
+
+```rust
+    /// Definition 1: every agent on its own node, no zombie, every settler
+    /// home and not asked to help, and no prober out.
+    fn legitimate(&self) -> bool {
+        if !self.trips.is_empty() {
+            return false;
+        }
+        let mut occupied = vec![false; self.graph.node_count()];
+        for index in 0..self.memory.len() {
+            let agent = agent_id(index);
+            let memory = &self.memory[index];
+            let state = self.state(agent);
+            if self.is_zombie(agent) {
+                return false;
+            }
+            if memory.settled && (state.home != Some(state.node) || memory.help.is_some()) {
+                return false;
+            }
+            if occupied[state.node.index()] {
+                return false;
+            }
+            occupied[state.node.index()] = true;
+        }
+        true
+    }
+```
+
+`slot1_election` — [crates/ccm-algorithms/src/general_disp.rs:520](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L520-L549)
+
+```rust
+    /// Slot 1 (lines 3–6): leaders meeting a stronger group become zombies.
+    fn slot1_election(&mut self, occupancy: &OccupancyIndex) {
+        let mut demoted = Vec::new();
+        for agent in self.leaders() {
+            let w = self.state(agent).node;
+            let own = self.memory[agent.index()].group();
+            let strongest = occupancy
+                .agents_at(w)
+                .iter()
+                .filter(|&&b| self.is_leader(b) || self.memory[b.index()].settled)
+                .map(|&b| self.memory[b.index()].group())
+                .max();
+            if let Some(stronger) = strongest.filter(|group| own < *group) {
+                demoted.push((agent, w, stronger));
+            }
+        }
+        for (agent, node, stronger) in demoted {
+            let memory = &mut self.memory[agent.index()];
+            memory.level_location = memory.level;
+            memory.level_swarm = memory.level;
+            memory.leader = stronger.leader;
+            self.stats.zombifications += 1;
+            self.note(GroupEvent::BecameZombie {
+                step: self.steps,
+                agent,
+                node,
+                stronger,
+            });
+        }
+    }
+```
+
+`slot2_settle` — [crates/ccm-algorithms/src/general_disp.rs:551](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L551-L644)
+
+```rust
+    /// Slot 2 (lines 8–21): settle a zombie or incorporate the settler, level
+    /// up, and set up the probe.
+    fn slot2_settle(&mut self, occupancy: &OccupancyIndex) -> Result<(), GeneralError> {
+        self.centres.clear();
+        for leader in self.leaders() {
+            let w = self.state(leader).node;
+            let here = occupancy.agents_at(w);
+            if here.len() == 1 {
+                continue;
+            }
+            let mut zombies: Vec<AgentId> = here
+                .iter()
+                .copied()
+                .filter(|&b| self.is_zombie(b))
+                .collect();
+            zombies.sort_unstable();
+            let mut newcomer = None;
+            let settler = if let Some(settler) = self.store.settled_agent_at(w) {
+                let from = self.memory[settler.index()].group();
+                if from < self.memory[leader.index()].group() {
+                    self.memory[settler.index()].parent = self.memory[leader.index()].parent;
+                    self.stats.incorporations += 1;
+                    let to = self.memory[leader.index()].group();
+                    self.note(GroupEvent::Incorporated {
+                        step: self.steps,
+                        settler,
+                        node: w,
+                        from,
+                        to,
+                    });
+                }
+                settler
+            } else {
+                if zombies.is_empty() {
+                    return Err(self.broken(
+                        InvariantViolation::InvalidAgentNode,
+                        "an unsettled node holds a leader and no zombie",
+                    ));
+                }
+                let zombie = zombies.remove(0);
+                self.settle(zombie, w, self.memory[leader.index()].parent)?;
+                newcomer = Some(zombie);
+                zombie
+            };
+            let level = self.memory[leader.index()].level;
+            if let Some(&zombie) = zombies
+                .iter()
+                .find(|&&z| self.memory[z.index()].level == level)
+            {
+                self.memory[leader.index()].level = level + 1;
+                self.memory[zombie.index()].level = 0;
+                self.memory[settler.index()].parent = None;
+                self.memory[leader.index()].init_probe = true;
+                self.stats.level_ups += 1;
+                self.stats.max_level = self.stats.max_level.max(level + 1);
+                self.note(GroupEvent::LevelUp {
+                    step: self.steps,
+                    leader,
+                    zombie,
+                    node: w,
+                    level: level + 1,
+                });
+            }
+            let group = self.memory[leader.index()].group();
+            self.memory[settler.index()].leader = group.leader;
+            self.memory[settler.index()].level = group.level;
+            if let Some(agent) = newcomer {
+                self.note(GroupEvent::Settled {
+                    step: self.steps,
+                    agent,
+                    node: w,
+                    group,
+                });
+            }
+            if self.memory[leader.index()].init_probe {
+                let memory = &mut self.memory[settler.index()];
+                memory.next = None;
+                memory.checked = None;
+                memory.help = None;
+                memory.done = false;
+                self.memory[leader.index()].init_probe = false;
+                self.stats.probe_inits += 1;
+            }
+            self.centres.push(Centre {
+                leader,
+                node: w,
+                settler,
+                finishing: false,
+                first: 0,
+                count: 0,
+            });
+        }
+        Ok(())
+    }
+```
+
+`slot3_helpers_go` — [crates/ccm-algorithms/src/general_disp.rs:668](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L668-L690)
+
+```rust
+    /// Slot 3 (line 61): settlers with `help` set walk to the centre.
+    fn slot3_helpers_go(&mut self) -> Result<(), GeneralError> {
+        for index in 0..self.memory.len() {
+            let memory = self.memory[index];
+            let Some(port) = memory.help.filter(|_| memory.settled) else {
+                continue;
+            };
+            let agent = agent_id(index);
+            let home = self.store.vacate_home(agent)?;
+            self.intents.push(MoveIntent {
+                agent,
+                from: home,
+                port,
+            });
+            self.outgoing.push(agent);
+            self.events.push(SimulationEvent::AgentStateChanged {
+                agent,
+                from: AgentStatus::Settled,
+                to: AgentStatus::SettledScout,
+            });
+        }
+        Ok(())
+    }
+```
+
+`slot4_check` — [crates/ccm-algorithms/src/general_disp.rs:713](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L713-L750)
+
+```rust
+    /// Slot 4 (lines 31–36): find missing helpers, dismiss weaker ones, and
+    /// decide whether the probe is over.
+    fn slot4_check(&mut self, occupancy: &OccupancyIndex) {
+        for index in 0..self.centres.len() {
+            let centre = self.centres[index];
+            let (w, psi) = (centre.node, centre.settler);
+            let leader_group = self.memory[centre.leader.index()].group();
+            let helpers = self.helpers_at(occupancy, w, psi);
+            let checked = self.memory[psi.index()].checked;
+            let next = checked.and_then(|last| {
+                (0..=last.0).map(PortId).find(|&port| {
+                    !helpers
+                        .iter()
+                        .any(|&b| self.state(b).arrival_port == Some(port))
+                })
+            });
+            self.memory[psi.index()].next = next;
+            for &(_, port) in self.recruited.iter().filter(|&&(at, _)| at == psi) {
+                if !helpers
+                    .iter()
+                    .any(|&b| self.state(b).arrival_port == Some(port))
+                {
+                    self.stats.stolen_helpers += 1;
+                }
+            }
+            for &helper in &helpers {
+                if self.memory[helper.index()].group() < leader_group {
+                    self.memory[helper.index()].help = None;
+                    self.stats.helpers_dismissed += 1;
+                    self.send_home(helper, w);
+                }
+            }
+            let degree = self.graph.degree(w).unwrap_or(0);
+            let all_checked = degree == 0 || checked.is_some_and(|last| last.0 + 1 == degree);
+            self.centres[index].finishing = next.is_some() || all_checked;
+        }
+        self.recruited.clear();
+    }
+```
+
+`slot5_finish` — [crates/ccm-algorithms/src/general_disp.rs:752](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L752-L765)
+
+```rust
+    /// Slot 5 (lines 38–40): a finished probe sends its helpers home.
+    fn slot5_finish(&mut self, occupancy: &OccupancyIndex) {
+        for index in 0..self.centres.len() {
+            let centre = self.centres[index];
+            if !centre.finishing {
+                continue;
+            }
+            for helper in self.helpers_at(occupancy, centre.node, centre.settler) {
+                self.memory[helper.index()].help = None;
+                self.send_home(helper, centre.node);
+            }
+            self.memory[centre.settler.index()].done = true;
+        }
+    }
+```
+
+`slot6_probe_out` — [crates/ccm-algorithms/src/general_disp.rs:767](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L767-L815)
+
+```rust
+    /// Slot 6 (lines 43–47): probers go out, one port each.
+    fn slot6_probe_out(&mut self, occupancy: &OccupancyIndex) {
+        self.trips.clear();
+        for index in 0..self.centres.len() {
+            let centre = self.centres[index];
+            if centre.finishing {
+                continue;
+            }
+            let (w, psi) = (centre.node, centre.settler);
+            let degree = self.graph.degree(w).unwrap_or(0);
+            let first = self.memory[psi.index()]
+                .checked
+                .map_or(0, |last| last.0 + 1);
+            let mut probers: Vec<AgentId> = occupancy
+                .agents_at(w)
+                .iter()
+                .copied()
+                .filter(|&b| b != psi)
+                .collect();
+            probers.sort_unstable();
+            let count = probers.len().min(usize::from(degree - first));
+            let count = u16::try_from(count).expect("count is at most the degree");
+            self.centres[index].first = first;
+            self.centres[index].count = count;
+            self.stats.probe_passes += 1;
+            let passes = if first == 0 {
+                1
+            } else {
+                self.passes[psi.index()] + 1
+            };
+            self.passes[psi.index()] = passes;
+            self.stats.max_passes_in_one_probe = self.stats.max_passes_in_one_probe.max(passes);
+            for (offset, &prober) in probers[..usize::from(count)].iter().enumerate() {
+                let port = PortId(first + u16::try_from(offset).expect("below the degree"));
+                self.intents.push(MoveIntent {
+                    agent: prober,
+                    from: w,
+                    port,
+                });
+                self.trips.push(Trip {
+                    prober,
+                    centre: index,
+                    port,
+                });
+                self.metrics.port_probe();
+                self.metrics.probe_out_traversal();
+            }
+        }
+    }
+```
+
+`commit` — [crates/ccm-algorithms/src/general_disp.rs:1043](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L1043-L1067)
+
+```rust
+    /// Commits the step's moves together and charges one round.
+    fn commit(&mut self, round: RoundKind) -> Result<(), GeneralError> {
+        apply_move_intents(
+            self.graph,
+            &mut self.store,
+            &mut self.intents,
+            &mut self.metrics,
+        )?;
+        self.steps += 1;
+        self.metrics.logical_rounds(round, 1);
+        if self.recorder.enabled() {
+            for index in 0..self.intents.len() {
+                let intent = self.intents[index];
+                let state = *self.state(intent.agent);
+                self.events.push(SimulationEvent::AgentMoved {
+                    agent: intent.agent,
+                    from: intent.from,
+                    to: state.node,
+                    out_port: intent.port,
+                    in_port: state.arrival_port,
+                });
+            }
+        }
+        Ok(())
+    }
+```
+
+`slot7_probe_back` — [crates/ccm-algorithms/src/general_disp.rs:817](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L817-L848)
+
+```rust
+    /// Slot 7 (lines 49–54): recruit a same-group settler and come back.
+    fn slot7_probe_back(&mut self) -> Result<(), GeneralError> {
+        for index in 0..self.trips.len() {
+            let trip = self.trips[index];
+            let state = *self.state(trip.prober);
+            let back = state.arrival_port.ok_or_else(|| {
+                self.broken(
+                    InvariantViolation::InvalidTraversal,
+                    "a prober has no incoming port",
+                )
+            })?;
+            let leader = self.centres[trip.centre].leader;
+            let found = self
+                .store
+                .settled_agent_at(state.node)
+                .filter(|&s| self.memory[s.index()].group() == self.memory[leader.index()].group());
+            if let Some(settler) = found {
+                self.memory[settler.index()].help = Some(back);
+                self.stats.helper_recruitments += 1;
+                self.recruited
+                    .push((self.centres[trip.centre].settler, trip.port));
+            }
+            self.memory[trip.prober.index()].found = found.is_some();
+            self.intents.push(MoveIntent {
+                agent: trip.prober,
+                from: state.node,
+                port: back,
+            });
+            self.metrics.probe_back_traversal();
+        }
+        Ok(())
+    }
+```
+
+`slot8_tally` — [crates/ccm-algorithms/src/general_disp.rs:850](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L850-L875)
+
+```rust
+    /// Slot 8 (lines 56–59): record the pass and send helpers home.
+    fn slot8_tally(&mut self, occupancy: &OccupancyIndex) {
+        for index in 0..self.centres.len() {
+            let centre = self.centres[index];
+            if centre.finishing {
+                continue;
+            }
+            let psi = centre.settler;
+            let missing = self
+                .trips
+                .iter()
+                .filter(|trip| trip.centre == index && !self.memory[trip.prober.index()].found)
+                .map(|trip| trip.port)
+                .min();
+            if missing.is_some() {
+                self.memory[psi.index()].next = missing;
+            }
+            if centre.count > 0 {
+                self.memory[psi.index()].checked = Some(PortId(centre.first + centre.count - 1));
+            }
+            for helper in self.helpers_at(occupancy, centre.node, psi) {
+                self.send_home(helper, centre.node);
+            }
+        }
+        self.trips.clear();
+    }
+```
+
+`chase` — [crates/ccm-algorithms/src/general_disp.rs:877](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L877-L963)
+
+```rust
+    /// Slots 9–10 (lines 63–68): weak zombies chase in both slots, strong
+    /// ones only in slot 10.
+    fn chase(&mut self, first_slot: bool, occupancy: &OccupancyIndex) {
+        let zombies: Vec<AgentId> = (0..self.memory.len())
+            .map(agent_id)
+            .filter(|&z| self.is_zombie(z))
+            .collect();
+        // Worked out once per node, so a swarm of z zombies costs z, not z².
+        let mut swarm_at: Vec<Option<u32>> = vec![None; self.graph.node_count()];
+        let mut leader_at: Vec<Option<bool>> = vec![None; self.graph.node_count()];
+        if first_slot {
+            let mut updates = Vec::with_capacity(zombies.len());
+            for &zombie in &zombies {
+                let v = self.state(zombie).node;
+                let memory = self.memory[zombie.index()];
+                let location = self
+                    .store
+                    .settled_agent_at(v)
+                    .map_or(memory.level_location, |s| self.memory[s.index()].level);
+                let swarm = *swarm_at[v.index()].get_or_insert_with(|| {
+                    occupancy
+                        .agents_at(v)
+                        .iter()
+                        .filter(|&&b| self.is_zombie(b))
+                        .map(|&b| self.memory[b.index()].level)
+                        .max()
+                        .unwrap_or(memory.level)
+                });
+                updates.push((zombie, location, swarm));
+            }
+            for (zombie, location, swarm) in updates {
+                let memory = &mut self.memory[zombie.index()];
+                if (memory.level_location, memory.level_swarm) != (location, swarm) {
+                    memory.level_location = location;
+                    memory.level_swarm = swarm;
+                    self.note(GroupEvent::ZombieLevels {
+                        step: self.steps,
+                        zombie,
+                        location,
+                        swarm,
+                    });
+                }
+                self.weak[zombie.index()] = swarm < location;
+            }
+        }
+        for &zombie in &zombies {
+            let weak = self.weak[zombie.index()];
+            if first_slot && !weak {
+                continue;
+            }
+            let v = self.state(zombie).node;
+            let leader_here = *leader_at[v.index()]
+                .get_or_insert_with(|| occupancy.agents_at(v).iter().any(|&b| self.is_leader(b)));
+            if leader_here {
+                continue;
+            }
+            let port = self
+                .store
+                .settled_agent_at(v)
+                .and_then(|s| self.memory[s.index()].next);
+            let Some(port) = port else {
+                self.stats.stuck_chases += 1;
+                continue;
+            };
+            self.intents.push(MoveIntent {
+                agent: zombie,
+                from: v,
+                port,
+            });
+            if weak {
+                self.stats.weak_chase_moves += 1;
+            } else {
+                self.stats.strong_chase_moves += 1;
+            }
+            self.metrics.chase();
+            if self.recorder.enabled() {
+                let to = self.graph.traverse(v, port).map_or(v, |edge| edge.neighbor);
+                self.group_events.push(GroupEvent::Chased {
+                    step: self.steps,
+                    zombie,
+                    from: v,
+                    to,
+                    weak,
+                });
+            }
+        }
+    }
+```
+
+`slot11_move` — [crates/ccm-algorithms/src/general_disp.rs:965](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L965-L1029)
+
+```rust
+    /// Slot 11 (lines 23–26): move forward through `next`, or back.
+    fn slot11_move(&mut self, occupancy: &OccupancyIndex) -> Result<(), GeneralError> {
+        self.moved.clear();
+        for index in 0..self.centres.len() {
+            let centre = self.centres[index];
+            let psi = centre.settler;
+            if !self.memory[psi.index()].done {
+                continue;
+            }
+            let forward = self.memory[psi.index()].next.is_some();
+            if !forward {
+                self.memory[psi.index()].next = self.memory[psi.index()].parent;
+            }
+            let Some(port) = self.memory[psi.index()].next else {
+                return Err(GeneralError::Exhausted {
+                    leader: centre.leader,
+                    node: centre.node,
+                });
+            };
+            let group: Vec<AgentId> = occupancy
+                .agents_at(centre.node)
+                .iter()
+                .copied()
+                .filter(|&b| b != psi)
+                .collect();
+            for &agent in &group {
+                if self.memory[agent.index()].settled {
+                    return Err(self.broken(
+                        InvariantViolation::InvalidAgentNode,
+                        "a helper is still at the centre in slot 11",
+                    ));
+                }
+                self.intents.push(MoveIntent {
+                    agent,
+                    from: centre.node,
+                    port,
+                });
+            }
+            self.metrics.group_move(group.len());
+            let to = self
+                .graph
+                .traverse(centre.node, port)
+                .map_or(centre.node, |edge| edge.neighbor);
+            if forward {
+                self.stats.forward_moves += 1;
+                self.note(GroupEvent::ForwardMove {
+                    step: self.steps,
+                    leader: centre.leader,
+                    from: centre.node,
+                    to,
+                });
+            } else {
+                self.stats.backward_moves += 1;
+                self.metrics.backtrack();
+                self.note(GroupEvent::BackwardMove {
+                    step: self.steps,
+                    leader: centre.leader,
+                    from: centre.node,
+                    to,
+                });
+            }
+            self.moved.push(centre.leader);
+        }
+        Ok(())
+    }
+```
+
+`slot12_parent` — [crates/ccm-algorithms/src/general_disp.rs:1031](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/general_disp.rs#L1031-L1041)
+
+```rust
+    /// Slot 12 (lines 27–29): leaders that moved record `parent ← pin`.
+    fn slot12_parent(&mut self) {
+        for index in 0..self.moved.len() {
+            let leader = self.moved[index];
+            let pin = self.state(leader).arrival_port;
+            let memory = &mut self.memory[leader.index()];
+            memory.parent = pin;
+            memory.init_probe = true;
+        }
+        self.moved.clear();
     }
 ```
 
