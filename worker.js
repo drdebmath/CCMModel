@@ -45,6 +45,7 @@ function algorithmSelector(name) {
     case 'general': return wasm.AlgorithmSelector.GeneralDisp;
     case 'rooted_async': return wasm.AlgorithmSelector.RootedAsync;
     case 'rooted_async_random': return wasm.AlgorithmSelector.RootedAsyncRandom;
+    case 'leader_election': return wasm.AlgorithmSelector.LeaderElection;
     default: return wasm.AlgorithmSelector.DropAndFreeze;
   }
 }
@@ -158,6 +159,8 @@ function runOne(name, data) {
         renderTruncated: output.render_truncated(),
         renderBytes: output.render_bytes(),
         groupBytes: output.group_bytes(),
+        // Leader election: each agent's leader; empty for dispersion.
+        outputs: output.outputs(),
       };
     } finally {
       output.free();
@@ -168,5 +171,5 @@ function runOne(name, data) {
 }
 
 function transferables(result) {
-  return [result.positions.buffer, result.statuses.buffer, result.homes.buffer, result.renderBytes.buffer, result.groupBytes.buffer];
+  return [result.positions.buffer, result.statuses.buffer, result.homes.buffer, result.renderBytes.buffer, result.groupBytes.buffer, result.outputs.buffer];
 }
