@@ -1828,6 +1828,19 @@ html[data-theme="light"] {
   border: 2px solid #7c8cff;
 }
 
+.dot.leader {
+  background: transparent;
+  border: 2.5px solid var(--warn);
+}
+
+.edge-swatch {
+  display: inline-block;
+  width: 14px;
+  margin-right: 5px;
+  border-top: 3px solid #3987e5;
+  vertical-align: middle;
+}
+
 .probe-info {
   flex: 1 1 100%;
   color: var(--muted);

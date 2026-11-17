@@ -612,6 +612,27 @@ fn sync_placement(document: &Document, rooted_only: bool, election: bool) {
     if let Some(note) = document.get_element_by_id("electionNote") {
         let _ = note.class_list().toggle_with_force("hidden", !election);
     }
+    sync_agent_count(document);
+}
+
+/// Leader election places one agent on every node, so while it is chosen
+/// the Agents box shows the node count and cannot be edited.
+fn sync_agent_count(document: &Document) {
+    let (Some(agents), Some(nodes)) = (
+        document
+            .get_element_by_id("agents")
+            .and_then(|e| e.dyn_into::<HtmlInputElement>().ok()),
+        document
+            .get_element_by_id("nodes")
+            .and_then(|e| e.dyn_into::<HtmlInputElement>().ok()),
+    ) else {
+        return;
+    };
+    let election = select_value(document, "algorithm") == "leader_election";
+    if election {
+        agents.set_value(&nodes.value());
+    }
+    agents.set_disabled(election);
 }
 
 /// What the round counter holds: rounds, or, under an asynchronous schedule,
@@ -947,6 +968,42 @@ fn election_note(frame: &Frame, schedule: ElectionSchedule) -> String {
         ));
     }
     parts.join(" \u{b7} ")
+}
+
+/// The agent every agent output as its leader, if they all output the same one.
+fn elected_leader(outputs: &[i32]) -> Option<usize> {
+    let (&leader, rest) = outputs.split_first()?;
+    if rest.iter().any(|&other| other != leader) {
+        return None;
+    }
+    usize::try_from(leader).ok()
+}
+
+/// The sentence after a leader-election run: who was elected and where, or
+/// why there is no leader to show.
+fn election_summary(outputs: &[i32], homes: &[i32]) -> String {
+    if outputs.is_empty() {
+        return "The run stopped before the agents decided, so no leader was elected; \
+                raise the round limit."
+            .to_owned();
+    }
+    let Some(leader) = elected_leader(outputs) else {
+        return "The agents output different leaders.".to_owned();
+    };
+    let at = homes
+        .get(leader)
+        .filter(|&&home| home >= 0)
+        .map(|home| format!(" at node {home}"))
+        .unwrap_or_default();
+    let agreed = if outputs.len() == 1 {
+        "it is the only agent".to_owned()
+    } else {
+        format!("all {} agents output ID {}", outputs.len(), leader + 1)
+    };
+    format!(
+        "Leader: ID {} (agent {leader}){at}; {agreed}. The last frame rings its node.",
+        leader + 1
+    )
 }
 
 fn same_frame(a: &Frame, b: &Frame) -> bool {
@@ -1365,10 +1422,14 @@ fn refresh_notes(app: &mut AppState) {
         },
         _ => frame_notes(&app.frames, algorithm),
     };
-    set_legend(
-        &app.document,
-        app.groups.is_some() && algorithm == "general",
-    );
+    let legend = if app.groups.is_some() && algorithm == "general" {
+        "generalLegend"
+    } else if algorithm == "leader_election" {
+        "electionLegend"
+    } else {
+        "statusLegend"
+    };
+    set_legend(&app.document, legend);
 }
 
 /// The loaded leader-election run's schedule. The election always takes the
@@ -1391,13 +1452,13 @@ fn election_schedule(app: &AppState) -> Option<ElectionSchedule> {
     Some(schedule)
 }
 
-fn set_legend(document: &Document, general: bool) {
-    let _ = element::<Element>(document, "statusLegend")
-        .class_list()
-        .toggle_with_force("hidden", general);
-    let _ = element::<Element>(document, "generalLegend")
-        .class_list()
-        .toggle_with_force("hidden", !general);
+/// Shows the legend with id `shown` and hides the others.
+fn set_legend(document: &Document, shown: &str) {
+    for id in ["statusLegend", "generalLegend", "electionLegend"] {
+        if let Some(legend) = document.get_element_by_id(id) {
+            let _ = legend.class_list().toggle_with_force("hidden", id != shown);
+        }
+    }
 }
 
 /// Shows the graph from the controls with the clicked starts, before a run.
@@ -1438,7 +1499,7 @@ fn preview(state: &Rc<RefCell<AppState>>) {
             .add_1("hidden");
         set_disabled(&element::<HtmlElement>(&document, "export"), true);
         set_text(&document, "runTitle", "Placing agents");
-        set_legend(&document, false);
+        set_legend(&document, "statusLegend");
         set_timeline(&app);
     }
     resize(state);
@@ -2343,7 +2404,8 @@ fn render(state: &Rc<RefCell<AppState>>) {
 const MEETING_COLOR: &str = "#3987e5";
 /// The ring around the elected leader's home.
 const LEADER_COLOR: &str = "#f6b44f";
-/// Above this many nodes the per-node labels would overlap; hover instead.
+/// Above this many nodes the per-node labels would overlap, so only the
+/// leader's are drawn; hover for the rest.
 const MAX_ELECTION_LABELS: usize = 60;
 
 /// Leader election: each visit that met the agent at home, drawn as a thick
@@ -2392,18 +2454,20 @@ fn draw_election_labels(
         .and_then(|home| points.get(home))
     {
         context.set_stroke_style_str(LEADER_COLOR);
-        context.set_line_width(3.0);
+        context.set_line_width(4.0);
         context.begin_path();
-        let _ = context.arc(point.0, point.1, radius + 6.0, 0.0, std::f64::consts::TAU);
+        let _ = context.arc(point.0, point.1, radius + 7.0, 0.0, std::f64::consts::TAU);
         context.stroke();
     }
-    if points.len() > MAX_ELECTION_LABELS {
-        return;
-    }
+    // On a crowded graph only the leader keeps its labels.
+    let crowded = points.len() > MAX_ELECTION_LABELS;
     context.set_font(PORT_FONT);
     context.set_text_align("center");
     context.set_text_baseline("middle");
     for (agent, &home) in frame.homes.iter().enumerate() {
+        if crowded && leader != Some(agent) {
+            continue;
+        }
         let Some(point) = usize::try_from(home).ok().and_then(|home| points.get(home)) else {
             continue;
         };
@@ -2414,7 +2478,7 @@ fn draw_election_labels(
         context.set_fill_style_str(if at_home { "#ffffff" } else { text_color });
         let _ = context.fill_text(&(min + 1).to_string(), point.0, point.1);
         let label = if leader == Some(agent) {
-            format!("ID {} \u{2605}", agent + 1)
+            format!("ID {} \u{2605} leader", agent + 1)
         } else {
             format!("ID {}", agent + 1)
         };
@@ -2687,12 +2751,22 @@ fn accept_result(state: &Rc<RefCell<AppState>>, result: ResultData) {
     let _ = element::<Element>(&app.document, "emptyState")
         .class_list()
         .add_1("hidden");
+    let election = config
+        .as_ref()
+        .is_some_and(|c| c.algorithm == "leader_election");
     if let Some(c) = config {
+        let elected = if election {
+            elected_leader(&result.outputs)
+                .map(|leader| format!(" · leader ID {}", leader + 1))
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
         set_text(
             &app.document,
             "runTitle",
             &format!(
-                "{} · {} · {}",
+                "{} · {} · {}{elected}",
                 algorithm_label(&c.algorithm),
                 c.family,
                 termination(result.termination_code)
@@ -2702,19 +2776,20 @@ fn accept_result(state: &Rc<RefCell<AppState>>, result: ResultData) {
     set_timeline(&app);
     set_disabled(&element::<HtmlElement>(&app.document, "export"), false);
     if understood {
-        say(
-            &app.document,
-            &format!(
-                "Completed with {} playback frames{}.",
-                app.frames.len(),
-                if result.render_truncated {
-                    " (trace bounded)"
-                } else {
-                    ""
-                }
-            ),
-            "",
+        let mut message = format!(
+            "Completed with {} playback frames{}.",
+            app.frames.len(),
+            if result.render_truncated {
+                " (trace bounded)"
+            } else {
+                ""
+            }
         );
+        if election {
+            message.push(' ');
+            message.push_str(&election_summary(&result.outputs, &result.homes));
+        }
+        say(&app.document, &message, "");
     } else {
         say(&app.document, STALE_PAGE, "error");
     }
@@ -3822,6 +3897,7 @@ pub fn start() -> Result<(), JsValue> {
         let closure = Closure::<dyn FnMut(Event)>::new(move |_| {
             let document = state.borrow().document.clone();
             sync_groups_input(&document);
+            sync_agent_count(&document);
             if placement {
                 state.borrow_mut().starts.clear();
             }
@@ -4425,6 +4501,27 @@ mod tests {
         );
         assert!(note(16).contains("simulated round 2 of 2"));
         assert!(note(16).ends_with("leader: ID 1 (agent 0), known to every agent"));
+    }
+
+    #[test]
+    fn the_run_message_names_the_leader() {
+        let (_, result) = election_stream();
+        assert_eq!(elected_leader(&result.outputs), Some(0));
+        assert_eq!(
+            election_summary(&result.outputs, &result.homes),
+            "Leader: ID 1 (agent 0) at node 2; all 3 agents output ID 1. \
+             The last frame rings its node."
+        );
+        assert_eq!(
+            election_summary(&[0], &[4]),
+            "Leader: ID 1 (agent 0) at node 4; it is the only agent. The last frame rings its node."
+        );
+        assert!(election_summary(&[], &[]).starts_with("The run stopped before"));
+        assert_eq!(elected_leader(&[0, 1, 0]), None);
+        assert_eq!(
+            election_summary(&[0, 1, 0], &[0, 1, 2]),
+            "The agents output different leaders."
+        );
     }
 
     #[test]
