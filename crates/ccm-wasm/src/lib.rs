@@ -1273,6 +1273,21 @@ fn encode_event(bytes: &mut Vec<u8>, step: u64, event: &SimulationEvent) {
             bytes.push(*rule);
             put_optional_u32(bytes, owner.map(|agent| agent.0));
         }
+        SimulationEvent::MessageExchanged {
+            visitor,
+            host,
+            node,
+        } => {
+            bytes.push(9);
+            put_u32(bytes, visitor.0);
+            put_u32(bytes, host.0);
+            put_u32(bytes, node.0);
+        }
+        SimulationEvent::MinimumChanged { agent, min } => {
+            bytes.push(10);
+            put_u32(bytes, agent.0);
+            put_u32(bytes, min.0);
+        }
         // The agent, then the output's kind and its fields. Kind 0 is a
         // leader-election output: is-leader as one byte, then the leader.
         SimulationEvent::OutputDecided { agent, output } => {
@@ -1334,6 +1349,8 @@ fn phase_code(phase: Phase) -> u8 {
         Phase::Retrace => 8,
         Phase::Other => 9,
         Phase::HelperReturn => 10,
+        Phase::VisitOut => 11,
+        Phase::VisitBack => 12,
     }
 }
 

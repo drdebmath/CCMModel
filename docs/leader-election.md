@@ -127,8 +127,11 @@ tests check the exact count.
 
 Every agent knows the leader by round `D · b · 2Δ`, which is the page's
 `O(DΔ log n)` (Remark 1 of Kshemkalyani et al., *Faster leader election via
-mobile agents*). The agents cannot see that moment; the simulator records it
-for the tests only, as `all_knew_round` on the typed result.
+mobile agents*). More exactly, the smallest ID moves one hop per simulated
+round, so every agent knows after `ecc · b · 2Δ` rounds, where `ecc` is the
+distance from the leader's home to the node farthest from it. The agents cannot
+see that moment; the simulator records it for the tests only, as
+`rounds_until_all_knew` on the typed result.
 
 `n = 1` is a single agent with no neighbours: `Δ = 0`, no rounds, and the agent
 is the leader.
@@ -230,10 +233,12 @@ outputs black or grey.
 | `settlements` | 0 from a dispersed start, whose homes are given; `n` in rooted mode |
 | `peak_logical_memory_words` | `9n` |
 
-The typed result adds: `b`, `Δ`, the number of simulated rounds and blocks,
-`election_rounds`, `dispersion_rounds`, `all_knew_round`, visits that met the
-node's own agent, visits that met nobody (that agent was itself visiting), and
-`memory_bits_per_agent`.
+The typed result (`ElectionStats`) adds: `id_bits` (`b`), `max_degree` (`Δ`),
+the number of simulated rounds and blocks, `election_rounds`,
+`dispersion_rounds`, `rounds_until_all_knew`, `visits`, `meetings` (visits that
+met the node's own agent) and `visits_without_message` (the node's own agent
+was away visiting, or at home with bit 1 because it had no port for that
+round), and `memory_bits_per_agent`.
 
 ## Worked example
 

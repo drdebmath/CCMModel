@@ -23,6 +23,11 @@ pub enum Phase {
     Retrace,
     /// `RootedDisp`'s line 22: settlers that helped a probe walk home.
     HelperReturn,
+    /// Leader election: agents whose current ID bit is 1 leave home through
+    /// one port to visit a neighbour.
+    VisitOut,
+    /// Leader election: the visitors take their messages and come back home.
+    VisitBack,
     Other,
 }
 
@@ -75,6 +80,19 @@ pub enum SimulationEvent {
         port: PortId,
         rule: u8,
         owner: Option<AgentId>,
+    },
+    /// Leader election: a visitor met the agent at home on `node`, whose
+    /// current ID bit is 0, and the two exchanged their smallest IDs.
+    MessageExchanged {
+        visitor: AgentId,
+        host: AgentId,
+        node: NodeId,
+    },
+    /// Leader election: at the end of a simulated round, `agent`'s smallest
+    /// ID seen became that of `min`.
+    MinimumChanged {
+        agent: AgentId,
+        min: AgentId,
     },
     /// An agent decided its output, for algorithms that compute one (see
     /// [`AgentOutput`]). Dispersion algorithms never record it.
@@ -437,8 +455,12 @@ fn event_words(event: &SimulationEvent) -> usize {
         SimulationEvent::PhaseStarted { .. } => 1,
         SimulationEvent::AgentMoved { .. } => 5,
         SimulationEvent::GroupMoved { agents, .. } => 4 + agents.len(),
-        SimulationEvent::AgentSettled { .. } | SimulationEvent::NodeStateChanged { .. } => 2,
-        SimulationEvent::AgentStateChanged { .. } | SimulationEvent::OutputDecided { .. } => 3,
+        SimulationEvent::AgentSettled { .. }
+        | SimulationEvent::NodeStateChanged { .. }
+        | SimulationEvent::MinimumChanged { .. } => 2,
+        SimulationEvent::AgentStateChanged { .. }
+        | SimulationEvent::MessageExchanged { .. }
+        | SimulationEvent::OutputDecided { .. } => 3,
         SimulationEvent::TreeEdgeAdded { .. } => 6,
         SimulationEvent::ProbeConcluded { .. } => 4,
     }
