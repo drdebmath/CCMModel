@@ -114,6 +114,18 @@ pub struct Frame {
     /// still import cleanly under the same schema version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<u8>,
+    /// Leader election: each agent's smallest ID seen, as an agent index.
+    /// Empty until one changes, which means every agent still holds its own.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub minimums: Vec<i32>,
+    /// Leader election: the `(visitor, host)` pairs that exchanged messages in
+    /// this frame's round.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub meetings: Vec<(u32, u32)>,
+    /// Leader election: each agent's decided leader, as an agent index. Empty
+    /// until the agents decide, in the last round.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub leaders: Vec<i32>,
 }
 
 /// One probe the head concluded: the port, the rule that decided it, and the
@@ -156,6 +168,10 @@ pub struct ResultData {
     pub render_bytes: Vec<u8>,
     #[serde(rename = "groupBytes", default, skip_serializing)]
     pub group_bytes: Vec<u8>,
+    /// Leader election: each agent's leader, as an agent index; empty for the
+    /// dispersion algorithms and for a run stopped early.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outputs: Vec<i32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -184,6 +200,8 @@ struct ExportResult<'a> {
     render_record_count: u32,
     #[serde(rename = "renderTruncated")]
     render_truncated: bool,
+    #[serde(skip_serializing_if = "<[i32]>::is_empty")]
+    outputs: &'a [i32],
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -502,6 +520,7 @@ fn algorithm_label(value: &str) -> &'static str {
         "general" => "GeneralDisp",
         "rooted_async" => "RootedAsync (synchronous)",
         "rooted_async_random" => "RootedAsync (asynchronous)",
+        "leader_election" => "Leader election",
         _ => "Drop and Freeze",
     }
 }
@@ -527,7 +546,11 @@ pub(crate) fn sync_schedule_menu(document: &Document) {
             let _ = wrap.class_list().toggle_with_force("hidden", hidden);
         }
     }
-    sync_placement(document, needs_rooted_start(&algorithm));
+    sync_placement(
+        document,
+        needs_rooted_start(&algorithm),
+        algorithm == "leader_election",
+    );
 }
 
 /// Help by Scouts, P1Tree, RootedDisp and `RootedAsync` are defined for a
@@ -558,8 +581,9 @@ fn sync_groups_input(document: &Document) {
 }
 
 /// Locks the simulator's placement to node 0 while a rooted-only algorithm
-/// is chosen, and says why. The dashboard has no placement menu.
-fn sync_placement(document: &Document, rooted_only: bool) {
+/// is chosen, and to one agent per node or node 0 for leader election, and
+/// says why. The dashboard has no placement menu.
+fn sync_placement(document: &Document, rooted_only: bool, election: bool) {
     let Some(placement) = document
         .get_element_by_id("placement")
         .and_then(|e| e.dyn_into::<HtmlSelectElement>().ok())
@@ -568,10 +592,13 @@ fn sync_placement(document: &Document, rooted_only: bool) {
     };
     if rooted_only {
         placement.set_value("rooted");
+    } else if election && !matches!(placement.value().as_str(), "rooted" | "dispersed") {
+        placement.set_value("dispersed");
     }
-    for value in ["groups", "uniform", "click"] {
+    for value in ["groups", "uniform", "click", "dispersed"] {
+        let disabled = rooted_only || (election && value != "dispersed");
         if let Ok(Some(option)) = placement.query_selector(&format!("option[value={value}]")) {
-            let _ = if rooted_only {
+            let _ = if disabled {
                 option.set_attribute("disabled", "")
             } else {
                 option.remove_attribute("disabled")
@@ -581,6 +608,9 @@ fn sync_placement(document: &Document, rooted_only: bool) {
     sync_groups_input(document);
     if let Some(note) = document.get_element_by_id("placementNote") {
         let _ = note.class_list().toggle_with_force("hidden", !rooted_only);
+    }
+    if let Some(note) = document.get_element_by_id("electionNote") {
+        let _ = note.class_list().toggle_with_force("hidden", !election);
     }
 }
 
@@ -633,6 +663,9 @@ fn final_frame(result: &ResultData) -> Frame {
         positions: result.positions.clone(),
         statuses: result.statuses.clone(),
         homes: result.homes.clone(),
+        // Leader election ends with every agent's minimum its leader.
+        minimums: result.outputs.clone(),
+        leaders: result.outputs.clone(),
         ..Frame::default()
     }
 }
@@ -768,6 +801,154 @@ pub fn frame_notes(frames: &[Frame], algorithm: &str) -> Vec<String> {
     notes
 }
 
+/// Where leader election's rounds fall: `n − 1` simulated rounds of `b`
+/// blocks of `2Δ` rounds, starting after `offset` rounds of `RootedDisp`
+/// (0 from a dispersed start). See `docs/leader-election.md`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ElectionSchedule {
+    pub agents: usize,
+    pub max_degree: usize,
+    pub offset: u64,
+}
+
+impl ElectionSchedule {
+    #[must_use]
+    pub const fn new(agents: usize, max_degree: usize, offset: u64) -> Self {
+        Self {
+            agents,
+            max_degree,
+            offset,
+        }
+    }
+
+    /// `b = ⌊log₂ n⌋ + 1`, the bits of every ID.
+    #[must_use]
+    pub const fn bits(&self) -> u32 {
+        usize::BITS - self.agents.leading_zeros()
+    }
+
+    const fn block(&self) -> u64 {
+        2 * self.max_degree as u64
+    }
+
+    /// The election's rounds, `(n − 1) · b · 2Δ`.
+    #[must_use]
+    pub const fn length(&self) -> u64 {
+        self.agents.saturating_sub(1) as u64 * self.bits() as u64 * self.block()
+    }
+
+    /// Where round `step` falls: its simulated round (from 1), block (from 0),
+    /// port, and whether it is an out round. `None` before the election.
+    #[must_use]
+    pub fn position(&self, step: u64) -> Option<(u64, u32, u64, bool)> {
+        let block = self.block();
+        if step <= self.offset || block == 0 {
+            return None;
+        }
+        let round = step - self.offset - 1;
+        let per_simulated = u64::from(self.bits()) * block;
+        let within = round % per_simulated;
+        Some((
+            round / per_simulated + 1,
+            (within / block) as u32,
+            (within % block) / 2,
+            within % 2 == 0,
+        ))
+    }
+
+    /// Whether agent `agent` (ID `agent + 1`) has a 1 in bit `block`, counted
+    /// from the most significant: whether it visits in that block.
+    #[must_use]
+    pub const fn visits(&self, agent: usize, block: u32) -> bool {
+        ((agent + 1) >> (self.bits() - 1 - block)) & 1 == 1
+    }
+}
+
+pub(crate) fn graph_max_degree(graph: &Graph) -> usize {
+    let mut degree = vec![0_usize; graph.node_count];
+    for &node in &graph.edges {
+        if let Some(count) = degree.get_mut(node as usize) {
+            *count += 1;
+        }
+    }
+    degree.into_iter().max().unwrap_or(0)
+}
+
+/// `ID 1, ID 2, …` for agents 0, 1, …; past `limit` names only how many.
+fn id_list(agents: &[usize], limit: usize) -> String {
+    if agents.len() > limit {
+        return format!("{} agents", agents.len());
+    }
+    agents
+        .iter()
+        .map(|agent| format!("ID {}", agent + 1))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// One note per playback frame for leader election: where the round falls in
+/// the schedule, who visits in its block, which visits met the agent at home,
+/// and at the end the leader. Agents are named by their IDs, `index + 1`.
+pub fn election_notes(frames: &[Frame], schedule: ElectionSchedule) -> Vec<String> {
+    frames
+        .iter()
+        .map(|frame| election_note(frame, schedule))
+        .collect()
+}
+
+fn election_note(frame: &Frame, schedule: ElectionSchedule) -> String {
+    let mut parts = Vec::new();
+    match schedule.position(frame.step) {
+        None if frame.step == 0 && schedule.offset == 0 => {
+            parts.push("Start · one agent per node, each knowing only its own ID".to_owned());
+        }
+        None if frame.step == 0 => {
+            parts.push("Start · every agent on node 0; RootedDisp disperses them first".to_owned());
+        }
+        None => parts.push(format!(
+            "Step {} · RootedDisp disperses the agents · {}",
+            frame.step,
+            frame.phase.map_or("step", phase_name)
+        )),
+        Some((simulated, block, port, out)) => {
+            let bits = schedule.bits();
+            parts.push(format!(
+                "Round {} · simulated round {simulated} of {} · block {} of {bits} (bit {}) · port {port} {}",
+                frame.step,
+                schedule.agents.saturating_sub(1),
+                block + 1,
+                block + 1,
+                if out { "out" } else { "back" }
+            ));
+            let visiting: Vec<usize> = (0..schedule.agents)
+                .filter(|&agent| schedule.visits(agent, block))
+                .collect();
+            parts.push(format!("visiting this block: {}", id_list(&visiting, 8)));
+        }
+    }
+    if !frame.meetings.is_empty() {
+        let met: Vec<String> = frame
+            .meetings
+            .iter()
+            .take(6)
+            .map(|&(visitor, host)| format!("ID {} meets ID {}", visitor + 1, host + 1))
+            .collect();
+        let more = frame.meetings.len().saturating_sub(met.len());
+        parts.push(if more > 0 {
+            format!("{} and {more} more", met.join(", "))
+        } else {
+            met.join(", ")
+        });
+    }
+    if let Some(&leader) = frame.leaders.first().filter(|&&leader| leader >= 0) {
+        parts.push(format!(
+            "leader: ID {} (agent {leader}), known to every agent",
+            leader + 1
+        ));
+    }
+    parts.join(" \u{b7} ")
+}
+
 fn same_frame(a: &Frame, b: &Frame) -> bool {
     a.step == b.step && a.positions == b.positions && a.statuses == b.statuses && a.homes == b.homes
 }
@@ -811,6 +992,14 @@ impl<'a> Reader<'a> {
     }
 }
 
+/// Sets `values[agent]`; out-of-range agents are ignored, as elsewhere in the
+/// decoder.
+fn set_agent_value(values: &mut [i32], agent: u32, value: u32) {
+    if let Some(slot) = values.get_mut(agent as usize) {
+        *slot = value as i32;
+    }
+}
+
 #[cfg(test)]
 fn trace_frames(bytes: &[u8], starts: &[u32], result: &ResultData) -> Vec<Frame> {
     read_trace(bytes, starts, result).0
@@ -844,6 +1033,8 @@ fn read_trace(bytes: &[u8], starts: &[u32], result: &ResultData) -> (Vec<Frame>,
     let mut current = initial.clone();
     // Probes concluded since the last checkpoint, shown with the next one.
     let mut pending_probes: Vec<ProbeNote> = Vec::new();
+    // Leader election's message exchanges, likewise.
+    let mut pending_meetings: Vec<(u32, u32)> = Vec::new();
     for _ in 0..count {
         let record_type = match reader.u8() {
             Some(v) => v,
@@ -907,8 +1098,47 @@ fn read_trace(bytes: &[u8], starts: &[u32], result: &ResultData) -> (Vec<Frame>,
                     });
                     continue;
                 }
+                // Leader election's events change what agents know, not where
+                // they stand: they ride on the round's checkpoint frame.
+                if event == 8 {
+                    let (Some(agent), Some(output_kind)) = (reader.u32(), reader.u8()) else {
+                        break;
+                    };
+                    if output_kind != 0 {
+                        understood = false;
+                        break;
+                    }
+                    let (Some(_is_leader), Some(leader)) = (reader.u8(), reader.u32()) else {
+                        break;
+                    };
+                    if current.leaders.is_empty() {
+                        current.leaders = vec![-1; current.positions.len()];
+                    }
+                    set_agent_value(&mut current.leaders, agent, leader);
+                    continue;
+                }
+                if event == 9 {
+                    let (Some(visitor), Some(host), Some(_node)) =
+                        (reader.u32(), reader.u32(), reader.u32())
+                    else {
+                        break;
+                    };
+                    pending_meetings.push((visitor, host));
+                    continue;
+                }
+                if event == 10 {
+                    let (Some(agent), Some(min)) = (reader.u32(), reader.u32()) else {
+                        break;
+                    };
+                    if current.minimums.is_empty() {
+                        current.minimums = (0..current.positions.len()).map(|a| a as i32).collect();
+                    }
+                    set_agent_value(&mut current.minimums, agent, min);
+                    continue;
+                }
                 let mut next = current.clone();
                 next.step = step;
+                next.meetings.clear();
                 match event {
                     0 => {
                         if let Some(code) = reader.u8() {
@@ -1020,6 +1250,9 @@ fn read_trace(bytes: &[u8], starts: &[u32], result: &ResultData) -> (Vec<Frame>,
                     transit,
                     probes: std::mem::take(&mut pending_probes),
                     phase: current.phase,
+                    minimums: std::mem::take(&mut current.minimums),
+                    meetings: std::mem::take(&mut pending_meetings),
+                    leaders: std::mem::take(&mut current.leaders),
                 };
                 frames.push(current.clone());
             }
@@ -1126,12 +1359,36 @@ fn refresh_notes(app: &mut AppState) {
         .map_or("", |config| config.algorithm.as_str());
     app.notes = match &app.groups {
         Some(groups) if algorithm == "general" => general::notes(&app.frames, groups),
+        _ if algorithm == "leader_election" => match election_schedule(app) {
+            Some(schedule) => election_notes(&app.frames, schedule),
+            None => frame_notes(&app.frames, algorithm),
+        },
         _ => frame_notes(&app.frames, algorithm),
     };
     set_legend(
         &app.document,
         app.groups.is_some() && algorithm == "general",
     );
+}
+
+/// The loaded leader-election run's schedule. The election always takes the
+/// same number of rounds, so a completed run's rounds beyond it are
+/// RootedDisp's; a run stopped early starts the election just before its
+/// first visit.
+fn election_schedule(app: &AppState) -> Option<ElectionSchedule> {
+    let graph = app.graph.as_ref()?;
+    let mut schedule = ElectionSchedule::new(graph.node_count, graph_max_degree(graph), 0);
+    schedule.offset = match app.result.as_ref() {
+        Some(result) if result.termination_code == 0 => {
+            result.rounds.saturating_sub(schedule.length())
+        }
+        _ => app
+            .frames
+            .iter()
+            .find(|frame| frame.phase == Some(11))
+            .map_or(0, |frame| frame.step.saturating_sub(1)),
+    };
+    Some(schedule)
 }
 
 fn set_legend(document: &Document, general: bool) {
@@ -1969,6 +2226,13 @@ fn render(state: &Rc<RefCell<AppState>>) {
         }
         context.stroke();
     }
+    let election = app
+        .config
+        .as_ref()
+        .is_some_and(|config| config.algorithm == "leader_election");
+    if election {
+        draw_meetings(&context, frame, &points);
+    }
     if show_ports {
         let counts: Vec<usize> = by_node.iter().map(Vec::len).collect();
         context.set_font(PORT_FONT);
@@ -2069,7 +2333,94 @@ fn render(state: &Rc<RefCell<AppState>>) {
             context.stroke();
         }
     }
+    if election {
+        draw_election_labels(&context, frame, &points, radius, &text_color);
+    }
     draw_rooted_async_overlay(&context, frame, &points, radius, &moving, &app.document);
+}
+
+/// The colour of an edge that carried a message, as on the problem page.
+const MEETING_COLOR: &str = "#3987e5";
+/// The ring around the elected leader's home.
+const LEADER_COLOR: &str = "#f6b44f";
+/// Above this many nodes the per-node labels would overlap; hover instead.
+const MAX_ELECTION_LABELS: usize = 60;
+
+/// Leader election: each visit that met the agent at home, drawn as a thick
+/// edge from the visitor's home to the node it visited.
+fn draw_meetings(context: &CanvasRenderingContext2d, frame: &Frame, points: &[(f64, f64)]) {
+    if frame.meetings.is_empty() {
+        return;
+    }
+    context.set_stroke_style_str(MEETING_COLOR);
+    context.set_line_width(3.5);
+    context.begin_path();
+    for &(visitor, host) in &frame.meetings {
+        let from = frame
+            .homes
+            .get(visitor as usize)
+            .and_then(|&home| usize::try_from(home).ok())
+            .and_then(|home| points.get(home));
+        let to = frame
+            .positions
+            .get(host as usize)
+            .and_then(|&node| points.get(node as usize));
+        if let (Some(a), Some(b)) = (from, to) {
+            context.move_to(a.0, a.1);
+            context.line_to(b.0, b.1);
+        }
+    }
+    context.stroke();
+}
+
+/// Leader election: inside each node the current minimum of the agent whose
+/// home it is, its ID above, and at the end a ring round the leader's home.
+fn draw_election_labels(
+    context: &CanvasRenderingContext2d,
+    frame: &Frame,
+    points: &[(f64, f64)],
+    radius: f64,
+    text_color: &str,
+) {
+    let leader = frame
+        .leaders
+        .first()
+        .and_then(|&leader| usize::try_from(leader).ok());
+    if let Some(point) = leader
+        .and_then(|leader| frame.homes.get(leader))
+        .and_then(|&home| usize::try_from(home).ok())
+        .and_then(|home| points.get(home))
+    {
+        context.set_stroke_style_str(LEADER_COLOR);
+        context.set_line_width(3.0);
+        context.begin_path();
+        let _ = context.arc(point.0, point.1, radius + 6.0, 0.0, std::f64::consts::TAU);
+        context.stroke();
+    }
+    if points.len() > MAX_ELECTION_LABELS {
+        return;
+    }
+    context.set_font(PORT_FONT);
+    context.set_text_align("center");
+    context.set_text_baseline("middle");
+    for (agent, &home) in frame.homes.iter().enumerate() {
+        let Some(point) = usize::try_from(home).ok().and_then(|home| points.get(home)) else {
+            continue;
+        };
+        let min = frame.minimums.get(agent).copied().unwrap_or(agent as i32);
+        // An occupied node is filled dark; an agent away visiting leaves its
+        // home empty, drawn in the page's own colours.
+        let at_home = frame.positions.get(agent).map(|&node| node as i32) == Some(home);
+        context.set_fill_style_str(if at_home { "#ffffff" } else { text_color });
+        let _ = context.fill_text(&(min + 1).to_string(), point.0, point.1);
+        let label = if leader == Some(agent) {
+            format!("ID {} \u{2605}", agent + 1)
+        } else {
+            format!("ID {}", agent + 1)
+        };
+        context.set_fill_style_str(text_color);
+        let _ = context.fill_text(&label, point.0, point.1 - radius - 18.0);
+    }
 }
 
 /// Whether each agent passes the settled/unsettled/scout filters.
@@ -2286,6 +2637,11 @@ fn result_from_message(data: &JsValue) -> Result<ResultData, String> {
             .ok()
             .filter(|bytes| bytes.is_instance_of::<Uint8Array>())
             .map(|bytes| Uint8Array::new(&bytes).to_vec())
+            .unwrap_or_default(),
+        outputs: reflected_value(data, "outputs")
+            .ok()
+            .filter(|values| values.is_instance_of::<Int32Array>())
+            .map(|values| Int32Array::new(&values).to_vec())
             .unwrap_or_default(),
     })
 }
@@ -2659,6 +3015,16 @@ fn prepare(state: &Rc<RefCell<AppState>>, rooted: bool) -> Option<(Config, Graph
         clear_view(state);
         return None;
     }
+    let election = config.algorithm == "leader_election";
+    if election {
+        if !matches!(config.placement.as_str(), "dispersed" | "rooted") {
+            say(&document, "Leader election starts with one agent per node. Choose \u{201c}One agent per node\u{201d}, or \u{201c}Rooted at node 0\u{201d} to disperse with RootedDisp first.", "error");
+            return None;
+        }
+        // n agents on n nodes, whatever the agent box says.
+        config.agent_count = config.node_count;
+        element::<HtmlInputElement>(&document, "agents").set_value(&config.node_count.to_string());
+    }
     if config.family == "complete" && config.node_count > 500 {
         say(
             &document,
@@ -2728,6 +3094,17 @@ fn prepare(state: &Rc<RefCell<AppState>>, rooted: bool) -> Option<(Config, Graph
         config.round_limit = config
             .round_limit
             .max(general::round_limit(config.agent_count));
+    }
+    if election {
+        // The schedule's length is fixed by n and Δ; a smaller limit could
+        // only cut the election short. RootedDisp gets its usual 40 (k + 1).
+        let schedule = ElectionSchedule::new(config.node_count, graph_max_degree(&graph), 0);
+        let dispersal = if config.placement == "rooted" {
+            40 * (config.agent_count as u64 + 1)
+        } else {
+            0
+        };
+        config.round_limit = config.round_limit.max(schedule.length() + dispersal);
     }
     {
         let mut app = state.borrow_mut();
@@ -2911,12 +3288,12 @@ fn prepared_input(config: &Config) -> (Graph, Vec<u32>) {
 
 /// Where the agents start. `rooted` puts them all on node 0; `groups` deals
 /// them round-robin onto `groups` seeded distinct nodes, so several nodes
-/// each hold a crowd. An export from before groups existed may say
-/// `spread`, which is one agent per node.
+/// each hold a crowd; `dispersed` puts each agent on its own seeded node. An
+/// export from before groups existed may say `spread`, which is the same.
 fn start_nodes(config: &Config) -> Vec<u32> {
     let groups = match config.placement.as_str() {
         "rooted" => return vec![0; config.agent_count],
-        "spread" => config.agent_count,
+        "spread" | "dispersed" => config.agent_count,
         _ => config.groups,
     }
     .clamp(1, config.agent_count.min(config.node_count).max(1));
@@ -3141,6 +3518,7 @@ fn export_json(state: &Rc<RefCell<AppState>>) {
             probes: result.probes,
             render_record_count: result.render_record_count,
             render_truncated: result.render_truncated,
+            outputs: &result.outputs,
         },
         frames: &app.frames,
     };
@@ -3691,10 +4069,16 @@ fn tooltip(state: &Rc<RefCell<AppState>>, event: MouseEvent) {
         .config
         .as_ref()
         .is_some_and(|config| config.algorithm == "rooted");
+    let election = app
+        .config
+        .as_ref()
+        .is_some_and(|config| config.algorithm == "leader_election");
     // RootedDisp's roles, with its leader marked: the paper makes the
     // largest ID, the last agent here, a_max.
     let names = if rooted {
         ["settler (home)", "explorer", "helper"]
+    } else if election {
+        ["at home", "unsettled", "visiting"]
     } else {
         ["settled", "unsettled", "waiting"]
     };
@@ -3719,6 +4103,18 @@ fn tooltip(state: &Rc<RefCell<AppState>>, event: MouseEvent) {
                 )
             } else if rooted && i == leader {
                 format!("{status} · leader a_max")
+            } else if election {
+                let min = frame.minimums.get(i).copied().unwrap_or(i as i32);
+                let elected = match frame.leaders.get(i) {
+                    Some(&chosen) if chosen == i as i32 => " · the leader",
+                    Some(&chosen) if chosen >= 0 => " · not the leader",
+                    _ => "",
+                };
+                format!(
+                    "ID {} · {status} · smallest ID seen {}{elected}",
+                    i + 1,
+                    min + 1
+                )
             } else {
                 status.to_owned()
             };
@@ -3845,6 +4241,7 @@ mod tests {
             render_truncated: false,
             render_bytes: vec![1, 2, 0, 0, 1],
             group_bytes: Vec::new(),
+            outputs: Vec::new(),
         };
         assert_eq!(trace_frames(&result.render_bytes, &[0], &result).len(), 2);
     }
@@ -3865,10 +4262,192 @@ mod tests {
             render_truncated: false,
             render_bytes: vec![1, 2, 0, 0, 1, 0, 0, 0, 99, 1, 0, 0, 0, 0, 0, 0, 0],
             group_bytes: Vec::new(),
+            outputs: Vec::new(),
         };
         let (frames, understood) = read_trace(&result.render_bytes, &[0], &result);
         assert!(!understood);
         assert_eq!(frames.len(), 2);
+    }
+
+    /// A semantic stream written the way `ccm-wasm` encodes one.
+    struct Stream {
+        bytes: Vec<u8>,
+        records: u32,
+    }
+
+    impl Stream {
+        fn new() -> Self {
+            Self {
+                bytes: vec![1, 2, 0, 0, 0, 0, 0, 0],
+                records: 0,
+            }
+        }
+
+        fn event(&mut self, step: u64, kind: u8, fields: &[u32]) {
+            self.bytes.push(2);
+            self.bytes.extend(step.to_le_bytes());
+            self.bytes.push(kind);
+            for field in fields {
+                self.bytes.extend(field.to_le_bytes());
+            }
+            self.records += 1;
+        }
+
+        fn phase(&mut self, step: u64, code: u8) {
+            self.bytes.push(2);
+            self.bytes.extend(step.to_le_bytes());
+            self.bytes.extend([0, code]);
+            self.records += 1;
+        }
+
+        /// Kind 0, a leader-election output: is-leader, then the leader.
+        fn output(&mut self, step: u64, agent: u32, leader: u32) {
+            self.bytes.push(2);
+            self.bytes.extend(step.to_le_bytes());
+            self.bytes.push(8);
+            self.bytes.extend(agent.to_le_bytes());
+            self.bytes.extend([0, u8::from(agent == leader)]);
+            self.bytes.extend(leader.to_le_bytes());
+            self.records += 1;
+        }
+
+        /// Every agent at home: `homes[agent]` is where it stands.
+        fn checkpoint(&mut self, step: u64, homes: &[u32]) {
+            self.bytes.push(3);
+            self.bytes.extend(step.to_le_bytes());
+            self.bytes
+                .extend(u32::try_from(homes.len()).unwrap().to_le_bytes());
+            for home in homes {
+                self.bytes.extend(home.to_le_bytes());
+                self.bytes.extend([0, 1]);
+                self.bytes.extend(home.to_le_bytes());
+            }
+            self.records += 1;
+        }
+
+        fn finish(mut self) -> Vec<u8> {
+            self.bytes[4..8].copy_from_slice(&self.records.to_le_bytes());
+            self.bytes
+        }
+    }
+
+    /// The problem page's path, IDs 3, 2, 1 on nodes 0, 1, 2: rounds 6, 8 and
+    /// 16 of the trace in `docs/leader-election.md`.
+    fn election_stream() -> (Vec<u8>, ResultData) {
+        let homes = [2, 1, 0];
+        let mut stream = Stream::new();
+        stream.phase(0, 9);
+        stream.checkpoint(0, &homes);
+        stream.phase(6, 12);
+        stream.event(6, 9, &[0, 1, 1]);
+        stream.event(6, 9, &[2, 1, 1]);
+        stream.checkpoint(6, &homes);
+        stream.phase(8, 12);
+        stream.event(8, 10, &[1, 0]);
+        stream.event(8, 10, &[2, 1]);
+        stream.checkpoint(8, &homes);
+        stream.phase(16, 12);
+        stream.event(16, 10, &[2, 0]);
+        for agent in 0..3 {
+            stream.output(16, agent, 0);
+        }
+        stream.checkpoint(16, &homes);
+        let bytes = stream.finish();
+        let result = ResultData {
+            positions: homes.to_vec(),
+            statuses: vec![0; 3],
+            homes: vec![2, 1, 0],
+            termination_code: 0,
+            rounds: 16,
+            moves: 20,
+            probes: 10,
+            render_record_count: 0,
+            render_truncated: false,
+            render_bytes: bytes.clone(),
+            group_bytes: Vec::new(),
+            outputs: vec![0, 0, 0],
+        };
+        (bytes, result)
+    }
+
+    #[test]
+    fn a_leader_election_trace_carries_meetings_minimums_and_the_leader() {
+        let (bytes, result) = election_stream();
+        let (frames, understood) = read_trace(&bytes, &[2, 1, 0], &result);
+        assert!(understood);
+        let at = |step: u64| {
+            frames
+                .iter()
+                .rev()
+                .find(|frame| frame.step == step)
+                .expect("a frame for the step")
+        };
+        assert_eq!(at(6).meetings, vec![(0, 1), (2, 1)]);
+        assert!(at(6).minimums.is_empty(), "nobody's minimum changed yet");
+        assert!(at(8).meetings.is_empty());
+        assert_eq!(at(8).minimums, vec![0, 0, 1]);
+        assert_eq!(at(16).minimums, vec![0, 0, 0]);
+        assert_eq!(at(16).leaders, vec![0, 0, 0]);
+        // A frame made from an event does not repeat the last round's meetings.
+        let phase_frame = frames
+            .iter()
+            .find(|frame| frame.step == 8 && frame.phase == Some(12))
+            .unwrap();
+        assert!(phase_frame.meetings.is_empty());
+    }
+
+    #[test]
+    fn election_notes_place_each_round_in_the_schedule() {
+        let schedule = ElectionSchedule::new(3, 2, 0);
+        assert_eq!(schedule.bits(), 2);
+        assert_eq!(schedule.length(), 16);
+        assert_eq!(schedule.position(0), None);
+        assert_eq!(schedule.position(1), Some((1, 0, 0, true)));
+        assert_eq!(schedule.position(6), Some((1, 1, 0, false)));
+        assert_eq!(schedule.position(16), Some((2, 1, 1, false)));
+        assert_eq!(
+            ElectionSchedule::new(3, 2, 13).position(19),
+            Some((1, 1, 0, false))
+        );
+
+        let (bytes, result) = election_stream();
+        let frames = trace_frames(&bytes, &[2, 1, 0], &result);
+        let notes = election_notes(&frames, schedule);
+        assert!(notes[0].starts_with("Start"));
+        let note = |step: u64| {
+            let index = frames.iter().rposition(|frame| frame.step == step).unwrap();
+            notes[index].clone()
+        };
+        assert_eq!(
+            note(6),
+            "Round 6 \u{b7} simulated round 1 of 2 \u{b7} block 2 of 2 (bit 2) \u{b7} port 0 back \
+             \u{b7} visiting this block: ID 1, ID 3 \u{b7} ID 1 meets ID 2, ID 3 meets ID 2"
+        );
+        assert!(note(16).contains("simulated round 2 of 2"));
+        assert!(note(16).ends_with("leader: ID 1 (agent 0), known to every agent"));
+    }
+
+    #[test]
+    fn the_dispersed_placement_puts_one_agent_on_each_node() {
+        let config = Config {
+            algorithm: "leader_election".to_owned(),
+            family: "grid".to_owned(),
+            placement: "dispersed".to_owned(),
+            node_count: 12,
+            agent_count: 12,
+            seed: 7,
+            round_limit: 500,
+            grid_columns: 4,
+            tree_branching: 2,
+            trace_mode: "full".to_owned(),
+            max_trace_records: 600,
+            sample_every: 4,
+            groups: 3,
+        };
+        let starts = start_nodes(&config);
+        let distinct: BTreeSet<u32> = starts.iter().copied().collect();
+        assert_eq!(distinct.len(), 12);
+        assert_eq!(starts, start_nodes(&config));
     }
 
     #[test]
@@ -4177,6 +4756,7 @@ mod tests {
             render_truncated: false,
             render_bytes: bytes,
             group_bytes: Vec::new(),
+            outputs: Vec::new(),
         };
         let frames = trace_frames(&result.render_bytes, &[0], &result);
         assert_eq!(
@@ -4212,6 +4792,7 @@ mod tests {
             render_truncated: false,
             render_bytes: bytes,
             group_bytes: Vec::new(),
+            outputs: Vec::new(),
         };
         let frames = trace_frames(&result.render_bytes, &[0], &result);
         let phases: Vec<Option<u8>> = frames.iter().map(|frame| frame.phase).collect();
