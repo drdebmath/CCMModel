@@ -17,7 +17,8 @@ The charts are the control flow as implemented, not as idealised: where the
 implementation departs from a paper, the chart shows what the code does and the
 notes say why. Read [behavior-spec.md](behavior-spec.md) for Drop-and-Freeze and
 Help-by-Scouts, [p1tree.md](p1tree.md) for P1Tree,
-[rooted-disp.md](rooted-disp.md) for RootedDisp, and the
+[rooted-disp.md](rooted-disp.md) for RootedDisp,
+[leader-election.md](leader-election.md) for leader election, and the
 [gap and trace note](2507.01298-optimal-dispersion-under-asynchrony/gap-and-trace-note.md)
 for RootedAsync, before drawing conclusions from any of them. The interactive version, [`docs.html`](../docs.html),
 explains every box and opens its code.
@@ -52,6 +53,12 @@ The port-label row is the one that catches people out. Drop-and-Freeze discards
 the port assignment an experiment asked for, so sweeping `--ports` changes
 nothing for it; P1Tree's whole behaviour turns on which edges happen to carry
 port 1.
+
+Leader election is not in the table because it is not a dispersion: it starts
+where these end, one agent per node, and its result is an output for every
+agent, the leader's ID, rather than a placement. Its cost is fixed by `n` and
+`Δ` alone: `(n − 1) · b · 2Δ` rounds with `b = ⌊log₂ n⌋ + 1`, whatever the port
+labels.
 ";
 
 /// Text for a mermaid label: quotes and angle brackets as entities.
