@@ -1,6 +1,6 @@
-//! End-to-end checks of the `ccm` binary: `RootedDisp` and `GeneralDisp`
-//! through `run`, `sweep` and `transitions`, with fixed graph, port and seed
-//! inputs, and the placements each algorithm refuses.
+//! End-to-end checks of the `ccm` binary: `RootedDisp`, `GeneralDisp` and
+//! leader election through `run`, `sweep` and `transitions`, with fixed graph,
+//! port and seed inputs, and the placements each algorithm refuses.
 
 use std::process::{Command, Output};
 
@@ -292,6 +292,116 @@ fn transitions_lists_the_merge_of_two_groups() {
         let step: u64 = fields.next().unwrap().parse().unwrap();
         let slot: u64 = fields.next().unwrap().parse().unwrap();
         assert_eq!(slot, step % 12 + 1, "{row}");
+    }
+}
+
+/// The problem page's example: a path with IDs 3, 2, 1 from one end.
+const PAGE_EXAMPLE: [&str; 15] = [
+    "run",
+    "--algorithm",
+    "leader-election",
+    "--graph",
+    "path",
+    "--nodes",
+    "3",
+    "--agents",
+    "3",
+    "--ports",
+    "canonical",
+    "--placement",
+    "explicit:2,1,0",
+    "--seed",
+    "1",
+];
+
+#[test]
+fn leader_election_reproduces_the_page_example() {
+    let first = ccm(&PAGE_EXAMPLE);
+    let table = rows(&first);
+    assert_eq!(table.len(), 1);
+    let row = &table[0];
+    assert_eq!(field(row, "algorithm"), "leader_election");
+    assert_eq!(field(row, "algorithm_kind"), "paper");
+    assert_eq!(field(row, "termination"), "completed");
+    assert_eq!(field(row, "placement"), "explicit:2;1;0");
+    assert_eq!(field(row, "rounds"), "16");
+    assert_eq!(field(row, "probe_rounds"), "16");
+    assert_eq!(field(row, "macro_rounds"), "2");
+    assert_eq!(field(row, "port_probes"), "10");
+    assert_eq!(field(row, "agent_moves"), "20");
+    assert_eq!(field(row, "settlements"), "0");
+    assert_eq!(field(row, "peak_logical_memory_words"), "27");
+    assert_eq!(ccm(&PAGE_EXAMPLE).stdout, first.stdout);
+}
+
+#[test]
+fn every_leader_election_alias_names_the_same_algorithm() {
+    for alias in ["leader-election", "leader_election", "leaderelection"] {
+        let mut args = PAGE_EXAMPLE.to_vec();
+        args[2] = alias;
+        assert_eq!(
+            field(&rows(&ccm(&args))[0], "algorithm"),
+            "leader_election",
+            "{alias}"
+        );
+    }
+}
+
+#[test]
+fn a_leader_election_sweep_runs_dispersed_and_rooted() {
+    for (placement, settlements) in [("dispersed", "0"), ("single:0", "12")] {
+        let output = ccm(&[
+            "sweep",
+            "--algorithm",
+            "leader-election",
+            "--graph",
+            "random-connected:6",
+            "--nodes",
+            "12",
+            "--agents",
+            "12",
+            "--seeds",
+            "1,2,3",
+            "--ports",
+            "random",
+            "--placement",
+            placement,
+            "--workers",
+            "2",
+        ]);
+        let table = rows(&output);
+        assert_eq!(table.len(), 3, "{placement}");
+        for row in &table {
+            assert_eq!(field(row, "termination"), "completed", "{placement}");
+            assert_eq!(field(row, "settlements"), settlements, "{placement}");
+            // n − 1 = 11 simulated message-passing rounds.
+            assert_eq!(field(row, "macro_rounds"), "11", "{placement}");
+        }
+    }
+}
+
+#[test]
+fn leader_election_refuses_starts_it_is_not_defined_for() {
+    for (agents, placement) in [("4", "dispersed"), ("8", "clustered:0,7")] {
+        let output = ccm(&[
+            "run",
+            "--algorithm",
+            "leader-election",
+            "--graph",
+            "path",
+            "--nodes",
+            "8",
+            "--agents",
+            agents,
+            "--placement",
+            placement,
+        ]);
+        assert!(!output.status.success(), "{placement}");
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("RequiresDispersedOrRootedStart"),
+            "{placement}: {error}"
+        );
     }
 }
 

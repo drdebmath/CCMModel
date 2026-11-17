@@ -47,6 +47,14 @@ pub enum RunError {
         algorithm: Algorithm,
         placement: String,
     },
+    /// Leader election needs as many agents as nodes, placed either one per
+    /// node or all on one node.
+    RequiresDispersedOrRootedStart {
+        algorithm: Algorithm,
+        placement: String,
+        agents: usize,
+        nodes: usize,
+    },
     Message(String),
 }
 
@@ -100,8 +108,8 @@ impl SimulationRunner for BuiltinRunner {
         check_placement(prepared)?;
         let limit = request
             .round_limit
-            .unwrap_or_else(|| default_round_limit(request.algorithm, request.agents));
-        let (termination, metrics) = match prepared.request.algorithm {
+            .unwrap_or_else(|| request_round_limit(prepared));
+        let (termination, metrics, outputs) = match prepared.request.algorithm {
             Algorithm::DropAndFreeze => {
                 let result = ccm_algorithms::drop_and_freeze::simulate(
                     &prepared.graph,
@@ -109,7 +117,7 @@ impl SimulationRunner for BuiltinRunner {
                     limit,
                 )
                 .map_err(|error| RunError::Message(error.to_string()))?;
-                (result.termination, result.metrics)
+                (result.termination, result.metrics, None)
             }
             Algorithm::HelpByScouts => {
                 let (result, metrics, _) = ccm_algorithms::help_by_scouts::simulate(
@@ -120,7 +128,7 @@ impl SimulationRunner for BuiltinRunner {
                     NoTrace,
                 )
                 .map_err(|error| RunError::Message(error.to_string()))?;
-                (result.termination, metrics)
+                (result.termination, metrics, None)
             }
             Algorithm::P1Tree => {
                 let (result, metrics, _) = ccm_algorithms::p1tree::simulate(
@@ -131,7 +139,7 @@ impl SimulationRunner for BuiltinRunner {
                     NoTrace,
                 )
                 .map_err(|error| RunError::Message(error.to_string()))?;
-                (result.termination, metrics)
+                (result.termination, metrics, None)
             }
             Algorithm::RootedAsync => {
                 let (result, metrics, _) = ccm_algorithms::rooted_async::simulate(
@@ -143,7 +151,7 @@ impl SimulationRunner for BuiltinRunner {
                     NoTrace,
                 )
                 .map_err(|error| RunError::Message(error.to_string()))?;
-                (result.termination, metrics)
+                (result.termination, metrics, None)
             }
             Algorithm::RootedDisp => {
                 let (result, metrics, _) = ccm_algorithms::rooted_disp::simulate(
@@ -154,7 +162,7 @@ impl SimulationRunner for BuiltinRunner {
                     NoTrace,
                 )
                 .map_err(|error| RunError::Message(error.to_string()))?;
-                (result.termination, metrics)
+                (result.termination, metrics, None)
             }
             Algorithm::GeneralDisp => {
                 let (result, metrics, _) = ccm_algorithms::general_disp::simulate(
@@ -165,8 +173,9 @@ impl SimulationRunner for BuiltinRunner {
                     NoTrace,
                 )
                 .map_err(|error| RunError::Message(error.to_string()))?;
-                (result.termination, metrics)
+                (result.termination, metrics, None)
             }
+            Algorithm::LeaderElection => run_leader_election(prepared, limit)?,
         };
         Ok(RunResult {
             algorithm: prepared.request.algorithm,
@@ -183,9 +192,36 @@ impl SimulationRunner for BuiltinRunner {
             termination,
             metrics,
             scheduler: request.scheduler,
-            outputs: None,
+            outputs,
         })
     }
+}
+
+/// The round limit for a request that sets none.
+fn request_round_limit(prepared: &PreparedRun) -> u64 {
+    let request = &prepared.request;
+    if request.algorithm == Algorithm::LeaderElection {
+        leader_election_round_limit(prepared)
+    } else {
+        default_round_limit(request.algorithm, request.agents)
+    }
+}
+
+/// Leader election's run, with each agent's output.
+fn run_leader_election(
+    prepared: &PreparedRun,
+    limit: u64,
+) -> Result<(Termination, ComplexityMetrics, Option<Vec<AgentOutput>>), RunError> {
+    let (result, metrics, _) = ccm_algorithms::leader_election::simulate(
+        &prepared.graph,
+        &prepared.starts,
+        limit,
+        ComplexityMetrics::default(),
+        NoTrace,
+    )
+    .map_err(|error| RunError::Message(error.to_string()))?;
+    let outputs = result.outputs();
+    Ok((result.termination, metrics, outputs))
 }
 
 /// The schedule a request asks for, seeded from the run's own seed so a run is
@@ -372,7 +408,9 @@ pub const fn requires_rooted_start(algorithm: Algorithm) -> bool {
 /// # Errors
 ///
 /// Returns [`RunError::RequiresRootedStart`] when a rooted-only algorithm is
-/// given agents on more than one node.
+/// given agents on more than one node, and
+/// [`RunError::RequiresDispersedOrRootedStart`] when leader election is not
+/// given one agent per node, either one on each node or all on one node.
 pub fn check_placement(prepared: &PreparedRun) -> Result<(), RunError> {
     let algorithm = prepared.request.algorithm;
     let rooted = prepared.starts.windows(2).all(|pair| pair[0] == pair[1]);
@@ -382,7 +420,46 @@ pub fn check_placement(prepared: &PreparedRun) -> Result<(), RunError> {
             placement: prepared.request.placement.label(),
         });
     }
+    if algorithm == Algorithm::LeaderElection {
+        let nodes = prepared.graph.node_count();
+        let mut seen = vec![false; nodes];
+        let dispersed = prepared
+            .starts
+            .iter()
+            .all(|node| !std::mem::replace(&mut seen[node.index()], true));
+        if prepared.starts.len() != nodes || !(dispersed || rooted) {
+            return Err(RunError::RequiresDispersedOrRootedStart {
+                algorithm,
+                placement: prepared.request.placement.label(),
+                agents: prepared.starts.len(),
+                nodes,
+            });
+        }
+    }
     Ok(())
+}
+
+/// Leader election's round limit when a request sets none: exactly the
+/// election's schedule, `(n − 1) · b · 2Δ` rounds, plus `RootedDisp`'s default
+/// limit when it must disperse the agents first.
+#[must_use]
+pub fn leader_election_round_limit(prepared: &PreparedRun) -> u64 {
+    let graph = &prepared.graph;
+    let max_degree = (0..graph.node_count())
+        .filter_map(|node| graph.degree(NodeId(u32::try_from(node).unwrap_or(u32::MAX))))
+        .max()
+        .unwrap_or(0);
+    let election = ccm_algorithms::leader_election::schedule_rounds(graph.node_count(), max_degree);
+    let starts = &prepared.starts;
+    let rooted = starts.len() > 1 && starts.windows(2).all(|pair| pair[0] == pair[1]);
+    if rooted {
+        election.saturating_add(default_round_limit(
+            Algorithm::RootedDisp,
+            prepared.request.agents,
+        ))
+    } else {
+        election
+    }
 }
 
 /// The round limit used when a request sets none.
@@ -417,6 +494,7 @@ pub fn algorithm_label(algorithm: Algorithm) -> &'static str {
         Algorithm::RootedAsync => "rooted_async",
         Algorithm::RootedDisp => "rooted_disp",
         Algorithm::GeneralDisp => "general_disp",
+        Algorithm::LeaderElection => "leader_election",
     }
 }
 
@@ -454,7 +532,8 @@ pub fn algorithm_kind(algorithm: Algorithm) -> &'static str {
         Algorithm::P1Tree
         | Algorithm::RootedAsync
         | Algorithm::RootedDisp
-        | Algorithm::GeneralDisp => "paper",
+        | Algorithm::GeneralDisp
+        | Algorithm::LeaderElection => "paper",
     }
 }
 

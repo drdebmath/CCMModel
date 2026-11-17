@@ -16,9 +16,9 @@ pub use csv::{results_to_csv, CSV_HEADER};
 pub use graphs::{generate_graph, GraphFamily, GraphGenerationError, GraphSpec};
 pub use placements::{place_agents, PlacementError, PlacementSpec};
 pub use runner::{
-    check_placement, default_round_limit, execute_many_parallel, execute_one, prepare_run,
-    requires_rooted_start, rooted_async_schedule, BuiltinRunner, PreparedRun, RunError, RunRequest,
-    RunResult, SimulationRunner,
+    check_placement, default_round_limit, execute_many_parallel, execute_one,
+    leader_election_round_limit, prepare_run, requires_rooted_start, rooted_async_schedule,
+    BuiltinRunner, PreparedRun, RunError, RunRequest, RunResult, SimulationRunner,
 };
 pub use sweep::{expand_sweep, run_sweep_parallel, SweepSpec};
 pub use transitions::{

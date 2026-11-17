@@ -12,10 +12,13 @@ use ccm_algorithms::leader_election::{
     StartMode, MEMORY_WORDS_PER_AGENT,
 };
 use ccm_core::{
-    AgentId, AgentOutput, AgentStatus, ComplexityMetrics, NodeId, PortAssignment, PortGraph,
-    Termination,
+    AgentId, AgentOutput, AgentStatus, Algorithm, ComplexityMetrics, NodeId, PortAssignment,
+    PortGraph, SchedulerModel, Termination,
 };
-use ccm_experiments::{generate_graph, place_agents, GraphFamily, GraphSpec, PlacementSpec};
+use ccm_experiments::{
+    execute_one, generate_graph, leader_election_round_limit, place_agents, prepare_run,
+    BuiltinRunner, GraphFamily, GraphSpec, PlacementSpec, RunError, RunRequest,
+};
 use ccm_trace::{FullTrace, NoTrace, Phase, SimulationEvent, Trace};
 use common::{graph, rooted};
 use std::collections::BTreeSet;
@@ -637,6 +640,84 @@ fn input_the_model_does_not_cover_is_rejected() {
         ElectionError::NeitherDispersedNorRooted.to_string(),
         "leader election starts dispersed (one agent per node) or rooted (all agents on one node)"
     );
+}
+
+fn request(placement: PlacementSpec, agents: usize) -> RunRequest {
+    RunRequest {
+        algorithm: Algorithm::LeaderElection,
+        graph: GraphSpec::new(GraphFamily::Grid { columns: 4 }, 12),
+        port_assignment: PortAssignment::Random,
+        placement,
+        agents,
+        seed: 5,
+        round_limit: None,
+        scheduler: SchedulerModel::Synchronous,
+    }
+}
+
+/// Through the runner: the per-agent output reaches `RunResult`, the default
+/// limit is the exact schedule, and other starts are refused before the run.
+#[test]
+fn the_runner_carries_the_outputs_and_refuses_other_starts() {
+    let dispersed = execute_one(&BuiltinRunner, request(PlacementSpec::Dispersed, 12)).unwrap();
+    assert!(dispersed.completed());
+    let outputs = dispersed
+        .outputs
+        .as_ref()
+        .expect("leader election has outputs");
+    assert_eq!(outputs.len(), 12);
+    assert_eq!(
+        outputs[0],
+        AgentOutput::Leader {
+            is_leader: true,
+            leader: AgentId(0)
+        }
+    );
+    assert!(outputs[1..].iter().all(|output| *output
+        == AgentOutput::Leader {
+            is_leader: false,
+            leader: AgentId(0)
+        }));
+    let prepared = prepare_run(request(PlacementSpec::Dispersed, 12)).unwrap();
+    assert_eq!(
+        leader_election_round_limit(&prepared),
+        dispersed.metrics.rounds,
+        "with no limit set, the schedule fits exactly"
+    );
+
+    let rooted = execute_one(
+        &BuiltinRunner,
+        request(PlacementSpec::SingleNode { node: NodeId(3) }, 12),
+    )
+    .unwrap();
+    assert!(rooted.completed());
+    assert_eq!(rooted.outputs, dispersed.outputs);
+
+    // The dispersion algorithms have no output.
+    let mut other = request(PlacementSpec::SingleNode { node: NodeId(0) }, 12);
+    other.algorithm = Algorithm::RootedDisp;
+    assert_eq!(execute_one(&BuiltinRunner, other).unwrap().outputs, None);
+
+    for (placement, agents) in [
+        (PlacementSpec::Dispersed, 6),
+        (
+            PlacementSpec::Clustered {
+                centers: vec![NodeId(0), NodeId(11)],
+            },
+            12,
+        ),
+    ] {
+        let label = placement.label();
+        assert_eq!(
+            execute_one(&BuiltinRunner, request(placement, agents)),
+            Err(RunError::RequiresDispersedOrRootedStart {
+                algorithm: Algorithm::LeaderElection,
+                placement: label,
+                agents,
+                nodes: 12,
+            })
+        );
+    }
 }
 
 #[test]
