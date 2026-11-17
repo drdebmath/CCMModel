@@ -5,7 +5,7 @@
 //! callers choose [`NoTrace`], [`FullTrace`], or [`BoundedTrace`] at the
 //! simulation boundary.
 
-use ccm_core::{AgentId, AgentStatus, NodeId, PortId};
+use ccm_core::{AgentId, AgentOutput, AgentStatus, NodeId, PortId};
 use std::collections::VecDeque;
 use std::fmt;
 
@@ -75,6 +75,12 @@ pub enum SimulationEvent {
         port: PortId,
         rule: u8,
         owner: Option<AgentId>,
+    },
+    /// An agent decided its output, for algorithms that compute one (see
+    /// [`AgentOutput`]). Dispersion algorithms never record it.
+    OutputDecided {
+        agent: AgentId,
+        output: AgentOutput,
     },
 }
 
@@ -432,7 +438,7 @@ fn event_words(event: &SimulationEvent) -> usize {
         SimulationEvent::AgentMoved { .. } => 5,
         SimulationEvent::GroupMoved { agents, .. } => 4 + agents.len(),
         SimulationEvent::AgentSettled { .. } | SimulationEvent::NodeStateChanged { .. } => 2,
-        SimulationEvent::AgentStateChanged { .. } => 3,
+        SimulationEvent::AgentStateChanged { .. } | SimulationEvent::OutputDecided { .. } => 3,
         SimulationEvent::TreeEdgeAdded { .. } => 6,
         SimulationEvent::ProbeConcluded { .. } => 4,
     }

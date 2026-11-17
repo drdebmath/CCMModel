@@ -337,6 +337,7 @@ fn parse_ports(value: &str) -> Result<PortAssignment, CliError> {
 fn parse_placement(value: &str) -> Result<PlacementSpec, CliError> {
     match value {
         "single" => Ok(PlacementSpec::SingleNode { node: NodeId(0) }),
+        "dispersed" => Ok(PlacementSpec::Dispersed),
         value if value.starts_with("single:") => Ok(PlacementSpec::SingleNode {
             node: NodeId(parse_value(&value[7..])?),
         }),
@@ -384,6 +385,6 @@ where
 
 fn print_help() {
     println!(
-        "ccm commands:\n  validate [options]  generate and validate one deterministic run\n  run [options]       execute one run and emit CSV\n  sweep [options]     execute independent runs and emit CSV\n  events [options]    trace one rooted-async run: every DFS step and probe, as CSV\n  transitions [options]  general-disp only: role transitions and merges of one run as CSV\n\noptions:\n  --algorithm drop-and-freeze|help-by-scouts|p1tree|rooted-async|rooted-disp|general-disp\n    help-by-scouts, p1tree, rooted-async and rooted-disp need a single-node placement\n  --scheduler synchronous|asynchronous|interleaved|starved:AGENT:PERIOD  (non-synchronous:\n              rooted-async only; interleaved splits each cycle's look and write; time is then\n              counted in epochs, and the CSV time_unit column says so)\n  --graph path|cycle|star|complete|tree[:branching]|grid[:columns]|random-connected:extra|random-bounded:max-degree\n  --nodes N[,N...] --agents A[,A...] --seed S[,S...]\n  --ports canonical|random|adversarial\n  --placement single[:node]|uniform:K|clustered:n,n|explicit:n,n\n  --round-limit R --workers W"
+        "ccm commands:\n  validate [options]  generate and validate one deterministic run\n  run [options]       execute one run and emit CSV\n  sweep [options]     execute independent runs and emit CSV\n  events [options]    trace one rooted-async run: every DFS step and probe, as CSV\n  transitions [options]  general-disp only: role transitions and merges of one run as CSV\n\noptions:\n  --algorithm drop-and-freeze|help-by-scouts|p1tree|rooted-async|rooted-disp|general-disp\n    help-by-scouts, p1tree, rooted-async and rooted-disp need a single-node placement\n  --scheduler synchronous|asynchronous|interleaved|starved:AGENT:PERIOD  (non-synchronous:\n              rooted-async only; interleaved splits each cycle's look and write; time is then\n              counted in epochs, and the CSV time_unit column says so)\n  --graph path|cycle|star|complete|tree[:branching]|grid[:columns]|random-connected:extra|random-bounded:max-degree\n  --nodes N[,N...] --agents A[,A...] --seed S[,S...]\n  --ports canonical|random|adversarial\n  --placement single[:node]|uniform:K|clustered:n,n|dispersed|explicit:n,n\n  --round-limit R --workers W"
     );
 }

@@ -1,7 +1,7 @@
 use crate::{generate_graph, place_agents, GraphSpec, PlacementSpec};
 use ccm_core::{
-    AgentId, Algorithm, ComplexityMetrics, NodeId, PortAssignment, PortGraph, SchedulerModel,
-    Termination,
+    AgentId, AgentOutput, Algorithm, ComplexityMetrics, NodeId, PortAssignment, PortGraph,
+    SchedulerModel, Termination,
 };
 use ccm_trace::NoTrace;
 use core::fmt;
@@ -183,6 +183,7 @@ impl SimulationRunner for BuiltinRunner {
             termination,
             metrics,
             scheduler: request.scheduler,
+            outputs: None,
         })
     }
 }
@@ -224,6 +225,10 @@ pub struct RunResult {
     pub termination: Termination,
     pub metrics: ComplexityMetrics,
     pub scheduler: SchedulerModel,
+    /// Each agent's output, in agent-ID order, for algorithms that compute
+    /// one; `None` for the dispersion algorithms, whose result is only where
+    /// the agents stand. Not written to the CSV.
+    pub outputs: Option<Vec<AgentOutput>>,
 }
 
 impl RunResult {
@@ -244,6 +249,7 @@ impl RunResult {
             termination,
             metrics: ComplexityMetrics::default(),
             scheduler: prepared.request.scheduler,
+            outputs: None,
         }
     }
 

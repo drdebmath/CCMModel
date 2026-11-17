@@ -103,6 +103,7 @@ mod tests {
             termination: Termination::Completed,
             metrics: ComplexityMetrics::default(),
             scheduler: SchedulerModel::Synchronous,
+            outputs: None,
         }
     }
 

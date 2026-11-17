@@ -9,6 +9,7 @@ mod config;
 mod graph;
 mod ids;
 mod metrics;
+mod output;
 mod rng;
 mod scheduler;
 mod termination;
@@ -20,6 +21,7 @@ pub use config::{
 pub use graph::{GraphError, NodePorts, PortEdge, PortGraph};
 pub use ids::{AgentId, NodeId, PortId};
 pub use metrics::{ComplexityMetrics, LogicalMemory, Metrics, NoMetrics, RoundKind};
+pub use output::AgentOutput;
 pub use rng::DeterministicRng;
 pub use scheduler::{apply_move_intents, MoveIntent, SchedulerError};
 pub use termination::{InvalidConfiguration, InvariantViolation, Termination};

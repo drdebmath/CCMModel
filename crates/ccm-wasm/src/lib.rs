@@ -12,7 +12,9 @@
 //! fixed-width dense IDs; group records carry an explicit agent count.
 
 use ccm_algorithms::drop_and_freeze::{DropStatus, SharedRecorder, SimulationState as DropState};
-use ccm_core::{AgentStatus, ComplexityMetrics, NodeId, PortEdge, PortGraph, Termination};
+use ccm_core::{
+    AgentOutput, AgentStatus, ComplexityMetrics, NodeId, PortEdge, PortGraph, Termination,
+};
 use ccm_trace::{
     BoundedTrace, Checkpoint, FullTrace, NoTrace, Phase, SimulationEvent, Trace, TraceBudget,
 };
@@ -1270,6 +1272,19 @@ fn encode_event(bytes: &mut Vec<u8>, step: u64, event: &SimulationEvent) {
             put_u16(bytes, port.0);
             bytes.push(*rule);
             put_optional_u32(bytes, owner.map(|agent| agent.0));
+        }
+        // The agent, then the output's kind and its fields. Kind 0 is a
+        // leader-election output: is-leader as one byte, then the leader.
+        SimulationEvent::OutputDecided { agent, output } => {
+            bytes.push(8);
+            put_u32(bytes, agent.0);
+            match output {
+                AgentOutput::Leader { is_leader, leader } => {
+                    bytes.push(0);
+                    bytes.push(u8::from(*is_leader));
+                    put_u32(bytes, leader.0);
+                }
+            }
         }
     }
 }

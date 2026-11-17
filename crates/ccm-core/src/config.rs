@@ -34,11 +34,15 @@ pub enum PortAssignment {
     Explicit,
 }
 
+/// Where the agents start. `Dispersed` puts every agent on its own node, the
+/// nodes chosen by the seed; with as many agents as nodes, every node holds
+/// exactly one agent.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StartingModel {
     SingleNode,
     UniformRandom { distinct_nodes: usize },
     Clustered { clusters: usize },
+    Dispersed,
     Explicit,
 }
 
