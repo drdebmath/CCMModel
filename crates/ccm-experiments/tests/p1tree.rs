@@ -263,6 +263,11 @@ fn a_scattered_placement_is_rejected_rather_than_run() {
         run(&g, &[NodeId(0), NodeId(2)], 100),
         Err(P1Error::NonRootedStart)
     );
+    // The page and the CLI show this one to users, so it is a sentence.
+    assert_eq!(
+        P1Error::NonRootedStart.to_string(),
+        "P1Tree needs a rooted start: every agent must begin on the same node."
+    );
 }
 
 #[test]

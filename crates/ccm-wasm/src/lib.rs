@@ -1595,7 +1595,8 @@ mod tests {
         .unwrap();
         assert!(matches!(
             scattered.run_internal(),
-            Err(AdapterError::RootedDisp(message)) if message.contains("NonRootedStart")
+            Err(AdapterError::RootedDisp(message))
+                if message.contains("rooted start") && !message.contains("NonRootedStart")
         ));
     }
 

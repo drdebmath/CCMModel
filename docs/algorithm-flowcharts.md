@@ -1214,7 +1214,7 @@ flowchart TD
 
 ### Code
 
-`run` — [crates/ccm-algorithms/src/p1tree.rs:310](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L310-L342)
+`run` — [crates/ccm-algorithms/src/p1tree.rs:316](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L316-L348)
 
 ```rust
     fn run(mut self) -> Result<(P1Result, M, R), P1Error> {
@@ -1252,7 +1252,7 @@ flowchart TD
     }
 ```
 
-`settle_highest_at` — [crates/ccm-algorithms/src/p1tree.rs:717](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L717-L739)
+`settle_highest_at` — [crates/ccm-algorithms/src/p1tree.rs:723](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L723-L745)
 
 ```rust
     /// Section 4: "the agent with the highest ID among the unsettled agents at
@@ -1280,7 +1280,7 @@ flowchart TD
     }
 ```
 
-`traverse` — [crates/ccm-algorithms/src/p1tree.rs:344](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L344-L419)
+`traverse` — [crates/ccm-algorithms/src/p1tree.rs:350](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L350-L425)
 
 ```rust
     /// The `while S != {}` loop of Algorithm 2, with the stack realised by the
@@ -1361,7 +1361,7 @@ flowchart TD
     }
 ```
 
-`neighbourhood_search` — [crates/ccm-algorithms/src/p1tree.rs:440](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L440-L546)
+`neighbourhood_search` — [crates/ccm-algorithms/src/p1tree.rs:446](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L446-L552)
 
 ```rust
     /// Section 4.2's parallel probe: the scouts fan out over the head's ports
@@ -1473,7 +1473,7 @@ flowchart TD
     }
 ```
 
-`probe_party` — [crates/ccm-algorithms/src/p1tree.rs:914](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L914-L938)
+`probe_party` — [crates/ccm-algorithms/src/p1tree.rs:920](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L920-L944)
 
 ```rust
     /// The agents that travel to perform a neighbourhood search.
@@ -1503,7 +1503,7 @@ flowchart TD
     }
 ```
 
-`probe_detour` — [crates/ccm-algorithms/src/p1tree.rs:563](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L563-L581)
+`probe_detour` — [crates/ccm-algorithms/src/p1tree.rs:569](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L569-L587)
 
 ```rust
     /// How many extra edges a scout walks past the neighbour before it can
@@ -1527,7 +1527,7 @@ flowchart TD
     }
 ```
 
-`choose_next_edge` — [crates/ccm-algorithms/src/p1tree.rs:583](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L583-L601)
+`choose_next_edge` — [crates/ccm-algorithms/src/p1tree.rs:589](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L589-L607)
 
 ```rust
     /// Algorithm 2, lines 8-17: the highest-priority incident edge leading to a
@@ -1551,7 +1551,7 @@ flowchart TD
     }
 ```
 
-`must_defer` — [crates/ccm-algorithms/src/p1tree.rs:603](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L603-L614)
+`must_defer` — [crates/ccm-algorithms/src/p1tree.rs:609](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L609-L620)
 
 ```rust
     /// Algorithm 2, line 21: the candidate and the parent edge are both `tpq`
@@ -1568,7 +1568,7 @@ flowchart TD
     }
 ```
 
-`awaits_port_one` — [crates/ccm-algorithms/src/p1tree.rs:421](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L421-L432)
+`awaits_port_one` — [crates/ccm-algorithms/src/p1tree.rs:427](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L427-L438)
 
 ```rust
     /// Whether this node still needs its port-1 neighbour to come and
@@ -1585,7 +1585,7 @@ flowchart TD
     }
 ```
 
-`advance` — [crates/ccm-algorithms/src/p1tree.rs:616](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L616-L664)
+`advance` — [crates/ccm-algorithms/src/p1tree.rs:622](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L622-L670)
 
 ```rust
     /// Algorithm 2, lines 25-27: take the edge, and settle or reconfigure at the
@@ -1639,7 +1639,7 @@ flowchart TD
     }
 ```
 
-`apply_can_vacate` — [crates/ccm-algorithms/src/p1tree.rs:741](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L741-L793)
+`apply_can_vacate` — [crates/ccm-algorithms/src/p1tree.rs:747](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L747-L799)
 
 ```rust
     /// Algorithm 3, `Can_Vacate()`. Decides whether the agent settled at `node`
@@ -1697,7 +1697,7 @@ flowchart TD
     }
 ```
 
-`backtrack` — [crates/ccm-algorithms/src/p1tree.rs:694](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L694-L715)
+`backtrack` — [crates/ccm-algorithms/src/p1tree.rs:700](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L700-L721)
 
 ```rust
     /// Moves the DFS head to the parent of the current node. Returns false when
@@ -1724,7 +1724,7 @@ flowchart TD
     }
 ```
 
-`set_parent` — [crates/ccm-algorithms/src/p1tree.rs:666](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L666-L692)
+`set_parent` — [crates/ccm-algorithms/src/p1tree.rs:672](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L672-L698)
 
 ```rust
     /// Records a tree edge and keeps the Definition 1 flag current at both ends.
@@ -1756,7 +1756,7 @@ flowchart TD
     }
 ```
 
-`apply_parent_vacate` — [crates/ccm-algorithms/src/p1tree.rs:795](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L795-L825)
+`apply_parent_vacate` — [crates/ccm-algorithms/src/p1tree.rs:801](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L801-L831)
 
 ```rust
     /// (V5) Algorithm 3, lines 15-25. When this node's port at the parent is
@@ -1792,7 +1792,7 @@ flowchart TD
     }
 ```
 
-`retrace` — [crates/ccm-algorithms/src/p1tree.rs:827](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L827-L887)
+`retrace` — [crates/ccm-algorithms/src/p1tree.rs:833](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/p1tree.rs#L833-L893)
 
 ```rust
     /// Section 5.1. Walks the travelling scouts home along the tree.
@@ -1965,7 +1965,7 @@ flowchart TD
 
 ### Code
 
-`simulate` — [crates/ccm-algorithms/src/rooted_async/mod.rs:184](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_async/mod.rs#L184-L219)
+`simulate` — [crates/ccm-algorithms/src/rooted_async/mod.rs:190](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_async/mod.rs#L190-L225)
 
 ```rust
 /// Runs `RootedAsync` from a rooted placement under `schedule`, stopping after
@@ -2996,7 +2996,7 @@ flowchart TD
 
 ### Code
 
-`simulate` — [crates/ccm-algorithms/src/rooted_disp.rs:150](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L150-L169)
+`simulate` — [crates/ccm-algorithms/src/rooted_disp.rs:156](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L156-L175)
 
 ```rust
 /// Runs `RootedDisp` with caller-supplied metrics and recorder.
@@ -3021,7 +3021,7 @@ pub fn simulate<M: Metrics, R: Recorder>(
 }
 ```
 
-`run` — [crates/ccm-algorithms/src/rooted_disp.rs:316](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L316-L348)
+`run` — [crates/ccm-algorithms/src/rooted_disp.rs:322](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L322-L354)
 
 ```rust
     fn run(mut self) -> Result<(RootedResult, M, R), RootedError> {
@@ -3059,7 +3059,7 @@ pub fn simulate<M: Metrics, R: Recorder>(
     }
 ```
 
-`disperse` — [crates/ccm-algorithms/src/rooted_disp.rs:350](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L350-L362)
+`disperse` — [crates/ccm-algorithms/src/rooted_disp.rs:356](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L356-L368)
 
 ```rust
     /// The main loop, lines 2–11.
@@ -3077,7 +3077,7 @@ pub fn simulate<M: Metrics, R: Recorder>(
     }
 ```
 
-`probe` — [crates/ccm-algorithms/src/rooted_disp.rs:364](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L364-L395)
+`probe` — [crates/ccm-algorithms/src/rooted_disp.rs:370](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L370-L401)
 
 ```rust
     /// `Probe()`, lines 12–22: returns `ψ(w).next`.
@@ -3114,7 +3114,7 @@ pub fn simulate<M: Metrics, R: Recorder>(
     }
 ```
 
-`probe_pass` — [crates/ccm-algorithms/src/rooted_disp.rs:397](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L397-L494)
+`probe_pass` — [crates/ccm-algorithms/src/rooted_disp.rs:403](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L403-L500)
 
 ```rust
     /// One pass of `Probe()`'s while loop, lines 16–21. Returns the port of
@@ -3217,7 +3217,7 @@ pub fn simulate<M: Metrics, R: Recorder>(
     }
 ```
 
-`commit` — [crates/ccm-algorithms/src/rooted_disp.rs:613](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L613-L652)
+`commit` — [crates/ccm-algorithms/src/rooted_disp.rs:619](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L619-L658)
 
 ```rust
     /// One synchronous time step: the moves in `self.intents` are validated
@@ -3262,7 +3262,7 @@ pub fn simulate<M: Metrics, R: Recorder>(
     }
 ```
 
-`helpers_home` — [crates/ccm-algorithms/src/rooted_disp.rs:496](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L496-L535)
+`helpers_home` — [crates/ccm-algorithms/src/rooted_disp.rs:502](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L502-L541)
 
 ```rust
     /// Line 22: every helper walks home through the port it remembered.
@@ -3307,7 +3307,7 @@ pub fn simulate<M: Metrics, R: Recorder>(
     }
 ```
 
-`forward` — [crates/ccm-algorithms/src/rooted_disp.rs:537](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L537-L561)
+`forward` — [crates/ccm-algorithms/src/rooted_disp.rs:543](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L543-L567)
 
 ```rust
     /// Lines 6–9: the explorers move to the unsettled node `u` through
@@ -3337,7 +3337,7 @@ pub fn simulate<M: Metrics, R: Recorder>(
     }
 ```
 
-`backward` — [crates/ccm-algorithms/src/rooted_disp.rs:563](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L563-L574)
+`backward` — [crates/ccm-algorithms/src/rooted_disp.rs:569](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rooted_disp.rs#L569-L580)
 
 ```rust
     /// Line 11: the explorers move back to `N(w, ψ(w).parent)`.

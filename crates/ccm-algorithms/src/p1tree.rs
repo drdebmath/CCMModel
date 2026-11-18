@@ -187,7 +187,13 @@ pub enum P1Error {
 
 impl fmt::Display for P1Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{self:?}")
+        match self {
+            // The one error a user causes by choice, so it reads as a sentence.
+            Self::NonRootedStart => {
+                f.write_str("P1Tree needs a rooted start: every agent must begin on the same node.")
+            }
+            other => write!(f, "{other:?}"),
+        }
     }
 }
 

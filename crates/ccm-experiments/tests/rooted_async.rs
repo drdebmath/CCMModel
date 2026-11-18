@@ -203,6 +203,11 @@ fn a_scattered_placement_is_rejected() {
     )
     .unwrap_err();
     assert_eq!(error, RootedAsyncError::NonRootedStart);
+    // The page and the CLI show this one to users, so it is a sentence.
+    assert_eq!(
+        error.to_string(),
+        "RootedAsync needs a rooted start: every agent must begin on the same node."
+    );
 }
 
 #[test]
