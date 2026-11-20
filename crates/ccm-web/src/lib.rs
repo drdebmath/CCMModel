@@ -705,6 +705,9 @@ const PHASE_RETRACE: u8 = 8;
 /// `Phase::Other`, which the engines use only for the start of a run.
 const PHASE_START: u8 = 9;
 const PHASE_HELPERS_HOME: u8 = 10;
+/// Leader election: visiting agents step out to a neighbour, then come home.
+const PHASE_VISIT_OUT: u8 = 11;
+const PHASE_VISIT_BACK: u8 = 12;
 
 /// Name of a phase code as `ccm-wasm` encodes it.
 fn phase_name(code: u8) -> &'static str {
@@ -720,6 +723,8 @@ fn phase_name(code: u8) -> &'static str {
         PHASE_RETRACE => "retrace",
         PHASE_START => "start",
         PHASE_HELPERS_HOME => "helpers home",
+        PHASE_VISIT_OUT => "visit out",
+        PHASE_VISIT_BACK => "visit back",
         _ => "unknown phase",
     }
 }
@@ -1446,7 +1451,7 @@ fn election_schedule(app: &AppState) -> Option<ElectionSchedule> {
         _ => app
             .frames
             .iter()
-            .find(|frame| frame.phase == Some(11))
+            .find(|frame| frame.phase == Some(PHASE_VISIT_OUT))
             .map_or(0, |frame| frame.step.saturating_sub(1)),
     };
     Some(schedule)
@@ -4412,17 +4417,17 @@ mod tests {
     fn election_stream() -> (Vec<u8>, ResultData) {
         let homes = [2, 1, 0];
         let mut stream = Stream::new();
-        stream.phase(0, 9);
+        stream.phase(0, PHASE_START);
         stream.checkpoint(0, &homes);
-        stream.phase(6, 12);
+        stream.phase(6, PHASE_VISIT_BACK);
         stream.event(6, 9, &[0, 1, 1]);
         stream.event(6, 9, &[2, 1, 1]);
         stream.checkpoint(6, &homes);
-        stream.phase(8, 12);
+        stream.phase(8, PHASE_VISIT_BACK);
         stream.event(8, 10, &[1, 0]);
         stream.event(8, 10, &[2, 1]);
         stream.checkpoint(8, &homes);
-        stream.phase(16, 12);
+        stream.phase(16, PHASE_VISIT_BACK);
         stream.event(16, 10, &[2, 0]);
         for agent in 0..3 {
             stream.output(16, agent, 0);
@@ -4467,9 +4472,19 @@ mod tests {
         // A frame made from an event does not repeat the last round's meetings.
         let phase_frame = frames
             .iter()
-            .find(|frame| frame.step == 8 && frame.phase == Some(12))
+            .find(|frame| frame.step == 8 && frame.phase == Some(PHASE_VISIT_BACK))
             .unwrap();
         assert!(phase_frame.meetings.is_empty());
+    }
+
+    #[test]
+    fn every_phase_code_the_engine_writes_has_a_name() {
+        // ccm-wasm's phase_code writes 0..=12; this crate cannot import it.
+        for code in PHASE_MACRO_ROUND..=PHASE_VISIT_BACK {
+            assert_ne!(phase_name(code), "unknown phase", "phase code {code}");
+        }
+        assert_eq!(phase_name(PHASE_VISIT_OUT), "visit out");
+        assert_eq!(phase_name(PHASE_VISIT_BACK), "visit back");
     }
 
     #[test]
