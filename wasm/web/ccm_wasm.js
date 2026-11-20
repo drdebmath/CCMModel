@@ -68,7 +68,7 @@ function takeFromExternrefTable0(idx) {
 }
 /**
  * Algorithm selector shared by native and browser callers.
- * @enum {0 | 1 | 2 | 3 | 4 | 5 | 6}
+ * @enum {0 | 1 | 2 | 3 | 4 | 5 | 6 | 7}
  */
 export const AlgorithmSelector = Object.freeze({
     HelpByScouts: 0, "0": "HelpByScouts",
@@ -89,6 +89,11 @@ export const AlgorithmSelector = Object.freeze({
      * `GeneralDisp`: agents may start on any nodes.
      */
     GeneralDisp: 6, "6": "GeneralDisp",
+    /**
+     * Leader election by agents: one agent per node, dispersed, or all on
+     * one node and dispersed by `RootedDisp` first.
+     */
+    LeaderElection: 7, "7": "LeaderElection",
 });
 /**
  * Trace policy. `Bounded` uses the supplied record and sampling limits.
@@ -200,6 +205,17 @@ export class SimulationOutput {
     rounds() {
         const ret = wasm.simulationoutput_rounds(this.__wbg_ptr);
         return BigInt.asUintN(64, ret);
+    }
+    /**
+     * Each agent's output in dense agent order, for algorithms that compute
+     * one; empty for the dispersion algorithms or when the run stopped
+     * early. Leader election: the leader's agent ID, so an agent is the
+     * leader exactly when its entry is its own index.
+     * @returns {Int32Array}
+     */
+    outputs() {
+        const ret = wasm.simulationoutput_outputs(this.__wbg_ptr);
+        return ret;
     }
     /**
      * Numeric status codes in dense agent order. Algorithms retain their

@@ -6,7 +6,8 @@ The charts are the control flow as implemented, not as idealised: where the
 implementation departs from a paper, the chart shows what the code does and the
 notes say why. Read [behavior-spec.md](behavior-spec.md) for Drop-and-Freeze and
 Help-by-Scouts, [p1tree.md](p1tree.md) for P1Tree,
-[rooted-disp.md](rooted-disp.md) for RootedDisp, and the
+[rooted-disp.md](rooted-disp.md) for RootedDisp,
+[leader-election.md](leader-election.md) for leader election, and the
 [gap and trace note](2507.01298-optimal-dispersion-under-asynchrony/gap-and-trace-note.md)
 for RootedAsync, before drawing conclusions from any of them. The interactive version, [`docs.html`](../docs.html),
 explains every box and opens its code.
@@ -27,6 +28,7 @@ question (its arrows are the answers), dashed = a helper the step calls.
 - [P1Tree](#p1tree) — `ccm-algorithms`
 - [RootedAsync](#rootedasync) — `ccm-algorithms`
 - [RootedDisp](#rooteddisp) — `ccm-algorithms`
+- [Leader election](#leader-election) — `ccm-algorithms`
 - [GeneralDisp](#generaldisp) — `ccm-algorithms`
 
 ---
@@ -3357,6 +3359,517 @@ pub fn simulate<M: Metrics, R: Recorder>(
 
 ---
 
+## Leader election
+
+Leader election by agents from Kshemkalyani, Kumar, Molla and Sharma, *Agent-based Leader Election, MST, and Beyond*, Section 2 (Lemma 4, Theorem 1). Not a dispersion: the agents stand one per node, each with an ID from 1 to n, and simulate a message-passing algorithm in which every node sends the smallest ID it has seen. [leader-election.md](leader-election.md) has the model, the decisions taken where the paper leaves a choice, and the problem page's example round by round.
+
+IDs are written in `b = ⌊log₂ n⌋ + 1` bits and read from the left. Block `i` of a simulated round is `2Δ` rounds: an agent whose bit `i` is 1 visits its neighbours port by port, out and back, and one whose bit is 0 stays home. Two neighbours differ in some bit, so one visits the other at home in every simulated round. After `n − 1` simulated rounds, exactly `(n − 1) · b · 2Δ` rounds, every agent knows the smallest ID.
+
+```mermaid
+flowchart TD
+    classDef k_entry fill:#e8eaff,stroke:#5b6cf0,color:#111,stroke-width:1.5px
+    classDef k_step fill:#ffffff,stroke:#8b98b3,color:#111
+    classDef k_decision fill:#fff4dc,stroke:#c98a12,color:#111
+    classDef k_end fill:#ddf6ef,stroke:#0f9e82,color:#111,stroke-width:1.5px
+    classDef k_aside fill:#f6f7fa,stroke:#8b98b3,color:#333,stroke-dasharray:4 3
+    subgraph lane0["Start"]
+        start(["Run the election<br/><small>simulate()</small>"])
+        rooted{"All on one node?<br/><small>starts</small>"}
+        disperse["RootedDisp disperses them<br/><small>rooted_disp::simulate()</small>"]
+        homes["Each agent at its home<br/><small>Election::new()</small>"]
+    end
+    subgraph lane1["The schedule"]
+        schedule["n − 1 simulated rounds of b blocks<br/><small>elect()</small>"]
+        out["Out: bit-1 agents leave by port j<br/><small>visit_out()</small>"]
+        commit["One synchronous round<br/><small>commit()</small>"]
+        back["Back: meet the agent at home<br/><small>visit_back()</small>"]
+        exchange["Swap smallest IDs<br/><small>exchange()</small>"]
+        roundend{"End of the simulated round?<br/><small>last port, last block</small>"}
+        apply["Every min takes what it received<br/><small>end_simulated_round()</small>"]
+        more{"n − 1 simulated rounds done?<br/><small>simulated_rounds</small>"}
+    end
+    subgraph lane2["Decide"]
+        decide["Leader: min = own ID<br/><small>decide()</small>"]
+        done(["Completed<br/><small>Termination::Completed</small>"])
+    end
+    start --> rooted
+    rooted -- "yes" --> disperse
+    rooted -- "no" --> homes
+    disperse --> homes
+    homes --> schedule
+    schedule --> out
+    out --> back
+    back --> roundend
+    roundend -- "no: next port or block" --> out
+    roundend -- "yes" --> apply
+    apply --> more
+    more -- "no: next simulated round" --> out
+    more -- "yes" --> decide
+    decide --> done
+    out -. "each round" .-> commit
+    back -. "bit-0 host" .-> exchange
+    class start k_entry
+    class rooted k_decision
+    class disperse k_step
+    class homes k_step
+    class schedule k_step
+    class out k_step
+    class commit k_aside
+    class back k_step
+    class exchange k_aside
+    class roundend k_decision
+    class apply k_step
+    class more k_decision
+    class decide k_step
+    class done k_end
+```
+
+**Notes**
+
+- Every round of the schedule is committed, also those in which nobody moves: the agents keep in step only by counting rounds, and Lemma 4 charges `2Δ` per block.
+- A visitor takes a message only from the agent at home whose current bit is 0. That agent never leaves in the block, so it is the node's own agent; other visitors on the node are ignored. The code checks it rather than assumes it.
+- Received minima wait in `received` until the simulated round ends (leader-election.md, decision 2), so the run is a faithful simulation of synchronous message passing.
+- From a rooted start `RootedDisp` disperses the agents first and the election starts in the next round. Any other placement, a number of agents other than n, or a graph that is not connected is refused before the first round.
+- Round limit: checked before every round; a run stopped early has no outputs.
+
+### Code
+
+`simulate` — [crates/ccm-algorithms/src/leader_election.rs:230](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/leader_election.rs#L230-L348)
+
+```rust
+/// Runs the election with caller-supplied metrics and recorder.
+///
+/// A dispersed start runs the election directly; a rooted start runs
+/// `RootedDisp` first. `round_limit` bounds all rounds together. Reaching it
+/// returns the partial state as [`Termination::RoundLimitReached`], with no
+/// outputs.
+///
+/// # Errors
+///
+/// Returns an error for an empty graph, no agents, a number of agents other
+/// than the number of nodes, a start outside the graph, a placement that is
+/// neither dispersed nor rooted, a graph that is not connected, a failed
+/// dispersion, or a broken invariant.
+pub fn simulate<M: Metrics, R: Recorder>(
+    graph: &PortGraph,
+    starts: &[NodeId],
+    round_limit: u64,
+    metrics: M,
+    recorder: R,
+) -> Result<(ElectionResult, M, R), ElectionError> {
+    let nodes = graph.node_count();
+    if nodes == 0 {
+        return Err(ElectionError::EmptyGraph);
+    }
+    if starts.is_empty() {
+        return Err(ElectionError::NoAgents);
+    }
+    if starts.len() != nodes {
+        return Err(ElectionError::AgentCountMismatch {
+            agents: starts.len(),
+            nodes,
+        });
+    }
+    if let Some(&outside) = starts.iter().find(|node| node.index() >= nodes) {
+        return Err(ElectionError::InvalidStart(outside));
+    }
+    if !connected(graph) {
+        return Err(ElectionError::Disconnected);
+    }
+    let mut seen = vec![false; nodes];
+    let dispersed = starts
+        .iter()
+        .all(|node| !std::mem::replace(&mut seen[node.index()], true));
+    if dispersed {
+        return Election::new(
+            graph,
+            starts,
+            StartMode::Dispersed,
+            0,
+            round_limit,
+            metrics,
+            recorder,
+        )?
+        .run();
+    }
+    if starts.iter().any(|&node| node != starts[0]) {
+        return Err(ElectionError::NeitherDispersedNorRooted);
+    }
+
+    // Rooted mode: RootedDisp first, then the election from its homes.
+    let (dispersal, metrics, recorder) =
+        rooted_disp::simulate(graph, starts, round_limit, metrics, recorder)
+            .map_err(ElectionError::Dispersion)?;
+    if dispersal.termination != Termination::Completed {
+        let max_degree = max_degree(graph);
+        let agents = dispersal
+            .agents
+            .iter()
+            .enumerate()
+            .map(|(index, agent)| {
+                let id = paper_id(index);
+                ElectionAgent {
+                    node: agent.node,
+                    home: agent.home,
+                    memory: ElectionMemory {
+                        id,
+                        min: id,
+                        received: id,
+                        is_leader: false,
+                    },
+                    output: None,
+                }
+            })
+            .collect();
+        let result = ElectionResult {
+            termination: dispersal.termination,
+            mode: StartMode::Rooted,
+            agents,
+            rounds: dispersal.steps,
+            stats: ElectionStats {
+                id_bits: id_bits(nodes),
+                max_degree,
+                dispersion_rounds: dispersal.steps,
+                memory_bits_per_agent: memory_bits_per_agent(nodes, max_degree),
+                ..ElectionStats::default()
+            },
+        };
+        return Ok((result, metrics, recorder));
+    }
+    let homes: Vec<NodeId> = dispersal
+        .agents
+        .iter()
+        .map(|agent| {
+            agent
+                .home
+                .ok_or(ElectionError::Invariant(InvariantViolation::DuplicateHome))
+        })
+        .collect::<Result<_, _>>()?;
+    Election::new(
+        graph,
+        &homes,
+        StartMode::Rooted,
+        dispersal.steps,
+        round_limit,
+        metrics,
+        recorder,
+    )?
+    .run()
+}
+```
+
+`new` — [crates/ccm-algorithms/src/leader_election.rs:442](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/leader_election.rs#L442-L496)
+
+```rust
+    fn new(
+        graph: &'g PortGraph,
+        homes: &[NodeId],
+        mode: StartMode,
+        rounds: u64,
+        round_limit: u64,
+        metrics: M,
+        recorder: R,
+    ) -> Result<Self, ElectionError> {
+        let n = homes.len();
+        let mut store = AgentStore::new(graph.node_count(), homes)?;
+        for (index, &home) in homes.iter().enumerate() {
+            store.mark_settled(agent_id(index), home)?;
+        }
+        let memory = (0..n)
+            .map(|index| {
+                let id = paper_id(index);
+                ElectionMemory {
+                    id,
+                    min: id,
+                    received: id,
+                    is_leader: false,
+                }
+            })
+            .collect();
+        let degrees = homes
+            .iter()
+            .map(|&home| graph.degree(home).unwrap_or(0))
+            .collect();
+        let delta = max_degree(graph);
+        Ok(Self {
+            graph,
+            store,
+            memory,
+            degrees,
+            mode,
+            bits: id_bits(n),
+            delta,
+            round_limit,
+            rounds,
+            stats: ElectionStats {
+                id_bits: id_bits(n),
+                max_degree: delta,
+                dispersion_rounds: rounds,
+                memory_bits_per_agent: memory_bits_per_agent(n, delta),
+                ..ElectionStats::default()
+            },
+            metrics,
+            recorder,
+            pins_set: false,
+            intents: Vec::with_capacity(n),
+            visitors: Vec::with_capacity(n),
+            events: Vec::new(),
+        })
+    }
+```
+
+`elect` — [crates/ccm-algorithms/src/leader_election.rs:553](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/leader_election.rs#L553-L582)
+
+```rust
+    /// The whole schedule: `n − 1` simulated rounds of `b` blocks of `Δ`
+    /// out-and-back pairs.
+    fn elect(&mut self, simulated_rounds: usize) -> Result<(), Halt> {
+        for simulated in 0..simulated_rounds {
+            for block in 0..self.bits {
+                // Agents whose bit is 1 visit; most ports first, so that the
+                // visitors of round j are a prefix of the list.
+                self.visitors.clear();
+                for index in 0..self.memory.len() {
+                    let agent = agent_id(index);
+                    if self.bit(agent, block) {
+                        self.visitors.push(agent);
+                    }
+                }
+                let degrees = &self.degrees;
+                self.visitors
+                    .sort_unstable_by_key(|agent| (Reverse(degrees[agent.index()]), *agent));
+                for j in 0..self.delta {
+                    let count = self
+                        .visitors
+                        .partition_point(|agent| self.degrees[agent.index()] > j);
+                    self.visit_out(PortId(j), count)?;
+                    let last = block + 1 == self.bits && j + 1 == self.delta;
+                    self.visit_back(block, count, last, simulated + 1 == simulated_rounds)?;
+                }
+                self.stats.blocks += 1;
+            }
+        }
+        Ok(())
+    }
+```
+
+`visit_out` — [crates/ccm-algorithms/src/leader_election.rs:584](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/leader_election.rs#L584-L612)
+
+```rust
+    /// An out round: the first `count` visitors leave home through `port`.
+    fn visit_out(&mut self, port: PortId, count: usize) -> Result<(), Halt> {
+        self.check_limit()?;
+        self.intents.clear();
+        for index in 0..count {
+            let agent = self.visitors[index];
+            let home = self.store.vacate_home(agent)?;
+            self.intents.push(MoveIntent {
+                agent,
+                from: home,
+                port,
+            });
+            if self.recorder.enabled() {
+                self.events.push(SimulationEvent::AgentStateChanged {
+                    agent,
+                    from: AgentStatus::Settled,
+                    to: AgentStatus::SettledScout,
+                });
+            }
+        }
+        self.commit(RoundKind::ProbeOut)?;
+        for _ in 0..count {
+            self.metrics.port_probe();
+            self.metrics.probe_out_traversal();
+        }
+        self.stats.visits += u64::try_from(count).unwrap_or(u64::MAX);
+        self.record(Phase::VisitOut);
+        Ok(())
+    }
+```
+
+`commit` — [crates/ccm-algorithms/src/leader_election.rs:755](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/leader_election.rs#L755-L790)
+
+```rust
+    /// One synchronous round: the moves in `self.intents`, possibly none, are
+    /// validated and committed together, and the round is counted.
+    fn commit(&mut self, kind: RoundKind) -> Result<(), Halt> {
+        if self.intents.is_empty() {
+            // Nobody moves. Incoming ports still become ⊥, as in every round.
+            if self.pins_set {
+                self.store.begin_step();
+                self.pins_set = false;
+            }
+        } else {
+            apply_move_intents(
+                self.graph,
+                &mut self.store,
+                &mut self.intents,
+                &mut self.metrics,
+            )?;
+            self.pins_set = true;
+        }
+        self.rounds += 1;
+        self.stats.election_rounds += 1;
+        self.metrics.logical_rounds(kind, 1);
+        if self.recorder.enabled() {
+            for index in 0..self.intents.len() {
+                let intent = self.intents[index];
+                let state = *self.state(intent.agent);
+                self.events.push(SimulationEvent::AgentMoved {
+                    agent: intent.agent,
+                    from: intent.from,
+                    to: state.node,
+                    out_port: intent.port,
+                    in_port: state.arrival_port,
+                });
+            }
+        }
+        Ok(())
+    }
+```
+
+`visit_back` — [crates/ccm-algorithms/src/leader_election.rs:614](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/leader_election.rs#L614-L686)
+
+```rust
+    /// A back round: each visitor looks at the agents on the node it stands
+    /// on, exchanges messages with the one at home whose bit is 0 if there is
+    /// one, and goes back through the port it arrived by.
+    fn visit_back(
+        &mut self,
+        block: u32,
+        count: usize,
+        last_of_simulated_round: bool,
+        last_of_run: bool,
+    ) -> Result<(), Halt> {
+        self.check_limit()?;
+        self.intents.clear();
+        for index in 0..count {
+            let visitor = self.visitors[index];
+            let state = *self.state(visitor);
+            let node = state.node;
+            match self.store.settled_agent_at(node) {
+                Some(host) if !self.bit(host, block) => {
+                    // The agent whose bit is 0 stays home all block, so it is
+                    // the node's own agent. Checked, never assumed.
+                    let host_state = self.state(host);
+                    if host_state.node != node || host_state.home != Some(node) {
+                        return Err(broken(InvariantViolation::InvalidAgentNode).into());
+                    }
+                    self.exchange(visitor, host);
+                    self.stats.meetings += 1;
+                    if self.recorder.enabled() {
+                        self.events.push(SimulationEvent::MessageExchanged {
+                            visitor,
+                            host,
+                            node,
+                        });
+                    }
+                }
+                // Nobody at home, or an agent at home whose bit is 1 because
+                // it has no port for this round: no message.
+                _ => self.stats.visits_without_message += 1,
+            }
+            let back = state
+                .arrival_port
+                .ok_or(broken(InvariantViolation::InvalidTraversal))?;
+            self.intents.push(MoveIntent {
+                agent: visitor,
+                from: node,
+                port: back,
+            });
+        }
+        self.commit(RoundKind::ProbeBack)?;
+        for index in 0..count {
+            let visitor = self.visitors[index];
+            let state = *self.state(visitor);
+            if state.home != Some(state.node) {
+                return Err(broken(InvariantViolation::InvalidTraversal).into());
+            }
+            self.store.return_home(visitor)?;
+            self.metrics.probe_back_traversal();
+            if self.recorder.enabled() {
+                self.events.push(SimulationEvent::AgentStateChanged {
+                    agent: visitor,
+                    from: AgentStatus::SettledScout,
+                    to: AgentStatus::Settled,
+                });
+            }
+        }
+        if last_of_simulated_round {
+            self.end_simulated_round();
+            if last_of_run {
+                self.decide();
+            }
+        }
+        self.record(Phase::VisitBack);
+        Ok(())
+    }
+```
+
+`exchange` — [crates/ccm-algorithms/src/leader_election.rs:688](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/leader_election.rs#L688-L697)
+
+```rust
+    /// Both agents send the `min` they held at the start of the simulated
+    /// round; what they receive waits in `received` (decision 2).
+    fn exchange(&mut self, visitor: AgentId, host: AgentId) {
+        let sent_by_visitor = self.memory[visitor.index()].min;
+        let sent_by_host = self.memory[host.index()].min;
+        let visitor_memory = &mut self.memory[visitor.index()];
+        visitor_memory.received = visitor_memory.received.min(sent_by_host);
+        let host_memory = &mut self.memory[host.index()];
+        host_memory.received = host_memory.received.min(sent_by_visitor);
+    }
+```
+
+`end_simulated_round` — [crates/ccm-algorithms/src/leader_election.rs:699](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/leader_election.rs#L699-L719)
+
+```rust
+    /// The end of a simulated round: every agent's `min` takes what it
+    /// received. Local computation, no round.
+    fn end_simulated_round(&mut self) {
+        for index in 0..self.memory.len() {
+            let memory = &mut self.memory[index];
+            if memory.received < memory.min {
+                memory.min = memory.received;
+                if self.recorder.enabled() {
+                    self.events.push(SimulationEvent::MinimumChanged {
+                        agent: agent_id(index),
+                        min: AgentId(memory.min - 1),
+                    });
+                }
+            }
+        }
+        self.stats.simulated_rounds += 1;
+        self.metrics.macro_round();
+        if self.stats.rounds_until_all_knew.is_none() && self.everyone_knows() {
+            self.stats.rounds_until_all_knew = Some(self.stats.election_rounds);
+        }
+    }
+```
+
+`decide` — [crates/ccm-algorithms/src/leader_election.rs:721](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/leader_election.rs#L721-L735)
+
+```rust
+    /// After the last simulated round every agent decides: it is the leader
+    /// exactly when its `min` is its own ID.
+    fn decide(&mut self) {
+        for index in 0..self.memory.len() {
+            let memory = &mut self.memory[index];
+            memory.is_leader = memory.min == memory.id;
+            let decided = output(*memory);
+            if self.recorder.enabled() {
+                self.events.push(SimulationEvent::OutputDecided {
+                    agent: agent_id(index),
+                    output: decided,
+                });
+            }
+        }
+    }
+```
+
+
+---
+
 ## GeneralDisp
 
 `GeneralDisp` from the same paper, Section 4 and Algorithms 2–5: the general HEO-DFS with the Zombie method. Agents may start on any nodes. Every group of co-located agents, labelled `(level, leader)`, runs its own HEO-DFS. When two groups meet, the weaker leader becomes a **zombie** that chases the stronger group until that group's leader settles it. [general-disp.md](general-disp.md) has the slot table, the decisions taken where the pseudocode leaves a choice, and two hand traces.
@@ -4058,3 +4571,9 @@ The port-label row is the one that catches people out. Drop-and-Freeze discards
 the port assignment an experiment asked for, so sweeping `--ports` changes
 nothing for it; P1Tree's whole behaviour turns on which edges happen to carry
 port 1.
+
+Leader election is not in the table because it is not a dispersion: it starts
+where these end, one agent per node, and its result is an output for every
+agent, the leader's ID, rather than a placement. Its cost is fixed by `n` and
+`Δ` alone: `(n − 1) · b · 2Δ` rounds with `b = ⌊log₂ n⌋ + 1`, whatever the port
+labels.
