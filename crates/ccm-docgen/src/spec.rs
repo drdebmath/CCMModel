@@ -1506,6 +1506,202 @@ pub static CHARTS: &[Chart] = &[
             aside("pass", "commit", Some("each step")),
         ],
     },
+    // ------------------------------------------------------- Leader election
+    Chart {
+        id: "leader-election",
+        title: "Leader election",
+        short: "Agents simulate message passing by visiting on an ID-bit schedule",
+        crate_name: "ccm-algorithms",
+        source: "crates/ccm-algorithms/src/leader_election.rs",
+        intro: &[
+            "Leader election by agents from Kshemkalyani, Kumar, Molla and Sharma, *Agent-based \
+             Leader Election, MST, and Beyond*, Section 2 (Lemma 4, Theorem 1). Not a dispersion: \
+             the agents stand one per node, each with an ID from 1 to n, and simulate a \
+             message-passing algorithm in which every node sends the smallest ID it has seen. \
+             [leader-election.md](leader-election.md) has the model, the decisions taken where \
+             the paper leaves a choice, and the problem page's example round by round.",
+            "IDs are written in `b = ⌊log₂ n⌋ + 1` bits and read from the left. Block `i` of a \
+             simulated round is `2Δ` rounds: an agent whose bit `i` is 1 visits its neighbours \
+             port by port, out and back, and one whose bit is 0 stays home. Two neighbours \
+             differ in some bit, so one visits the other at home in every simulated round. After \
+             `n − 1` simulated rounds, exactly `(n − 1) · b · 2Δ` rounds, every agent knows the \
+             smallest ID.",
+        ],
+        notes: &[
+            "Every round of the schedule is committed, also those in which nobody moves: the \
+             agents keep in step only by counting rounds, and Lemma 4 charges `2Δ` per block.",
+            "A visitor takes a message only from the agent at home whose current bit is 0. That \
+             agent never leaves in the block, so it is the node's own agent; other visitors on \
+             the node are ignored. The code checks it rather than assumes it.",
+            "Received minima wait in `received` until the simulated round ends \
+             (leader-election.md, decision 2), so the run is a faithful simulation of \
+             synchronous message passing.",
+            "From a rooted start `RootedDisp` disperses the agents first and the election \
+             starts in the next round. Any other placement, a number of agents other than n, \
+             or a graph that is not connected is refused before the first round.",
+            "Round limit: checked before every round; a run stopped early has no outputs.",
+        ],
+        lanes: Lanes::Rows(&[
+            ("Start", 0.0, 2.0),
+            ("The schedule", 3.0, 8.0),
+            ("Decide", 9.0, 10.0),
+        ]),
+        nodes: &[
+            node(
+                "start",
+                "Run the election",
+                "simulate()",
+                (0.0, 0.0),
+                Entry,
+                Some("simulate"),
+                "Checks the input: n agents on a connected graph of n nodes, either one per node \
+                 or all on one node.",
+            ),
+            node(
+                "rooted",
+                "All on one node?",
+                "starts",
+                (0.0, 1.0),
+                Decision,
+                None,
+                "A dispersed start goes straight to the election; a rooted one is dispersed by \
+                 RootedDisp first.",
+            ),
+            node(
+                "disperse",
+                "RootedDisp disperses them",
+                "rooted_disp::simulate()",
+                (1.6, 1.0),
+                Step,
+                None,
+                "The rooted HEO-DFS; each agent's home is the node it settled on, and the \
+                 election starts in the round after it completes.",
+            ),
+            node(
+                "homes",
+                "Each agent at its home",
+                "Election::new()",
+                (0.0, 2.0),
+                Step,
+                Some("new"),
+                "Agent `i` gets the ID `i + 1`, and `min = received = ID`. Every agent stands on \
+                 its home.",
+            ),
+            node(
+                "schedule",
+                "n − 1 simulated rounds of b blocks",
+                "elect()",
+                (0.0, 3.0),
+                Step,
+                Some("elect"),
+                "In block `i` the visitors are the agents whose bit `i` is 1, sorted so that \
+                 those with a port `j` come first.",
+            ),
+            node(
+                "out",
+                "Out: bit-1 agents leave by port j",
+                "visit_out()",
+                (0.0, 4.0),
+                Step,
+                Some("visit_out"),
+                "Each visitor that has a port `j` is vacated from its home and crosses it. One \
+                 round.",
+            ),
+            node(
+                "commit",
+                "One synchronous round",
+                "commit()",
+                (-1.5, 4.0),
+                Aside,
+                Some("commit"),
+                "Applies every move of the round together, possibly none, and counts the round.",
+            ),
+            node(
+                "back",
+                "Back: meet the agent at home",
+                "visit_back()",
+                (0.0, 5.0),
+                Step,
+                Some("visit_back"),
+                "Each visitor looks at its node; if the agent at home has bit 0 they swap their \
+                 `min`. Then it returns through the port it arrived by. One round.",
+            ),
+            node(
+                "exchange",
+                "Swap smallest IDs",
+                "exchange()",
+                (-1.5, 5.0),
+                Aside,
+                Some("exchange"),
+                "Each sends the `min` it held at the start of the simulated round; what it \
+                 receives goes into `received`.",
+            ),
+            node(
+                "roundend",
+                "End of the simulated round?",
+                "last port, last block",
+                (0.0, 6.0),
+                Decision,
+                None,
+                "After the back round of port `Δ − 1` in block `b`.",
+            ),
+            node(
+                "apply",
+                "Every min takes what it received",
+                "end_simulated_round()",
+                (0.0, 7.0),
+                Step,
+                Some("end_simulated_round"),
+                "`min ← received` for every agent: local computation, no round.",
+            ),
+            node(
+                "more",
+                "n − 1 simulated rounds done?",
+                "simulated_rounds",
+                (0.0, 8.0),
+                Decision,
+                None,
+                "Agents do not know the diameter, so they always run `n − 1 ≥ D`.",
+            ),
+            node(
+                "decide",
+                "Leader: min = own ID",
+                "decide()",
+                (0.0, 9.0),
+                Step,
+                Some("decide"),
+                "Every agent outputs whether it is the leader and the leader's ID, its `min`.",
+            ),
+            node(
+                "done",
+                "Completed",
+                "Termination::Completed",
+                (0.0, 10.0),
+                Terminal,
+                None,
+                "Every agent is home, exactly one says it is the leader, and every output names \
+                 ID 1.",
+            ),
+        ],
+        edges: &[
+            e("start", "rooted", None, Auto),
+            e("rooted", "disperse", Some("yes"), Auto),
+            e("rooted", "homes", Some("no"), Auto),
+            e("disperse", "homes", None, Elbow),
+            e("homes", "schedule", None, Auto),
+            e("schedule", "out", None, Auto),
+            e("out", "back", None, Auto),
+            e("back", "roundend", None, Auto),
+            e("roundend", "out", Some("no: next port or block"), Around(1)),
+            e("roundend", "apply", Some("yes"), Auto),
+            e("apply", "more", None, Auto),
+            e("more", "out", Some("no: next simulated round"), Around(2)),
+            e("more", "decide", Some("yes"), Auto),
+            e("decide", "done", None, Auto),
+            aside("out", "commit", Some("each round")),
+            aside("back", "exchange", Some("bit-0 host")),
+        ],
+    },
     // ----------------------------------------------------------- GeneralDisp
     Chart {
         id: "generaldisp",

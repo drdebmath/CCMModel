@@ -14,6 +14,10 @@ pub enum Algorithm {
     /// `GeneralDisp`, Sudo et al.'s HEO-DFS for any placement, with groups
     /// merged by the Zombie method (Section 4).
     GeneralDisp,
+    /// Leader election by agents with the ID-bit schedule (Kshemkalyani et
+    /// al., Section 2). Not a dispersion algorithm: it needs one agent per
+    /// node, dispersed or rooted, and gives every agent an output.
+    LeaderElection,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -34,11 +38,15 @@ pub enum PortAssignment {
     Explicit,
 }
 
+/// Where the agents start. `Dispersed` puts every agent on its own node, the
+/// nodes chosen by the seed; with as many agents as nodes, every node holds
+/// exactly one agent.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StartingModel {
     SingleNode,
     UniformRandom { distinct_nodes: usize },
     Clustered { clusters: usize },
+    Dispersed,
     Explicit,
 }
 

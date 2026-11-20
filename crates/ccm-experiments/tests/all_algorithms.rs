@@ -1,4 +1,6 @@
-//! Properties every algorithm must have, checked once for all five.
+//! Properties every algorithm must have, checked once for all six. Leader
+//! election runs here in its rooted mode, `RootedDisp` first, because these
+//! tests start every agent on one node.
 
 mod common;
 
@@ -85,16 +87,28 @@ fn summary<R: Recorder>(
             result.roles.clear();
             (format!("{result:?}"), metrics)
         }
+        "leader_election" => {
+            let (result, metrics, _) = ccm_algorithms::leader_election::simulate(
+                g,
+                starts,
+                1_000_000,
+                ComplexityMetrics::default(),
+                recorder,
+            )
+            .unwrap();
+            (format!("{result:?}"), metrics)
+        }
         other => unreachable!("unknown algorithm {other}"),
     }
 }
 
-const ALGORITHMS: [&str; 5] = [
+const ALGORITHMS: [&str; 6] = [
     "drop_and_freeze",
     "help_by_scouts",
     "p1tree",
     "rooted_disp",
     "general_disp",
+    "leader_election",
 ];
 
 fn cases() -> Vec<PortGraph> {
@@ -198,6 +212,21 @@ fn final_placement(
             });
             (result.termination, agents.collect())
         }
+        "leader_election" => {
+            let (result, _, _) = ccm_algorithms::leader_election::simulate(
+                g,
+                starts,
+                LIMIT,
+                ComplexityMetrics::default(),
+                NoTrace,
+            )
+            .unwrap();
+            let agents = result
+                .agents
+                .iter()
+                .map(|agent| (agent.node, agent.home.is_some(), agent.home));
+            (result.termination, agents.collect())
+        }
         other => unreachable!("unknown algorithm {other}"),
     }
 }
@@ -230,6 +259,10 @@ fn every_run_ends_with_at_most_one_agent_per_node() {
                         generate_graph(&GraphSpec::new(family.clone(), nodes), assignment, seed)
                             .unwrap();
                     for agents in [4, nodes] {
+                        // Leader election needs one agent per node.
+                        if algorithm == "leader_election" && agents != nodes {
+                            continue;
+                        }
                         let case = format!(
                             "{algorithm} on {} with {assignment:?} ports, seed {seed}, \
                              {agents} agents",

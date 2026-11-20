@@ -1,7 +1,8 @@
 //! Golden-file check: a fixed sweep over every algorithm must reproduce
-//! `tests/golden/sweep.csv` byte for byte. Rooted runs of every algorithm
-//! come first, then a multi-start comparison of the algorithms defined for
-//! scattered starts on identical inputs.
+//! `tests/golden/sweep.csv` byte for byte. Rooted runs of every dispersion
+//! algorithm come first, then a multi-start comparison of the algorithms
+//! defined for scattered starts on identical inputs, then leader election
+//! with one agent per node, dispersed and rooted.
 //!
 //! A refactor passes only if it changes no result and no metric. A change that
 //! is meant to alter behaviour regenerates the file in the same commit, with
@@ -100,6 +101,36 @@ fn sweep_csv() -> String {
                         .with_node_counts(vec![12, 40])
                         .with_agent_counts(vec![6, 12])
                         .with_seeds(vec![1, 2, 3]);
+                    for result in run_sweep_parallel(&BuiltinRunner, &spec, 4) {
+                        let mut result = result.expect("every golden configuration runs");
+                        result.git_commit = "unknown";
+                        results.push(result);
+                    }
+                }
+            }
+        }
+    }
+    // Leader election needs as many agents as nodes, so each node count is
+    // its own sweep.
+    let placements = [
+        PlacementSpec::Dispersed,
+        PlacementSpec::SingleNode { node: NodeId(0) },
+    ];
+    for family in FAMILIES {
+        for port_assignment in PORTS {
+            for placement in &placements {
+                for nodes in [12, 40] {
+                    let base = RunRequest {
+                        algorithm: Algorithm::LeaderElection,
+                        graph: GraphSpec::new(family.clone(), nodes),
+                        port_assignment,
+                        placement: placement.clone(),
+                        agents: nodes,
+                        seed: 1,
+                        round_limit: None,
+                        scheduler: SchedulerModel::Synchronous,
+                    };
+                    let spec = SweepSpec::new(base).with_seeds(vec![1, 2, 3]);
                     for result in run_sweep_parallel(&BuiltinRunner, &spec, 4) {
                         let mut result = result.expect("every golden configuration runs");
                         result.git_commit = "unknown";

@@ -168,20 +168,43 @@ fn build_jobs(config: &SweepConfig) -> (Array, Vec<Series>) {
             config.tree_branching,
             config.seed,
         );
+        let election = config.algorithm == "leader_election";
         for agents in config.agent_counts() {
+            // Leader election needs one agent per node, so each of its points
+            // is a graph of `agents` nodes with one agent on each, and the
+            // schedule's fixed length always fits the limit.
+            let (graph, starts, round_limit) = if election {
+                let graph = make_graph_full(
+                    family,
+                    agents,
+                    config.grid_columns,
+                    config.tree_branching,
+                    config.seed,
+                );
+                let schedule = crate::ElectionSchedule::new(
+                    graph.node_count,
+                    crate::graph_max_degree(&graph),
+                    0,
+                );
+                let starts: Vec<u32> = (0..graph.node_count as u32).collect();
+                let limit = config.round_limit.max(schedule.length());
+                (graph, js_sys::Uint32Array::from(&starts[..]), limit)
+            } else {
+                // Rooted at node 0: P1Tree is defined for a rooted start, and
+                // using the same placement for every algorithm keeps the
+                // comparison fair.
+                (
+                    graph.clone(),
+                    js_sys::Uint32Array::new_with_length(agents as u32),
+                    config.round_limit,
+                )
+            };
             let job = js_sys::Object::new();
             let _ = Reflect::set(&job, &"nodeCount".into(), &(graph.node_count as u32).into());
             let edges = js_sys::Uint32Array::from(&graph.edges[..]);
             let _ = Reflect::set(&job, &"edges".into(), &edges);
-            // Rooted at node 0: P1Tree is defined for a rooted start, and using
-            // the same placement for every algorithm keeps the comparison fair.
-            let starts = js_sys::Uint32Array::new_with_length(agents as u32);
             let _ = Reflect::set(&job, &"starts".into(), &starts);
-            let _ = Reflect::set(
-                &job,
-                &"roundLimit".into(),
-                &(config.round_limit as f64).into(),
-            );
+            let _ = Reflect::set(&job, &"roundLimit".into(), &(round_limit as f64).into());
             jobs.push(&job);
         }
         series.push(Series {
@@ -851,6 +874,10 @@ pub fn start_dashboard() -> Result<(), JsValue> {
                      node 0."
                 } else if algorithm == "rooted" {
                     "RootedDisp requires a rooted start; every sweep places all agents at node 0."
+                } else if algorithm == "leader_election" {
+                    "Leader election needs one agent per node: each point is a graph with as many \
+                     nodes as agents, one agent on each, so the x axis is n. The Nodes box is not \
+                     used, and the round limit is raised to fit the schedule."
                 } else {
                     "All agents start at node 0, so the classes are compared on the same placement."
                 },
