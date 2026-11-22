@@ -31,6 +31,7 @@ fn request(
         seed,
         round_limit: None,
         scheduler: SchedulerModel::Synchronous,
+        labels: Vec::new(),
     }
 }
 

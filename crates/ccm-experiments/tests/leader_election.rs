@@ -652,6 +652,7 @@ fn request(placement: PlacementSpec, agents: usize) -> RunRequest {
         seed: 5,
         round_limit: None,
         scheduler: SchedulerModel::Synchronous,
+        labels: Vec::new(),
     }
 }
 

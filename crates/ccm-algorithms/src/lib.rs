@@ -1,4 +1,4 @@
-//! The CCM dispersion algorithms, one module each, plus [`common`] for the
+//! The CCM algorithms, one module each, plus [`common`] for the
 //! port-1 vocabulary they share.
 //!
 //! `drop_and_freeze` and `help_by_scouts` are legacy baselines that preserve
@@ -7,8 +7,9 @@
 //! synchronous construction, `rooted_async` agent by agent under any schedule.
 //! `leader_election` is not a dispersion algorithm: it starts from a dispersed
 //! placement (or disperses with `rooted_disp` first) and gives every agent an
-//! output. Every module is a self-contained, deterministic simulation over a
-//! `ccm_core::PortGraph`. Tests live in `ccm-experiments/tests`.
+//! output. `rendezvous` is not a dispersion either: two labelled agents meet in
+//! a tree (Dessmark et al.). Every module is a self-contained, deterministic
+//! simulation over a `ccm_core::PortGraph`. Tests live in `ccm-experiments/tests`.
 
 pub mod common;
 pub mod drop_and_freeze;
@@ -16,6 +17,7 @@ pub mod general_disp;
 pub mod help_by_scouts;
 pub mod leader_election;
 pub mod p1tree;
+pub mod rendezvous;
 pub mod rooted_async;
 pub mod rooted_disp;
 

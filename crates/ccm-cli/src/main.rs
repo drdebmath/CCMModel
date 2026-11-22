@@ -67,6 +67,7 @@ struct Options {
     round_limit: Option<u64>,
     workers: usize,
     scheduler: SchedulerModel,
+    labels: Vec<u32>,
 }
 
 impl Options {
@@ -82,6 +83,7 @@ impl Options {
             round_limit: None,
             workers: 1,
             scheduler: SchedulerModel::Synchronous,
+            labels: Vec::new(),
         };
         let mut index = 0;
         while index < values.len() {
@@ -104,6 +106,7 @@ impl Options {
                 "--round-limit" => options.round_limit = Some(parse_value(value(&mut index)?)?),
                 "--workers" => options.workers = parse_value(value(&mut index)?)?,
                 "--scheduler" => options.scheduler = parse_scheduler(value(&mut index)?)?,
+                "--labels" => options.labels = parse_list(value(&mut index)?)?,
                 "--help" | "-h" => {
                     print_help();
                     return Err(CliError::Help);
@@ -196,6 +199,7 @@ fn request(options: &Options, nodes: usize, agents: usize, seed: u64) -> RunRequ
         seed,
         round_limit: options.round_limit,
         scheduler: options.scheduler,
+        labels: options.labels.clone(),
     }
 }
 
@@ -296,6 +300,7 @@ fn parse_algorithm(value: &str) -> Result<Algorithm, CliError> {
         }
         "general-disp" | "general_disp" | "generaldisp" => Ok(Algorithm::GeneralDisp),
         "leader-election" | "leader_election" | "leaderelection" => Ok(Algorithm::LeaderElection),
+        "rendezvous" => Ok(Algorithm::Rendezvous),
         _ => Err(CliError::Parse(format!("unknown algorithm {value:?}"))),
     }
 }
@@ -308,6 +313,7 @@ fn parse_graph(value: &str) -> Result<GraphFamily, CliError> {
         "complete" => Ok(GraphFamily::Complete),
         "tree" => Ok(GraphFamily::Tree { branching: 2 }),
         "grid" => Ok(GraphFamily::Grid { columns: 3 }),
+        "random-tree" => Ok(GraphFamily::RandomTree),
         value if value.starts_with("tree:") => Ok(GraphFamily::Tree {
             branching: parse_value(&value[5..])?,
         }),
@@ -386,6 +392,7 @@ where
 
 fn print_help() {
     println!(
-        "ccm commands:\n  validate [options]  generate and validate one deterministic run\n  run [options]       execute one run and emit CSV\n  sweep [options]     execute independent runs and emit CSV\n  events [options]    trace one rooted-async run: every DFS step and probe, as CSV\n  transitions [options]  general-disp only: role transitions and merges of one run as CSV\n\noptions:\n  --algorithm drop-and-freeze|help-by-scouts|p1tree|rooted-async|rooted-disp|general-disp|leader-election\n    help-by-scouts, p1tree, rooted-async and rooted-disp need a single-node placement\n    leader-election needs agents = nodes, placed dispersed (or explicit, one per node) or single\n  --scheduler synchronous|asynchronous|interleaved|starved:AGENT:PERIOD  (non-synchronous:\n              rooted-async only; interleaved splits each cycle's look and write; time is then\n              counted in epochs, and the CSV time_unit column says so)\n  --graph path|cycle|star|complete|tree[:branching]|grid[:columns]|random-connected:extra|random-bounded:max-degree\n  --nodes N[,N...] --agents A[,A...] --seed S[,S...]\n  --ports canonical|random|adversarial\n  --placement single[:node]|uniform:K|clustered:n,n|dispersed|explicit:n,n\n  --round-limit R --workers W"
+        "ccm commands:\n  validate [options]  generate and validate one deterministic run\n  run [options]       execute one run and emit CSV\n  sweep [options]     execute independent runs and emit CSV\n  events [options]    trace one rooted-async run: every DFS step and probe, as CSV\n  transitions [options]  general-disp only: role transitions and merges of one run as CSV\n\noptions:\n  --algorithm drop-and-freeze|help-by-scouts|p1tree|rooted-async|rooted-disp|general-disp|leader-election|rendezvous\n    help-by-scouts, p1tree, rooted-async and rooted-disp need a single-node placement\n    leader-election needs agents = nodes, placed dispersed (or explicit, one per node) or single\n  --scheduler synchronous|asynchronous|interleaved|starved:AGENT:PERIOD  (non-synchronous:\n              rooted-async only; interleaved splits each cycle's look and write; time is then\n              counted in epochs, and the CSV time_unit column says so)\n  --graph path|cycle|star|complete|tree[:branching]|grid[:columns]|random-connected:extra|random-bounded:max-degree|random-tree\n  --nodes N[,N...] --agents A[,A...] --seed S[,S...]\n  --ports canonical|random|adversarial\n  --placement single[:node]|uniform:K|clustered:n,n|dispersed|explicit:n,n\n  --labels L,L        agent labels (rendezvous: two distinct labels >= 1; default 1,2)
+  --round-limit R --workers W"
     );
 }

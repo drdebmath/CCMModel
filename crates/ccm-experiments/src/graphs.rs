@@ -28,6 +28,9 @@ pub enum GraphFamily {
     RandomBoundedDegree {
         max_degree: usize,
     },
+    /// A seeded tree drawn uniformly among the labelled trees on `nodes`
+    /// nodes, from a random Prüfer sequence.
+    RandomTree,
 }
 
 impl GraphFamily {
@@ -46,6 +49,7 @@ impl GraphFamily {
             Self::RandomBoundedDegree { max_degree } => {
                 format!("random-bounded:{max_degree}")
             }
+            Self::RandomTree => "random-tree".to_owned(),
         }
     }
 }
@@ -254,8 +258,48 @@ fn family_edges(
             }
             edges = random_bounded_edges(nodes, *max_degree, seed);
         }
+        GraphFamily::RandomTree => {
+            edges = random_tree_edges(nodes, seed);
+        }
     }
     Ok(edges)
+}
+
+/// A uniformly random labelled tree: decode a random Prüfer sequence of
+/// length `nodes − 2`. Every node appears in the sequence one time fewer than
+/// its degree, so the shapes range from paths to stars.
+fn random_tree_edges(nodes: usize, seed: u64) -> Vec<(NodeId, NodeId)> {
+    if nodes < 2 {
+        return Vec::new();
+    }
+    let mut rng = DeterministicRng::new(seed);
+    let sequence: Vec<usize> = (0..nodes - 2)
+        .map(|_| rng.index(nodes).expect("the tree has nodes"))
+        .collect();
+    let mut degree = vec![1_usize; nodes];
+    for &node in &sequence {
+        degree[node] += 1;
+    }
+    // The smallest leaf is joined to each sequence entry in turn.
+    let mut leaves: BTreeSet<usize> = (0..nodes).filter(|&node| degree[node] == 1).collect();
+    let mut edges = Vec::with_capacity(nodes - 1);
+    for &node in &sequence {
+        let leaf = leaves
+            .pop_first()
+            .expect("a Prüfer sequence always leaves a leaf");
+        edges.push((leaf.min(node), leaf.max(node)));
+        degree[node] -= 1;
+        if degree[node] == 1 {
+            leaves.insert(node);
+        }
+    }
+    let last = leaves.pop_first().expect("two leaves remain");
+    let other = leaves.pop_first().expect("two leaves remain");
+    edges.push((last, other));
+    edges
+        .into_iter()
+        .map(|(left, right)| (NodeId(left as u32), NodeId(right as u32)))
+        .collect()
 }
 
 fn random_connected_edges(nodes: usize, extra_edges: usize, seed: u64) -> Vec<(NodeId, NodeId)> {
@@ -380,6 +424,47 @@ mod tests {
             .degree(NodeId(node as u32))
             .is_some_and(|degree| degree <= 3)));
         assert!(first.edge_count() >= first.node_count() - 1);
+    }
+
+    #[test]
+    fn random_trees_are_trees_of_many_shapes() {
+        let mut max_degrees = BTreeSet::new();
+        for nodes in 1..40 {
+            for seed in 0..20 {
+                let spec = GraphSpec::new(GraphFamily::RandomTree, nodes);
+                let graph = generate_graph(&spec, PortAssignment::Random, seed).unwrap();
+                assert_eq!(
+                    graph,
+                    generate_graph(&spec, PortAssignment::Random, seed).unwrap()
+                );
+                assert_eq!(graph.node_count(), nodes);
+                assert_eq!(graph.edge_count(), nodes.saturating_sub(1));
+                graph.validate().unwrap();
+                // Connected: a search from node 0 reaches every node.
+                let mut seen = vec![false; nodes];
+                let mut stack = vec![0_usize];
+                if nodes > 0 {
+                    seen[0] = true;
+                }
+                while let Some(node) = stack.pop() {
+                    let id = NodeId(node as u32);
+                    for port in 0..graph.degree(id).unwrap() {
+                        let next = graph.traverse(id, PortId(port)).unwrap().neighbor.index();
+                        if !seen[next] {
+                            seen[next] = true;
+                            stack.push(next);
+                        }
+                    }
+                }
+                assert!(seen.iter().all(|&reached| reached) || nodes == 0);
+                let max = (0..nodes)
+                    .map(|node| graph.degree(NodeId(node as u32)).unwrap())
+                    .max();
+                max_degrees.insert(max);
+            }
+        }
+        // Not one fixed shape: paths, stars and everything between.
+        assert!(max_degrees.len() > 4, "{max_degrees:?}");
     }
 
     #[test]

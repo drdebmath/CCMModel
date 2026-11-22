@@ -100,6 +100,7 @@ mod tests {
             seed: 10,
             round_limit: None,
             scheduler: ccm_core::SchedulerModel::Synchronous,
+            labels: Vec::new(),
         }
     }
 

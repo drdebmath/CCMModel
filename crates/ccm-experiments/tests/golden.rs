@@ -62,6 +62,7 @@ fn sweep_csv() -> String {
                     seed: 1,
                     round_limit: None,
                     scheduler,
+                    labels: Vec::new(),
                 };
                 let spec = SweepSpec::new(base)
                     .with_node_counts(vec![12, 40])
@@ -96,6 +97,7 @@ fn sweep_csv() -> String {
                         seed: 1,
                         round_limit: None,
                         scheduler: SchedulerModel::Synchronous,
+                        labels: Vec::new(),
                     };
                     let spec = SweepSpec::new(base)
                         .with_node_counts(vec![12, 40])
@@ -129,6 +131,7 @@ fn sweep_csv() -> String {
                         seed: 1,
                         round_limit: None,
                         scheduler: SchedulerModel::Synchronous,
+                        labels: Vec::new(),
                     };
                     let spec = SweepSpec::new(base).with_seeds(vec![1, 2, 3]);
                     for result in run_sweep_parallel(&BuiltinRunner, &spec, 4) {
@@ -140,7 +143,48 @@ fn sweep_csv() -> String {
             }
         }
     }
+    results.extend(rendezvous_rows());
     results_to_csv(&results)
+}
+
+/// Rendezvous on the tree families, from the two ends of the node range,
+/// with the default labels 1 and 2 and with 5 and 12.
+fn rendezvous_rows() -> Vec<ccm_experiments::RunResult> {
+    const TREES: [GraphFamily; 4] = [
+        GraphFamily::Path,
+        GraphFamily::Star,
+        GraphFamily::Tree { branching: 2 },
+        GraphFamily::RandomTree,
+    ];
+    let mut results = Vec::new();
+    for family in TREES {
+        for port_assignment in PORTS {
+            for labels in [Vec::new(), vec![5, 12]] {
+                for nodes in [12, 40] {
+                    let base = RunRequest {
+                        algorithm: Algorithm::Rendezvous,
+                        graph: GraphSpec::new(family.clone(), nodes),
+                        port_assignment,
+                        placement: PlacementSpec::Explicit {
+                            nodes: vec![NodeId(0), NodeId(u32::try_from(nodes - 1).unwrap())],
+                        },
+                        agents: 2,
+                        seed: 1,
+                        round_limit: None,
+                        scheduler: SchedulerModel::Synchronous,
+                        labels: labels.clone(),
+                    };
+                    let spec = SweepSpec::new(base).with_seeds(vec![1, 2, 3]);
+                    for result in run_sweep_parallel(&BuiltinRunner, &spec, 4) {
+                        let mut result = result.expect("every golden configuration runs");
+                        result.git_commit = "unknown";
+                        results.push(result);
+                    }
+                }
+            }
+        }
+    }
+    results
 }
 
 #[test]
