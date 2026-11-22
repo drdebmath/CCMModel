@@ -11,6 +11,9 @@ mobile-agent dispersion algorithms:
 - GeneralDisp, the general HEO-DFS of Sudo et al. with the Zombie method, for
   agents starting on any nodes.
 
+and one algorithm beyond dispersion: rendezvous of two labelled agents in a
+tree, after Dessmark et al. (see [docs/rendezvous.md](docs/rendezvous.md)).
+
 Native experiments and browser playback execute the same authoritative
 Rust algorithms. The repository is Rust end to end: simulation core, native
 CLI, browser application, and development server. The production browser is client-only Rust/WebAssembly in a
@@ -193,9 +196,11 @@ tree; it is retained as the record of why the migration was undertaken.
   (the same paper's asynchronous `RootedAsync`, agent by agent; see
   [docs/2507.01298-optimal-dispersion-under-asynchrony/](docs/2507.01298-optimal-dispersion-under-asynchrony/)),
   `rooted_disp` (RootedDisp, from Sudo et al.; see
-  [docs/rooted-disp.md](docs/rooted-disp.md)) and `general_disp` (GeneralDisp,
-  from Sudo et al.; see [docs/general-disp.md](docs/general-disp.md)). Their
-  tests live in `ccm-experiments/tests`.
+  [docs/rooted-disp.md](docs/rooted-disp.md)), `general_disp` (GeneralDisp,
+  from Sudo et al.; see [docs/general-disp.md](docs/general-disp.md)) and
+  `rendezvous` (two agents meeting in a tree, from Dessmark et al.; see
+  [docs/rendezvous.md](docs/rendezvous.md)). Their tests live in
+  `ccm-experiments/tests`.
 
 All documentation is indexed in [docs/README.md](docs/README.md). For how each
 algorithm actually runs, [`docs.html`](docs.html) — linked from either app

@@ -18,7 +18,8 @@ implementation departs from a paper, the chart shows what the code does and the
 notes say why. Read [behavior-spec.md](behavior-spec.md) for Drop-and-Freeze and
 Help-by-Scouts, [p1tree.md](p1tree.md) for P1Tree,
 [rooted-disp.md](rooted-disp.md) for RootedDisp,
-[leader-election.md](leader-election.md) for leader election, and the
+[leader-election.md](leader-election.md) for leader election,
+[rendezvous.md](rendezvous.md) for Rendezvous, and the
 [gap and trace note](2507.01298-optimal-dispersion-under-asynchrony/gap-and-trace-note.md)
 for RootedAsync, before drawing conclusions from any of them. The interactive version, [`docs.html`](../docs.html),
 explains every box and opens its code.
@@ -59,6 +60,20 @@ where these end, one agent per node, and its result is an output for every
 agent, the leader's ID, rather than a placement. Its cost is fixed by `n` and
 `Δ` alone: `(n − 1) · b · 2Δ` rounds with `b = ⌊log₂ n⌋ + 1`, whatever the port
 labels.
+## Beyond dispersion
+
+Rendezvous is not a dispersion: two agents start apart and the run ends when
+they meet. It is the first of the algorithms in which agents compute something
+together rather than spread out.
+
+| | Rendezvous |
+| --- | --- |
+| Start | two agents on two different nodes of a tree (required) |
+| Who moves | each agent alone, by its own schedule: explore on a 1, wait on a 0 |
+| What it reads | its label, its memory, and the degree and entry port of its node |
+| Port labels | as given; the walk leaves by the port after the entry port |
+| Tree | the graph itself; refused if it is not one |
+| Stops when | both agents stand on one node at the end of a round, or the round limit |
 ";
 
 /// Text for a mermaid label: quotes and angle brackets as entities.
