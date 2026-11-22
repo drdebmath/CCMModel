@@ -282,6 +282,30 @@ fn ease(t: f64) -> f64 {
     }
 }
 
+/// How strongly each node is drawn as occupied while agents glide from
+/// `before` to `after`, `t` of the way, and which agent's colour rings it.
+/// A node held in both frames stays fully lit; one being left fades out as
+/// one being reached fades in, so the highlight travels with the markers.
+fn occupancy_during_glide(
+    before: &[Vec<usize>],
+    after: &[Vec<usize>],
+    t: f64,
+) -> Vec<(f64, Option<usize>)> {
+    let t = t.clamp(0.0, 1.0);
+    (0..before.len().max(after.len()))
+        .map(|node| {
+            let was = before.get(node).and_then(|b| b.first().copied());
+            let is = after.get(node).and_then(|a| a.first().copied());
+            match (was, is) {
+                (Some(_), Some(agent)) => (1.0, Some(agent)),
+                (None, Some(agent)) => (t, Some(agent)),
+                (Some(agent), None) => (1.0 - t, Some(agent)),
+                (None, None) => (0.0, None),
+            }
+        })
+        .collect()
+}
+
 /// Where each agent is drawn: on a ring around its node.
 fn ring_positions(
     by_node: &[Vec<usize>],
@@ -2459,28 +2483,39 @@ fn render(state: &Rc<RefCell<AppState>>) {
         }
         return;
     }
-    for (node, point) in points.iter().enumerate() {
-        let agents = &by_node[node];
-        let color = agents
-            .first()
-            .map_or_else(|| border.clone(), |agent| agent_color(*agent));
-        context.set_fill_style_str(if agents.is_empty() {
-            &empty_fill
-        } else {
-            "#314875"
-        });
-        context.set_stroke_style_str(&color);
-        context.set_line_width(if agents.is_empty() { 1.0 } else { 2.0 });
+    // Where the agents were when the glide in progress began, and how far it
+    // has got. The node highlight below fades with the same `t` the agent
+    // markers move by, so a node lights up as its agent arrives rather than
+    // the moment the step starts.
+    let glide = app.glide.filter(|_| draw_individuals).and_then(|glide| {
+        let before = app.frames.get(glide.from)?;
+        let t = ease(glide_progress(&glide, js_sys::Date::now()));
+        Some((visible_by_node(&app.document, before, points.len()), t))
+    });
+    let presence = match &glide {
+        Some((start, t)) => occupancy_during_glide(start, &by_node, *t),
+        None => occupancy_during_glide(&by_node, &by_node, 1.0),
+    };
+    for (point, &(weight, holder)) in points.iter().zip(&presence) {
+        context.set_fill_style_str(&empty_fill);
+        context.set_stroke_style_str(&border);
+        context.set_line_width(1.0);
         context.begin_path();
-        let _ = context.arc(
-            point.0,
-            point.1,
-            radius + if agents.is_empty() { 0.0 } else { 1.0 },
-            0.0,
-            std::f64::consts::TAU,
-        );
+        let _ = context.arc(point.0, point.1, radius, 0.0, std::f64::consts::TAU);
         context.fill();
         context.stroke();
+        let Some(agent) = holder.filter(|_| weight > 0.0) else {
+            continue;
+        };
+        context.set_global_alpha(weight);
+        context.set_fill_style_str("#314875");
+        context.set_stroke_style_str(&agent_color(agent));
+        context.set_line_width(2.0);
+        context.begin_path();
+        let _ = context.arc(point.0, point.1, radius + 1.0, 0.0, std::f64::consts::TAU);
+        context.fill();
+        context.stroke();
+        context.set_global_alpha(1.0);
     }
     if !draw_individuals {
         draw_rooted_async_overlay(&context, frame, &points, radius, &moving, &app.document);
@@ -2488,12 +2523,7 @@ fn render(state: &Rc<RefCell<AppState>>) {
     }
     let agent_count = frame.positions.len();
     let target = ring_positions(&by_node, &points, radius, agent_count);
-    let glide = app.glide.and_then(|glide| {
-        let before = app.frames.get(glide.from)?;
-        let t = ease(glide_progress(&glide, js_sys::Date::now()));
-        let start = visible_by_node(&app.document, before, points.len());
-        Some((ring_positions(&start, &points, radius, agent_count), t))
-    });
+    let glide = glide.map(|(start, t)| (ring_positions(&start, &points, radius, agent_count), t));
     for (agent, to) in target.iter().enumerate() {
         let Some(to) = to else {
             continue;
@@ -4440,6 +4470,28 @@ fn tooltip(state: &Rc<RefCell<AppState>>, event: MouseEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The node highlight follows a gliding agent: the node it leaves fades
+    /// out and the node it reaches fades in, instead of the highlight jumping
+    /// ahead of the marker.
+    #[test]
+    fn the_node_highlight_travels_with_a_gliding_agent() {
+        // Agent 0 moves 0 -> 1; agent 1 stays on 2.
+        let before = vec![vec![0], vec![], vec![1]];
+        let after = vec![vec![], vec![0], vec![1]];
+        let start = occupancy_during_glide(&before, &after, 0.0);
+        assert_eq!(start, vec![(1.0, Some(0)), (0.0, Some(0)), (1.0, Some(1))]);
+        let middle = occupancy_during_glide(&before, &after, 0.25);
+        assert_eq!(
+            middle,
+            vec![(0.75, Some(0)), (0.25, Some(0)), (1.0, Some(1))]
+        );
+        let end = occupancy_during_glide(&before, &after, 1.0);
+        assert_eq!(end, vec![(0.0, Some(0)), (1.0, Some(0)), (1.0, Some(1))]);
+        // Without a glide every occupied node is fully lit.
+        let still = occupancy_during_glide(&after, &after, 1.0);
+        assert_eq!(still, vec![(0.0, None), (1.0, Some(0)), (1.0, Some(1))]);
+    }
 
     #[test]
     fn grouped_placement_crowds_a_few_nodes() {
