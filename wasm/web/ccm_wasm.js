@@ -68,7 +68,7 @@ function takeFromExternrefTable0(idx) {
 }
 /**
  * Algorithm selector shared by native and browser callers.
- * @enum {0 | 1 | 2 | 3 | 4 | 5 | 6 | 7}
+ * @enum {0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}
  */
 export const AlgorithmSelector = Object.freeze({
     HelpByScouts: 0, "0": "HelpByScouts",
@@ -94,6 +94,11 @@ export const AlgorithmSelector = Object.freeze({
      * one node and dispersed by `RootedDisp` first.
      */
     LeaderElection: 7, "7": "LeaderElection",
+    /**
+     * Rendezvous of two labelled agents in a tree, with the labels set by
+     * [`WasmSimulation::set_labels`].
+     */
+    Rendezvous: 8, "8": "Rendezvous",
 });
 /**
  * Trace policy. `Bounded` uses the supplied record and sampling limits.
@@ -142,12 +147,44 @@ export class SimulationOutput {
         return ret;
     }
     /**
+     * Rendezvous: the most memory any agent used, in bits; 0 otherwise.
+     * @returns {bigint}
+     */
+    memory_bits() {
+        const ret = wasm.simulationoutput_memory_bits(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * Rendezvous: the exact round limit of the task; 0 for other algorithms.
+     * @returns {bigint}
+     */
+    round_bound() {
+        const ret = wasm.simulationoutput_round_bound(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * Rendezvous: the node the agents met on, or -1.
+     * @returns {number}
+     */
+    meeting_node() {
+        const ret = wasm.simulationoutput_meeting_node(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * Compact binary render records; this avoids one JS message per agent.
      * @returns {Uint8Array}
      */
     render_bytes() {
         const ret = wasm.simulationoutput_render_bytes(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Rendezvous: the round they met in, or 0.
+     * @returns {bigint}
+     */
+    meeting_round() {
+        const ret = wasm.simulationoutput_meeting_round(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
     }
     /**
      * @returns {number}
@@ -234,6 +271,14 @@ export class SimulationOutput {
         return ret;
     }
     /**
+     * Rendezvous: rounds per block, `2(n - 1)`; 0 for other algorithms.
+     * @returns {bigint}
+     */
+    block_len() {
+        const ret = wasm.simulationoutput_block_len(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
      * Dense agent-node positions as a JS Uint32Array.
      * @returns {Uint32Array}
      */
@@ -277,6 +322,16 @@ export class WasmSimulation {
     node_count() {
         const ret = wasm.wasmsimulation_node_count(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * Sets the agents' labels for [`AlgorithmSelector::Rendezvous`]; other
+     * algorithms ignore them.
+     * @param {Uint32Array} labels
+     */
+    set_labels(labels) {
+        const ptr0 = passArray32ToWasm0(labels, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.wasmsimulation_set_labels(this.__wbg_ptr, ptr0, len0);
     }
     /**
      * @returns {TraceMode}
