@@ -46,6 +46,7 @@ function algorithmSelector(name) {
     case 'rooted_async': return wasm.AlgorithmSelector.RootedAsync;
     case 'rooted_async_random': return wasm.AlgorithmSelector.RootedAsyncRandom;
     case 'leader_election': return wasm.AlgorithmSelector.LeaderElection;
+    case 'rendezvous': return wasm.AlgorithmSelector.Rendezvous;
     default: return wasm.AlgorithmSelector.DropAndFreeze;
   }
 }
@@ -146,6 +147,8 @@ function runOne(name, data) {
   try {
     // Seeds the asynchronous order of RootedAsync; other algorithms ignore it.
     simulation.set_schedule_seed(BigInt(data.scheduleSeed ?? 0));
+    // Rendezvous labels; other algorithms ignore them.
+    if (data.labels) simulation.set_labels(new Uint32Array(data.labels));
     const output = simulation.run();
     // Freed even when a read throws, so a failed run does not leak WASM memory.
     try {
@@ -158,6 +161,11 @@ function runOne(name, data) {
         renderRecordCount: output.render_record_count(),
         renderTruncated: output.render_truncated(),
         renderBytes: output.render_bytes(),
+        meetingNode: output.meeting_node(),
+        meetingRound: Number(output.meeting_round()),
+        blockLen: Number(output.block_len()),
+        roundBound: Number(output.round_bound()),
+        memoryBits: Number(output.memory_bits()),
         groupBytes: output.group_bytes(),
         // Leader election: each agent's leader; empty for dispersion.
         outputs: output.outputs(),

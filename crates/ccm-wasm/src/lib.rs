@@ -40,6 +40,9 @@ pub enum AlgorithmSelector {
     /// Leader election by agents: one agent per node, dispersed, or all on
     /// one node and dispersed by `RootedDisp` first.
     LeaderElection = 7,
+    /// Rendezvous of two labelled agents in a tree, with the labels set by
+    /// [`WasmSimulation::set_labels`].
+    Rendezvous = 8,
 }
 
 /// Trace policy. `Bounded` uses the supplied record and sampling limits.
@@ -62,6 +65,7 @@ enum AdapterError {
     RootedDisp(String),
     GeneralDisp(String),
     LeaderElection(String),
+    Rendezvous(String),
     Trace(String),
 }
 
@@ -77,6 +81,7 @@ impl fmt::Display for AdapterError {
             | Self::RootedDisp(message)
             | Self::GeneralDisp(message)
             | Self::LeaderElection(message)
+            | Self::Rendezvous(message)
             | Self::Trace(message) => f.write_str(message),
         }
     }
@@ -96,6 +101,8 @@ pub struct WasmSimulation {
     cancelled: bool,
     /// Seeds the random order of [`AlgorithmSelector::RootedAsyncRandom`].
     schedule_seed: u64,
+    /// Agent labels for [`AlgorithmSelector::Rendezvous`]; empty means 1, 2.
+    labels: Vec<u32>,
 }
 
 #[wasm_bindgen]
@@ -177,6 +184,12 @@ impl WasmSimulation {
         self.schedule_seed = seed;
     }
 
+    /// Sets the agents' labels for [`AlgorithmSelector::Rendezvous`]; other
+    /// algorithms ignore them.
+    pub fn set_labels(&mut self, labels: &[u32]) {
+        self.labels = labels.to_vec();
+    }
+
     pub fn clear_cancelled(&mut self) {
         self.cancelled = false;
     }
@@ -240,6 +253,7 @@ impl WasmSimulation {
             sample_every: sample_every as u64,
             cancelled: false,
             schedule_seed: 0,
+            labels: Vec::new(),
         })
     }
 
@@ -265,6 +279,7 @@ impl WasmSimulation {
             AlgorithmSelector::RootedDisp => self.run_rooted_disp(),
             AlgorithmSelector::GeneralDisp => self.run_general_disp(),
             AlgorithmSelector::LeaderElection => self.run_leader_election(),
+            AlgorithmSelector::Rendezvous => self.run_rendezvous(),
             AlgorithmSelector::RootedAsync | AlgorithmSelector::RootedAsyncRandom => {
                 self.run_rooted_async()
             }
@@ -647,6 +662,41 @@ impl WasmSimulation {
         }
     }
 
+    fn run_rendezvous(&self) -> Result<SimulationOutput, AdapterError> {
+        use ccm_algorithms::rendezvous::{default_labels, simulate, RendezvousError};
+        let labels = if self.labels.is_empty() {
+            default_labels(self.starts.len())
+        } else {
+            self.labels.clone()
+        };
+        let error = |e: RendezvousError| AdapterError::Rendezvous(e.to_string());
+        let (graph, starts, limit) = (&self.graph, &self.starts, self.round_limit);
+        let metrics = ComplexityMetrics::default();
+        match self.trace_mode {
+            TraceMode::Off => {
+                let (result, metrics, _) =
+                    simulate(graph, starts, &labels, limit, metrics, NoTrace).map_err(error)?;
+                Ok(output_from_rendezvous(result, metrics, None))
+            }
+            TraceMode::Full => {
+                let (result, metrics, recorder) =
+                    simulate(graph, starts, &labels, limit, metrics, FullTrace::new())
+                        .map_err(error)?;
+                let trace = encode_trace(&recorder.into_trace(), false);
+                Ok(output_from_rendezvous(result, metrics, Some(trace)))
+            }
+            TraceMode::Bounded => {
+                let recorder = BoundedTrace::new(self.trace_budget())
+                    .map_err(|e| AdapterError::Trace(e.to_string()))?;
+                let (result, metrics, recorder) =
+                    simulate(graph, starts, &labels, limit, metrics, recorder).map_err(error)?;
+                let truncated = trace_was_truncated(&recorder);
+                let trace = encode_trace(&recorder.into_trace(), truncated);
+                Ok(output_from_rendezvous(result, metrics, Some(trace)))
+            }
+        }
+    }
+
     fn trace_budget(&self) -> TraceBudget {
         let checkpoint_words = 1_usize
             .saturating_add(self.starts.len().saturating_mul(3))
@@ -680,6 +730,17 @@ pub struct SimulationOutput {
     trace: RenderPayload,
     groups: Vec<u8>,
     outputs: Vec<i32>,
+    /// Rendezvous only: where and when the agents met, the block length, the
+    /// round limit and the most memory any agent used.
+    rendezvous: Option<RendezvousSummary>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RendezvousSummary {
+    meeting: Option<(u64, u32)>,
+    block_len: u64,
+    bound: u64,
+    memory_bits: u64,
 }
 
 #[wasm_bindgen]
@@ -758,6 +819,40 @@ impl SimulationOutput {
     pub fn render_byte_len(&self) -> u32 {
         self.trace.bytes.len() as u32
     }
+
+    /// Rendezvous: the node the agents met on, or -1.
+    #[must_use]
+    pub fn meeting_node(&self) -> i32 {
+        self.rendezvous
+            .and_then(|summary| summary.meeting)
+            .map_or(-1, |(_, node)| node as i32)
+    }
+
+    /// Rendezvous: the round they met in, or 0.
+    #[must_use]
+    pub fn meeting_round(&self) -> u64 {
+        self.rendezvous
+            .and_then(|summary| summary.meeting)
+            .map_or(0, |(round, _)| round)
+    }
+
+    /// Rendezvous: rounds per block, `2(n - 1)`; 0 for other algorithms.
+    #[must_use]
+    pub fn block_len(&self) -> u64 {
+        self.rendezvous.map_or(0, |summary| summary.block_len)
+    }
+
+    /// Rendezvous: the exact round limit of the task; 0 for other algorithms.
+    #[must_use]
+    pub fn round_bound(&self) -> u64 {
+        self.rendezvous.map_or(0, |summary| summary.bound)
+    }
+
+    /// Rendezvous: the most memory any agent used, in bits; 0 otherwise.
+    #[must_use]
+    pub fn memory_bits(&self) -> u64 {
+        self.rendezvous.map_or(0, |summary| summary.memory_bits)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -835,6 +930,7 @@ fn initial_output(
             record_count: 0,
             truncated: false,
         },
+        rendezvous: None,
         groups: Vec::new(),
         outputs: Vec::new(),
     }
@@ -860,6 +956,7 @@ fn output_from_drop(
         moves: metrics.agent_moves,
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
+        rendezvous: None,
         groups: Vec::new(),
         outputs: Vec::new(),
     }
@@ -892,6 +989,7 @@ fn output_from_help(
         moves: metrics.agent_moves,
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
+        rendezvous: None,
         groups: Vec::new(),
         outputs: Vec::new(),
     }
@@ -926,6 +1024,7 @@ fn output_from_p1tree(
         moves: metrics.agent_moves,
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
+        rendezvous: None,
         groups: Vec::new(),
         outputs: Vec::new(),
     }
@@ -960,6 +1059,7 @@ fn output_from_rooted_disp(
         moves: metrics.agent_moves,
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
+        rendezvous: None,
         groups: Vec::new(),
         outputs: Vec::new(),
     }
@@ -999,6 +1099,7 @@ fn output_from_general_disp(
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
         groups,
+        rendezvous: None,
         outputs: Vec::new(),
     }
 }
@@ -1042,6 +1143,7 @@ fn output_from_leader_election(
         trace: trace.unwrap_or_else(empty_payload),
         groups: Vec::new(),
         outputs,
+        rendezvous: None,
     }
 }
 
@@ -1226,6 +1328,47 @@ fn output_from_rooted_async(
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
         groups: Vec::new(),
+        outputs: Vec::new(),
+        rendezvous: None,
+    }
+}
+
+/// Rendezvous's final state. Every agent's status is 2, the renderer's
+/// "waiting", and its home is its start node; the trace's checkpoints say
+/// which agent explored in each round.
+fn output_from_rendezvous(
+    result: ccm_algorithms::rendezvous::RendezvousResult,
+    metrics: ComplexityMetrics,
+    trace: Option<RenderPayload>,
+) -> SimulationOutput {
+    SimulationOutput {
+        algorithm: AlgorithmSelector::Rendezvous,
+        termination_code: termination_code(&result.termination),
+        positions: result.agents.iter().map(|agent| agent.node.0).collect(),
+        statuses: vec![2; result.agents.len()],
+        homes: result
+            .agents
+            .iter()
+            .map(|agent| agent.start.0 as i32)
+            .collect(),
+        rounds: metrics.rounds,
+        moves: metrics.agent_moves,
+        probes: metrics.port_probes,
+        trace: trace.unwrap_or_else(empty_payload),
+        groups: Vec::new(),
+        rendezvous: Some(RendezvousSummary {
+            meeting: result
+                .meeting
+                .map(|meeting| (meeting.round, meeting.node.0)),
+            block_len: result.block_len,
+            bound: result.bound,
+            memory_bits: result
+                .agents
+                .iter()
+                .map(|agent| agent.memory_bits)
+                .max()
+                .unwrap_or(0),
+        }),
         outputs: Vec::new(),
     }
 }
@@ -1798,6 +1941,48 @@ mod tests {
         assert_eq!(output.termination_code, 0);
         assert_eq!((output.rounds, output.probes, output.moves), (73, 65, 264));
         assert_eq!(output.trace, empty_payload());
+    }
+
+    #[test]
+    fn rendezvous_runs_with_set_labels_and_reports_the_meeting() {
+        // The hand trace of docs/rendezvous.md: labels 1 and 3 meet on node 0
+        // in round 33.
+        let mut simulation = WasmSimulation::new(
+            6,
+            &[0, 1, 1, 2, 1, 3, 3, 4, 3, 5],
+            &[0, 5],
+            AlgorithmSelector::Rendezvous,
+            TraceMode::Full,
+            200,
+            10_000,
+            1,
+        )
+        .unwrap();
+        simulation.set_labels(&[1, 3]);
+        let output = simulation.run_internal().unwrap();
+        assert_eq!(output.termination_code, 0);
+        assert_eq!((output.meeting_round(), output.meeting_node()), (33, 0));
+        assert_eq!((output.block_len(), output.round_bound()), (10, 50));
+        assert_eq!(output.positions, vec![0, 0]);
+        assert_eq!(output.homes, vec![0, 5]);
+        assert_eq!(output.rounds, 33);
+        assert!(output.trace.record_count > 33);
+
+        let mut cycle = WasmSimulation::new(
+            3,
+            &[0, 1, 1, 2, 2, 0],
+            &[0, 1],
+            AlgorithmSelector::Rendezvous,
+            TraceMode::Off,
+            200,
+            0,
+            1,
+        )
+        .unwrap();
+        assert!(matches!(
+            cycle.run_internal(),
+            Err(AdapterError::Rendezvous(message)) if message.contains("trees only")
+        ));
     }
 
     #[test]
