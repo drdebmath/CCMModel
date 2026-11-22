@@ -87,6 +87,7 @@ dependencies = [
 name = "ccm-web"
 version = "0.1.0"
 dependencies = [
+ "ccm-algorithms",
  "js-sys",
  "serde",
  "serde_json",

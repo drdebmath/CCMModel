@@ -26,7 +26,7 @@ use web_sys::{
 };
 
 /// Graph classes offered as series, with the checkbox that selects each.
-const FAMILIES: [(&str, &str, &str); 7] = [
+const FAMILIES: [(&str, &str, &str); 8] = [
     ("path", "Path", "famPath"),
     ("cycle", "Cycle", "famCycle"),
     ("star", "Star", "famStar"),
@@ -34,6 +34,7 @@ const FAMILIES: [(&str, &str, &str); 7] = [
     ("tree", "Balanced tree", "famTree"),
     ("grid", "Grid", "famGrid"),
     ("random", "Random connected", "famRandom"),
+    ("random_tree", "Random tree", "famRandomTree"),
 ];
 
 /// Categorical slots 1-7 of the reference palette, in fixed order.
