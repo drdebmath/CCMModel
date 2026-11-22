@@ -5,7 +5,7 @@ Start here.
 ## How the algorithms work
 
 - **[The interactive flowcharts](https://drdebmath.github.io/CCMModel/docs.html)** —
-  the same four charts as a page you can pan and zoom, where clicking any box
+  the same charts as a page you can pan and zoom, where clicking any box
   opens the source of the function it stands for. Served alongside the
   simulator; also reachable from either app page's header.
 - **[algorithm-flowcharts.md](algorithm-flowcharts.md)** — one flowchart per
@@ -28,6 +28,11 @@ Start here.
   - how its probing differs from RootedDisp;
   - the decisions taken where the pseudocode leaves a choice;
   - the two-group and three-group hand traces.
+- [leader-election.md](leader-election.md) — leader election by agents from
+  a dispersed start, after Kshemkalyani et al., *Agent-based Leader Election,
+  MST, and Beyond*: the ID-bit schedule that simulates message passing, the
+  decisions taken where the paper leaves a choice, the per-agent output it
+  adds, and the problem page's example traced round by round.
 - [behavior-spec.md](behavior-spec.md) — Drop-and-Freeze and Help-by-Scouts,
   as they behaved in the Python implementation the Rust ports preserve.
   **Archival**: it cites files this repository no longer contains.

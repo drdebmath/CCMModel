@@ -5,13 +5,16 @@
 //! historical behaviour. `p1tree`, `rooted_async`, `rooted_disp` and
 //! `general_disp` are written from their papers: `p1tree` as a centralised,
 //! synchronous construction, `rooted_async` agent by agent under any schedule.
-//! Every module is a self-contained, deterministic simulation over a
+//! `leader_election` is not a dispersion algorithm: it starts from a dispersed
+//! placement (or disperses with `rooted_disp` first) and gives every agent an
+//! output. Every module is a self-contained, deterministic simulation over a
 //! `ccm_core::PortGraph`. Tests live in `ccm-experiments/tests`.
 
 pub mod common;
 pub mod drop_and_freeze;
 pub mod general_disp;
 pub mod help_by_scouts;
+pub mod leader_election;
 pub mod p1tree;
 pub mod rooted_async;
 pub mod rooted_disp;

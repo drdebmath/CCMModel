@@ -5,11 +5,16 @@ use core::fmt;
 
 /// Initial-placement families.  A placement vector is always returned in
 /// dense agent-ID order, so it is independent of map/set iteration order.
+///
+/// `Dispersed` puts every agent on its own node: the first `agents` nodes of a
+/// permutation drawn from the seed. With as many agents as nodes, every node
+/// holds exactly one agent.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PlacementSpec {
     SingleNode { node: NodeId },
     UniformRandom { distinct_nodes: usize },
     Clustered { centers: Vec<NodeId> },
+    Dispersed,
     Explicit { nodes: Vec<NodeId> },
 }
 
@@ -27,6 +32,7 @@ impl PlacementSpec {
                     .collect::<Vec<_>>()
                     .join(";")
             ),
+            Self::Dispersed => "dispersed".to_owned(),
             Self::Explicit { nodes } => format!(
                 "explicit:{}",
                 nodes
@@ -118,6 +124,18 @@ pub fn place_agents(
                 .map(|_| centers[rng.index(centers.len()).expect("non-empty cluster")])
                 .collect())
         }
+        PlacementSpec::Dispersed => {
+            if agents > node_count {
+                return Err(PlacementError::InvalidDistinctNodeCount {
+                    requested: agents,
+                    available: node_count,
+                });
+            }
+            let mut nodes: Vec<NodeId> = (0..node_count).map(|n| NodeId(n as u32)).collect();
+            DeterministicRng::new(seed).shuffle(&mut nodes);
+            nodes.truncate(agents);
+            Ok(nodes)
+        }
         PlacementSpec::Explicit { nodes } => {
             if nodes.len() != agents {
                 return Err(PlacementError::AgentCountMismatch {
@@ -179,6 +197,33 @@ mod tests {
                 .len()
                 <= 3
         );
+    }
+
+    #[test]
+    fn dispersed_puts_every_agent_on_its_own_node() {
+        for nodes in 1..=12 {
+            for agents in 0..=nodes {
+                for seed in 0..5 {
+                    let first =
+                        place_agents(nodes, agents, &PlacementSpec::Dispersed, seed).unwrap();
+                    let second =
+                        place_agents(nodes, agents, &PlacementSpec::Dispersed, seed).unwrap();
+                    assert_eq!(first, second);
+                    assert_eq!(first.len(), agents);
+                    assert!(first.iter().all(|node| node.index() < nodes));
+                    let distinct: std::collections::BTreeSet<_> = first.iter().collect();
+                    assert_eq!(distinct.len(), agents, "{nodes} nodes, seed {seed}");
+                }
+            }
+        }
+        assert_eq!(PlacementSpec::Dispersed.label(), "dispersed");
+        assert!(matches!(
+            place_agents(3, 4, &PlacementSpec::Dispersed, 0),
+            Err(PlacementError::InvalidDistinctNodeCount {
+                requested: 4,
+                available: 3
+            })
+        ));
     }
 
     #[test]

@@ -12,7 +12,9 @@
 //! fixed-width dense IDs; group records carry an explicit agent count.
 
 use ccm_algorithms::drop_and_freeze::{DropStatus, SharedRecorder, SimulationState as DropState};
-use ccm_core::{AgentStatus, ComplexityMetrics, NodeId, PortEdge, PortGraph, Termination};
+use ccm_core::{
+    AgentOutput, AgentStatus, ComplexityMetrics, NodeId, PortEdge, PortGraph, Termination,
+};
 use ccm_trace::{
     BoundedTrace, Checkpoint, FullTrace, NoTrace, Phase, SimulationEvent, Trace, TraceBudget,
 };
@@ -35,6 +37,9 @@ pub enum AlgorithmSelector {
     RootedAsyncRandom = 5,
     /// `GeneralDisp`: agents may start on any nodes.
     GeneralDisp = 6,
+    /// Leader election by agents: one agent per node, dispersed, or all on
+    /// one node and dispersed by `RootedDisp` first.
+    LeaderElection = 7,
 }
 
 /// Trace policy. `Bounded` uses the supplied record and sampling limits.
@@ -56,6 +61,7 @@ enum AdapterError {
     RootedAsync(String),
     RootedDisp(String),
     GeneralDisp(String),
+    LeaderElection(String),
     Trace(String),
 }
 
@@ -70,6 +76,7 @@ impl fmt::Display for AdapterError {
             | Self::RootedAsync(message)
             | Self::RootedDisp(message)
             | Self::GeneralDisp(message)
+            | Self::LeaderElection(message)
             | Self::Trace(message) => f.write_str(message),
         }
     }
@@ -257,6 +264,7 @@ impl WasmSimulation {
             AlgorithmSelector::P1Tree => self.run_p1tree(),
             AlgorithmSelector::RootedDisp => self.run_rooted_disp(),
             AlgorithmSelector::GeneralDisp => self.run_general_disp(),
+            AlgorithmSelector::LeaderElection => self.run_leader_election(),
             AlgorithmSelector::RootedAsync | AlgorithmSelector::RootedAsyncRandom => {
                 self.run_rooted_async()
             }
@@ -595,6 +603,50 @@ impl WasmSimulation {
         }
     }
 
+    fn run_leader_election(&self) -> Result<SimulationOutput, AdapterError> {
+        use ccm_algorithms::leader_election::simulate;
+        let error = |e: ccm_algorithms::leader_election::ElectionError| {
+            AdapterError::LeaderElection(e.to_string())
+        };
+        let (graph, starts, limit) = (&self.graph, &self.starts, self.round_limit);
+        match self.trace_mode {
+            TraceMode::Off => {
+                let (result, metrics, _) =
+                    simulate(graph, starts, limit, ComplexityMetrics::default(), NoTrace)
+                        .map_err(error)?;
+                Ok(output_from_leader_election(result, metrics, None))
+            }
+            TraceMode::Full => {
+                let (result, metrics, recorder) = simulate(
+                    graph,
+                    starts,
+                    limit,
+                    ComplexityMetrics::default(),
+                    FullTrace::new(),
+                )
+                .map_err(error)?;
+                Ok(output_from_leader_election(
+                    result,
+                    metrics,
+                    Some(encode_trace(&recorder.into_trace(), false)),
+                ))
+            }
+            TraceMode::Bounded => {
+                let recorder = BoundedTrace::new(self.trace_budget())
+                    .map_err(|error| AdapterError::Trace(error.to_string()))?;
+                let (result, metrics, recorder) =
+                    simulate(graph, starts, limit, ComplexityMetrics::default(), recorder)
+                        .map_err(error)?;
+                let truncated = trace_was_truncated(&recorder);
+                Ok(output_from_leader_election(
+                    result,
+                    metrics,
+                    Some(encode_trace(&recorder.into_trace(), truncated)),
+                ))
+            }
+        }
+    }
+
     fn trace_budget(&self) -> TraceBudget {
         let checkpoint_words = 1_usize
             .saturating_add(self.starts.len().saturating_mul(3))
@@ -627,10 +679,19 @@ pub struct SimulationOutput {
     probes: u64,
     trace: RenderPayload,
     groups: Vec<u8>,
+    outputs: Vec<i32>,
 }
 
 #[wasm_bindgen]
 impl SimulationOutput {
+    /// Each agent's output in dense agent order, for algorithms that compute
+    /// one; empty for the dispersion algorithms or when the run stopped
+    /// early. Leader election: the leader's agent ID, so an agent is the
+    /// leader exactly when its entry is its own index.
+    pub fn outputs(&self) -> js_sys::Int32Array {
+        js_sys::Int32Array::from(self.outputs.as_slice())
+    }
+
     /// `GeneralDisp` roles, groups, slots and merge events per frame, in the
     /// format of `encode_groups`; empty for other algorithms or without a trace.
     pub fn group_bytes(&self) -> js_sys::Uint8Array {
@@ -775,6 +836,7 @@ fn initial_output(
             truncated: false,
         },
         groups: Vec::new(),
+        outputs: Vec::new(),
     }
 }
 
@@ -799,6 +861,7 @@ fn output_from_drop(
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
         groups: Vec::new(),
+        outputs: Vec::new(),
     }
 }
 
@@ -830,6 +893,7 @@ fn output_from_help(
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
         groups: Vec::new(),
+        outputs: Vec::new(),
     }
 }
 
@@ -863,6 +927,7 @@ fn output_from_p1tree(
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
         groups: Vec::new(),
+        outputs: Vec::new(),
     }
 }
 
@@ -896,6 +961,7 @@ fn output_from_rooted_disp(
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
         groups: Vec::new(),
+        outputs: Vec::new(),
     }
 }
 
@@ -933,6 +999,49 @@ fn output_from_general_disp(
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
         groups,
+        outputs: Vec::new(),
+    }
+}
+
+fn output_from_leader_election(
+    result: ccm_algorithms::leader_election::ElectionResult,
+    metrics: ComplexityMetrics,
+    trace: Option<RenderPayload>,
+) -> SimulationOutput {
+    let outputs = result.outputs().map_or_else(Vec::new, |outputs| {
+        outputs
+            .iter()
+            .map(|output| match output {
+                AgentOutput::Leader { leader, .. } => leader.0 as i32,
+            })
+            .collect()
+    });
+    SimulationOutput {
+        algorithm: AlgorithmSelector::LeaderElection,
+        termination_code: termination_code(&result.termination),
+        positions: result.agents.iter().map(|agent| agent.node.0).collect(),
+        statuses: result
+            .agents
+            .iter()
+            .map(|agent| match agent.home {
+                // At home, settled; away from home, visiting a neighbour.
+                Some(home) if home == agent.node => 0,
+                Some(_) => 2,
+                // Rooted mode, stopped before RootedDisp settled it.
+                None => 1,
+            })
+            .collect(),
+        homes: result
+            .agents
+            .iter()
+            .map(|agent| agent.home.map_or(-1, |node| node.0 as i32))
+            .collect(),
+        rounds: metrics.rounds,
+        moves: metrics.agent_moves,
+        probes: metrics.port_probes,
+        trace: trace.unwrap_or_else(empty_payload),
+        groups: Vec::new(),
+        outputs,
     }
 }
 
@@ -1117,6 +1226,7 @@ fn output_from_rooted_async(
         probes: metrics.port_probes,
         trace: trace.unwrap_or_else(empty_payload),
         groups: Vec::new(),
+        outputs: Vec::new(),
     }
 }
 
@@ -1271,6 +1381,34 @@ fn encode_event(bytes: &mut Vec<u8>, step: u64, event: &SimulationEvent) {
             bytes.push(*rule);
             put_optional_u32(bytes, owner.map(|agent| agent.0));
         }
+        SimulationEvent::MessageExchanged {
+            visitor,
+            host,
+            node,
+        } => {
+            bytes.push(9);
+            put_u32(bytes, visitor.0);
+            put_u32(bytes, host.0);
+            put_u32(bytes, node.0);
+        }
+        SimulationEvent::MinimumChanged { agent, min } => {
+            bytes.push(10);
+            put_u32(bytes, agent.0);
+            put_u32(bytes, min.0);
+        }
+        // The agent, then the output's kind and its fields. Kind 0 is a
+        // leader-election output: is-leader as one byte, then the leader.
+        SimulationEvent::OutputDecided { agent, output } => {
+            bytes.push(8);
+            put_u32(bytes, agent.0);
+            match output {
+                AgentOutput::Leader { is_leader, leader } => {
+                    bytes.push(0);
+                    bytes.push(u8::from(*is_leader));
+                    put_u32(bytes, leader.0);
+                }
+            }
+        }
     }
 }
 
@@ -1319,6 +1457,8 @@ fn phase_code(phase: Phase) -> u8 {
         Phase::Retrace => 8,
         Phase::Other => 9,
         Phase::HelperReturn => 10,
+        Phase::VisitOut => 11,
+        Phase::VisitBack => 12,
     }
 }
 
@@ -1502,12 +1642,19 @@ mod tests {
     /// Walks a version-1 semantic stream and returns the phase code of every
     /// `PhaseStarted` record, failing if any record is malformed.
     fn phase_codes(bytes: &[u8]) -> Vec<u8> {
+        walk_stream(bytes).0
+    }
+
+    /// Walks a semantic stream record by record: the phase codes in order, and
+    /// the kind of every event.
+    fn walk_stream(bytes: &[u8]) -> (Vec<u8>, Vec<u8>) {
         let u32_at = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
         let optional = |at: usize, width: usize| if bytes[at] == 0 { 1 } else { 1 + width };
         assert_eq!((bytes[0], bytes[1]), (1, 2), "version 1, semantic stream");
         let records = u32_at(4);
         let mut at = 8;
         let mut phases = Vec::new();
+        let mut events = Vec::new();
         for _ in 0..records {
             let kind = bytes[at];
             at += 9; // record kind + u64 step
@@ -1522,6 +1669,7 @@ mod tests {
             }
             assert_eq!(kind, 2, "event or checkpoint record");
             let event = bytes[at];
+            events.push(event);
             at += 1;
             match event {
                 0 => {
@@ -1541,11 +1689,83 @@ mod tests {
                     at += optional(at, 2);
                 }
                 6 => at += 5,
+                7 => {
+                    at += 7;
+                    at += optional(at, 4);
+                }
+                8 => at += 10,
+                9 => at += 12,
+                10 => at += 8,
                 other => panic!("unknown event kind {other}"),
             }
         }
         assert_eq!(at, bytes.len(), "the stream ends exactly after its records");
-        phases
+        (phases, events)
+    }
+
+    /// The problem page's path: ID 3 (agent 2) on node 0, ID 2 (agent 1) on
+    /// node 1 and ID 1 (agent 0) on node 2.
+    fn page_example(mode: TraceMode, limit: u64) -> WasmSimulation {
+        WasmSimulation::new(
+            3,
+            &[0, 1, 1, 2],
+            &[2, 1, 0],
+            AlgorithmSelector::LeaderElection,
+            mode,
+            limit,
+            0,
+            1,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn leader_election_streams_its_visits_meetings_and_outputs() {
+        let output = page_example(TraceMode::Full, 1_000).run_internal().unwrap();
+        assert_eq!(output.algorithm, AlgorithmSelector::LeaderElection);
+        assert_eq!(output.termination_code, 0);
+        assert_eq!((output.rounds, output.probes, output.moves), (16, 10, 20));
+        assert_eq!(output.positions, vec![2, 1, 0]);
+        assert_eq!(output.homes, vec![2, 1, 0]);
+        assert_eq!(output.statuses, vec![0, 0, 0]);
+        // Every agent names agent 0, ID 1, and only agent 0 names itself.
+        assert_eq!(output.outputs, vec![0, 0, 0]);
+        let (phases, events) = walk_stream(&output.trace.bytes);
+        let count = |codes: &[u8], code: u8| codes.iter().filter(|&&c| c == code).count();
+        assert_eq!(count(&phases, phase_code(Phase::VisitOut)), 8);
+        assert_eq!(count(&phases, phase_code(Phase::VisitBack)), 8);
+        assert_eq!(count(&events, 9), 6, "message exchanges");
+        assert_eq!(count(&events, 10), 3, "minimum changes");
+        assert_eq!(count(&events, 8), 3, "decided outputs");
+    }
+
+    #[test]
+    fn leader_election_gives_no_output_when_stopped_early() {
+        let output = page_example(TraceMode::Off, 10).run_internal().unwrap();
+        assert_eq!(
+            output.termination_code,
+            termination_code(&Termination::RoundLimitReached { limit: 10 })
+        );
+        assert_eq!(output.rounds, 10);
+        assert!(output.outputs.is_empty());
+    }
+
+    #[test]
+    fn leader_election_disperses_a_rooted_start_first() {
+        let mut rooted =
+            path_simulation(AlgorithmSelector::LeaderElection, TraceMode::Full, 1_000, 0);
+        let output = rooted.run_internal().unwrap();
+        assert_eq!(output.termination_code, 0);
+        assert_eq!(output.homes, vec![0, 1, 2]);
+        assert_eq!(output.outputs, vec![0, 0, 0]);
+        let phases = phase_codes(&output.trace.bytes);
+        // RootedDisp's probes come before the election's visits.
+        let first_visit = phases
+            .iter()
+            .position(|&code| code == phase_code(Phase::VisitOut))
+            .unwrap();
+        assert!(phases[..first_visit].contains(&phase_code(Phase::ProbeOut)));
+        assert!(!phases[first_visit..].contains(&phase_code(Phase::ProbeOut)));
     }
 
     #[test]

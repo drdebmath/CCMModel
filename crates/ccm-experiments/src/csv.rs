@@ -103,6 +103,7 @@ mod tests {
             termination: Termination::Completed,
             metrics: ComplexityMetrics::default(),
             scheduler: SchedulerModel::Synchronous,
+            outputs: None,
         }
     }
 
@@ -156,6 +157,7 @@ mod tests {
             (Algorithm::RootedAsync, "paper"),
             (Algorithm::RootedDisp, "paper"),
             (Algorithm::GeneralDisp, "paper"),
+            (Algorithm::LeaderElection, "paper"),
         ] {
             assert_eq!(
                 cell(&result(algorithm), "algorithm_kind"),
