@@ -47,9 +47,17 @@ pub fn extract(source: &str, spec: &str) -> Option<Extract> {
             index += 1;
             continue;
         }
-        let is_fn = ["fn ", "pub fn ", "pub(crate) fn ", "pub(super) fn "]
-            .iter()
-            .any(|prefix| trimmed.starts_with(&format!("{prefix}{name}")));
+        let is_fn = [
+            "fn ",
+            "pub fn ",
+            "pub(crate) fn ",
+            "pub(super) fn ",
+            "const fn ",
+            "pub const fn ",
+            "pub(crate) const fn ",
+        ]
+        .iter()
+        .any(|prefix| trimmed.starts_with(&format!("{prefix}{name}")));
         let boundary = is_fn
             && trimmed
                 .find(&format!("fn {name}"))

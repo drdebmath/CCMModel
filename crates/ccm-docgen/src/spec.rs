@@ -1910,4 +1910,191 @@ pub static CHARTS: &[Chart] = &[
             aside("s6", "commit", Some("each slot")),
         ],
     },
+    // ------------------------------------------------------------ Rendezvous
+    Chart {
+        id: "rendezvous",
+        title: "Rendezvous",
+        short: "Two labelled agents meet in a tree: explore on a 1, wait on a 0",
+        crate_name: "ccm-algorithms",
+        source: "crates/ccm-algorithms/src/rendezvous.rs",
+        intro: &[
+            "Rendezvous of two agents with different labels in a tree, after Dessmark, \
+             Fraigniaud, Kowalski and Pelc, *Deterministic Rendezvous in Graphs* (2006), with \
+             both agents starting in the same round. Not a dispersion: the run ends when both \
+             agents stand on one node at the end of a round. Every round is one call to \
+             `apply_move_intents`, and each agent decides from its own `Walker` and the degree \
+             of the node it stands on. [rendezvous.md](rendezvous.md) has the time model, the \
+             decisions and the hand traces.",
+            "An agent first explores the tree by the basic walk (leave by the port after the \
+             one it came in by) and returns: `2(n − 1)` rounds, one **block**. Its string is \
+             its label in binary with every bit doubled and `01` appended. It then spends one \
+             block per symbol: exploring again on a 1, waiting at its start node on a 0. Two \
+             labels' strings differ before the shorter one ends, at a symbol that is 1 for one \
+             agent and 0 for the other, and in that block the explorer's walk passes the waiting \
+             agent.",
+        ],
+        notes: &[
+            "The first tour cannot be counted, since the agent does not know `n` yet. It keeps \
+             the stack of ports leading back up the tree, and stops when the stack is empty and \
+             it entered its start node by the last port. The count is the block length, and the \
+             stack is dropped.",
+            "Crossing inside an edge is not a meeting: only positions at the end of a round \
+             are compared.",
+            "Trees only: anything else is refused with `NotATree` before the first round. So \
+             are equal or zero labels, a count of agents other than two, and two agents on one \
+             start node.",
+            "After its string ends an agent waits at its start node. The agents always meet \
+             before that, so the run stops with `NeverMet` if both strings end, which would mean \
+             the simulation is wrong.",
+        ],
+        lanes: Lanes::Rows(&[
+            ("Start", 0.0, 1.0),
+            ("Each round", 2.0, 5.0),
+            ("Stop?", 6.0, 7.0),
+        ]),
+        nodes: &[
+            node(
+                "start",
+                "Run the rendezvous",
+                "simulate()",
+                (0.0, 0.0),
+                Entry,
+                Some("simulate"),
+                "Takes the tree, the two start nodes, the two labels and the round limit.",
+            ),
+            node(
+                "check",
+                "A tree, two agents, two labels?",
+                "Simulation::new()",
+                (0.0, 1.0),
+                Step,
+                Some("new@2"),
+                "Refuses anything outside the model: not a tree, not two agents, equal or zero \
+                 labels, or both agents on one node.",
+            ),
+            node(
+                "round",
+                "One synchronous round",
+                "round()",
+                (0.0, 2.0),
+                Step,
+                Some("round"),
+                "Each agent picks its move from its own memory and its node's degree; then both \
+                 moves are committed together.",
+            ),
+            node(
+                "decide",
+                "Explore or wait?",
+                "Walker::activity()",
+                (0.0, 3.0),
+                Decision,
+                Some("activity"),
+                "The first tour explores. After it, block `b` explores if symbol `b` of the \
+                 agent's string is 1, and waits if it is 0 or the string has ended.",
+            ),
+            node(
+                "symbol",
+                "Symbol of the string",
+                "symbol()",
+                (1.5, 3.0),
+                Aside,
+                Some("symbol"),
+                "Computed from the label when it is needed: the bits doubled, then `0 1`. The \
+                 string is never stored.",
+            ),
+            node(
+                "port",
+                "Leave by the next port",
+                "Walker::next_port()",
+                (-0.8, 4.0),
+                Step,
+                Some("next_port"),
+                "Port 0 at the start of a tour, otherwise the port after the one the agent came \
+                 in by, modulo the degree.",
+            ),
+            node(
+                "stay",
+                "Stay at the start node",
+                "no move",
+                (0.8, 4.0),
+                Step,
+                None,
+                "A waiting agent makes no move this round.",
+            ),
+            node(
+                "memory",
+                "Count the round; next block?",
+                "Walker::end_round()",
+                (0.0, 5.0),
+                Step,
+                Some("end_round"),
+                "Records the entry port and counts the round. In the first tour it pushes or pops \
+                 the port stack, and learns the block length when it is home by its last port. \
+                 A block ends after that many rounds.",
+            ),
+            node(
+                "begin",
+                "Start the next block",
+                "Walker::begin()",
+                (1.5, 5.0),
+                Aside,
+                Some("begin"),
+                "Resets the round counter and the entry port, and moves to the next symbol, or \
+                 to waiting for good once the string has ended.",
+            ),
+            node(
+                "met",
+                "Both on one node?",
+                "run()",
+                (0.0, 6.0),
+                Decision,
+                Some("run"),
+                "Compares the two agents' nodes at the end of the round. Crossing inside an edge \
+                 leaves them on different nodes.",
+            ),
+            node(
+                "done",
+                "Met",
+                "Termination::Completed",
+                (-1.5, 6.0),
+                Terminal,
+                None,
+                "Reports the meeting round, its node and its block.",
+            ),
+            node(
+                "limit",
+                "Round limit reached?",
+                "rounds ≥ round_limit",
+                (0.0, 7.0),
+                Decision,
+                None,
+                "Checked before every round.",
+            ),
+            node(
+                "stopped",
+                "Stopped",
+                "RoundLimitReached",
+                (-1.5, 7.0),
+                Terminal,
+                None,
+                "Returns the state so far, with no meeting.",
+            ),
+        ],
+        edges: &[
+            e("start", "check", None, Auto),
+            e("check", "round", None, Auto),
+            e("round", "decide", None, Auto),
+            aside("decide", "symbol", Some("symbol b")),
+            e("decide", "port", Some("explore"), Auto),
+            e("decide", "stay", Some("wait"), Auto),
+            e("port", "memory", None, Auto),
+            e("stay", "memory", None, Auto),
+            aside("memory", "begin", Some("block over")),
+            e("memory", "met", None, Auto),
+            e("met", "done", Some("yes"), Auto),
+            e("met", "limit", Some("no"), Auto),
+            e("limit", "stopped", Some("yes"), Auto),
+            e("limit", "round", Some("no: next round"), Outer(1)),
+        ],
+    },
 ];

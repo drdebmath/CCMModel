@@ -1,6 +1,7 @@
 //! End-to-end checks of the `ccm` binary: `RootedDisp`, `GeneralDisp` and
-//! leader election through `run`, `sweep` and `transitions`, with fixed graph,
-//! port and seed inputs, and the placements each algorithm refuses.
+//! leader election and rendezvous through `run`, `sweep` and `transitions`,
+//! with fixed graph, port and seed inputs, and the placements each algorithm
+//! refuses.
 
 use std::process::{Command, Output};
 
@@ -420,4 +421,85 @@ fn transitions_is_only_for_general_disp() {
     ]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("AlgorithmUnavailable"));
+}
+
+/// Rendezvous through `run`: the labels reach the CSV, and the meeting comes
+/// within the exact limit 2(n - 1)(1 + |shorter string|): here 10 * (1 + 4).
+#[test]
+fn rendezvous_runs_with_its_labels_and_meets_within_the_limit() {
+    let output = ccm(&[
+        "run",
+        "--algorithm",
+        "rendezvous",
+        "--graph",
+        "path",
+        "--nodes",
+        "6",
+        "--agents",
+        "2",
+        "--placement",
+        "explicit:0,5",
+        "--labels",
+        "1,3",
+    ]);
+    let rows = rows(&output);
+    assert_eq!(rows.len(), 1);
+    let row = &rows[0];
+    assert_eq!(field(row, "algorithm"), "rendezvous");
+    assert_eq!(field(row, "algorithm_kind"), "paper");
+    assert_eq!(field(row, "completed"), "true");
+    assert_eq!(field(row, "labels"), "1;3");
+    assert!(field(row, "rounds").parse::<u64>().unwrap() <= 50);
+    assert!(field(row, "memory_bits_per_agent").parse::<u64>().unwrap() > 0);
+}
+
+/// A sweep over random trees: every seed draws another tree, and all meet.
+#[test]
+fn rendezvous_sweeps_random_trees() {
+    let output = ccm(&[
+        "sweep",
+        "--algorithm",
+        "rendezvous",
+        "--graph",
+        "random-tree",
+        "--nodes",
+        "20",
+        "--agents",
+        "2",
+        "--placement",
+        "explicit:3,17",
+        "--ports",
+        "random",
+        "--seed",
+        "1,2,3,4,5",
+    ]);
+    let rows = rows(&output);
+    assert_eq!(rows.len(), 5);
+    for row in &rows {
+        assert_eq!(field(row, "graph_model"), "random-tree");
+        assert_eq!(field(row, "edges"), "19");
+        assert_eq!(field(row, "completed"), "true");
+        // Default labels 1 and 2: strings of length 4 and 6.
+        assert_eq!(field(row, "labels"), "1;2");
+        assert!(field(row, "rounds").parse::<u64>().unwrap() <= 38 * 5);
+    }
+}
+
+#[test]
+fn rendezvous_refuses_a_graph_that_is_not_a_tree() {
+    let output = ccm(&[
+        "run",
+        "--algorithm",
+        "rendezvous",
+        "--graph",
+        "cycle",
+        "--nodes",
+        "6",
+        "--agents",
+        "2",
+        "--placement",
+        "explicit:0,3",
+    ]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("trees only"));
 }

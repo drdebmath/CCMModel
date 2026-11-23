@@ -2465,3 +2465,48 @@ footer a {
 .legend-group {
   display: contents;
 }
+/* Rendezvous: each agent's string, with the current block highlighted. */
+.rendezvous-panel {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.3));
+  border-radius: 10px;
+  font-size: 13px;
+}
+.rendezvous-panel.hidden { display: none; }
+.rendezvous-panel .rv-head,
+.rendezvous-panel .rv-met { margin: 0; }
+.rendezvous-panel .rv-met { font-weight: 600; }
+.rv-agent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.rv-name { min-width: 9.5em; font-weight: 600; }
+.rv-string {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.rv-gap { width: 6px; }
+.rv-sym {
+  min-width: 1.4em;
+  padding: 1px 3px;
+  border-radius: 4px;
+  text-align: center;
+  border: 1px solid transparent;
+}
+.rv-sym.rv-tour { font-style: italic; }
+.rv-sym.current {
+  border-color: currentColor;
+  background: rgba(57, 211, 180, 0.22);
+  font-weight: 700;
+}
+.rv-mode { font-size: 12px; padding: 1px 8px; border-radius: 999px; }
+.rv-exploring { background: rgba(255, 113, 131, 0.2); }
+.rv-waiting { background: rgba(246, 180, 79, 0.22); }

@@ -7,7 +7,8 @@ implementation departs from a paper, the chart shows what the code does and the
 notes say why. Read [behavior-spec.md](behavior-spec.md) for Drop-and-Freeze and
 Help-by-Scouts, [p1tree.md](p1tree.md) for P1Tree,
 [rooted-disp.md](rooted-disp.md) for RootedDisp,
-[leader-election.md](leader-election.md) for leader election, and the
+[leader-election.md](leader-election.md) for leader election,
+[rendezvous.md](rendezvous.md) for Rendezvous, and the
 [gap and trace note](2507.01298-optimal-dispersion-under-asynchrony/gap-and-trace-note.md)
 for RootedAsync, before drawing conclusions from any of them. The interactive version, [`docs.html`](../docs.html),
 explains every box and opens its code.
@@ -30,6 +31,7 @@ question (its arrows are the answers), dashed = a helper the step calls.
 - [RootedDisp](#rooteddisp) — `ccm-algorithms`
 - [Leader election](#leader-election) — `ccm-algorithms`
 - [GeneralDisp](#generaldisp) — `ccm-algorithms`
+- [Rendezvous](#rendezvous) — `ccm-algorithms`
 
 ---
 
@@ -4551,6 +4553,382 @@ pub fn simulate<M: Metrics, R: Recorder>(
     }
 ```
 
+
+---
+
+## Rendezvous
+
+Rendezvous of two agents with different labels in a tree, after Dessmark, Fraigniaud, Kowalski and Pelc, *Deterministic Rendezvous in Graphs* (2006), with both agents starting in the same round. Not a dispersion: the run ends when both agents stand on one node at the end of a round. Every round is one call to `apply_move_intents`, and each agent decides from its own `Walker` and the degree of the node it stands on. [rendezvous.md](rendezvous.md) has the time model, the decisions and the hand traces.
+
+An agent first explores the tree by the basic walk (leave by the port after the one it came in by) and returns: `2(n − 1)` rounds, one **block**. Its string is its label in binary with every bit doubled and `01` appended. It then spends one block per symbol: exploring again on a 1, waiting at its start node on a 0. Two labels' strings differ before the shorter one ends, at a symbol that is 1 for one agent and 0 for the other, and in that block the explorer's walk passes the waiting agent.
+
+```mermaid
+flowchart TD
+    classDef k_entry fill:#e8eaff,stroke:#5b6cf0,color:#111,stroke-width:1.5px
+    classDef k_step fill:#ffffff,stroke:#8b98b3,color:#111
+    classDef k_decision fill:#fff4dc,stroke:#c98a12,color:#111
+    classDef k_end fill:#ddf6ef,stroke:#0f9e82,color:#111,stroke-width:1.5px
+    classDef k_aside fill:#f6f7fa,stroke:#8b98b3,color:#333,stroke-dasharray:4 3
+    subgraph lane0["Start"]
+        start(["Run the rendezvous<br/><small>simulate()</small>"])
+        check["A tree, two agents, two labels?<br/><small>Simulation::new()</small>"]
+    end
+    subgraph lane1["Each round"]
+        round["One synchronous round<br/><small>round()</small>"]
+        decide{"Explore or wait?<br/><small>Walker::activity()</small>"}
+        symbol["Symbol of the string<br/><small>symbol()</small>"]
+        port["Leave by the next port<br/><small>Walker::next_port()</small>"]
+        stay["Stay at the start node<br/><small>no move</small>"]
+        memory["Count the round; next block?<br/><small>Walker::end_round()</small>"]
+        begin["Start the next block<br/><small>Walker::begin()</small>"]
+    end
+    subgraph lane2["Stop?"]
+        met{"Both on one node?<br/><small>run()</small>"}
+        done(["Met<br/><small>Termination::Completed</small>"])
+        limit{"Round limit reached?<br/><small>rounds ≥ round_limit</small>"}
+        stopped(["Stopped<br/><small>RoundLimitReached</small>"])
+    end
+    start --> check
+    check --> round
+    round --> decide
+    decide -. "symbol b" .-> symbol
+    decide -- "explore" --> port
+    decide -- "wait" --> stay
+    port --> memory
+    stay --> memory
+    memory -. "block over" .-> begin
+    memory --> met
+    met -- "yes" --> done
+    met -- "no" --> limit
+    limit -- "yes" --> stopped
+    limit -- "no: next round" --> round
+    class start k_entry
+    class check k_step
+    class round k_step
+    class decide k_decision
+    class symbol k_aside
+    class port k_step
+    class stay k_step
+    class memory k_step
+    class begin k_aside
+    class met k_decision
+    class done k_end
+    class limit k_decision
+    class stopped k_end
+```
+
+**Notes**
+
+- The first tour cannot be counted, since the agent does not know `n` yet. It keeps the stack of ports leading back up the tree, and stops when the stack is empty and it entered its start node by the last port. The count is the block length, and the stack is dropped.
+- Crossing inside an edge is not a meeting: only positions at the end of a round are compared.
+- Trees only: anything else is refused with `NotATree` before the first round. So are equal or zero labels, a count of agents other than two, and two agents on one start node.
+- After its string ends an agent waits at its start node. The agents always meet before that, so the run stops with `NeverMet` if both strings end, which would mean the simulation is wrong.
+
+### Code
+
+`simulate` — [crates/ccm-algorithms/src/rendezvous.rs:412](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rendezvous.rs#L412-L431)
+
+```rust
+/// Runs the rendezvous with caller-supplied metrics and recorder.
+///
+/// `labels[i]` is agent `i`'s label. `round_limit` bounds the rounds; reaching
+/// it returns the state so far as [`Termination::RoundLimitReached`].
+///
+/// # Errors
+///
+/// Returns an error for an empty graph or a graph that is not a tree, a count
+/// of agents other than two, missing, zero or equal labels, starts outside the
+/// graph or on one node, or a broken invariant.
+pub fn simulate<M: Metrics, R: Recorder>(
+    graph: &PortGraph,
+    starts: &[NodeId],
+    labels: &[u32],
+    round_limit: u64,
+    metrics: M,
+    recorder: R,
+) -> Result<(RendezvousResult, M, R), RendezvousError> {
+    Simulation::new(graph, starts, labels, round_limit, metrics, recorder)?.run()
+}
+```
+
+`new` — [crates/ccm-algorithms/src/rendezvous.rs:456](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rendezvous.rs#L456-L509)
+
+```rust
+    fn new(
+        graph: &'g PortGraph,
+        starts: &[NodeId],
+        labels: &[u32],
+        round_limit: u64,
+        metrics: M,
+        recorder: R,
+    ) -> Result<Self, RendezvousError> {
+        let nodes = graph.node_count();
+        if nodes == 0 {
+            return Err(RendezvousError::EmptyGraph);
+        }
+        if starts.len() != 2 {
+            return Err(RendezvousError::AgentCount(starts.len()));
+        }
+        if labels.len() != starts.len() {
+            return Err(RendezvousError::LabelCount {
+                agents: starts.len(),
+                labels: labels.len(),
+            });
+        }
+        if labels.contains(&0) {
+            return Err(RendezvousError::ZeroLabel);
+        }
+        if labels[0] == labels[1] {
+            return Err(RendezvousError::DuplicateLabel(labels[0]));
+        }
+        if let Some(&outside) = starts.iter().find(|node| node.index() >= nodes) {
+            return Err(RendezvousError::InvalidStart(outside));
+        }
+        if starts[0] == starts[1] {
+            return Err(RendezvousError::SameStart(starts[0]));
+        }
+        if !is_tree(graph) {
+            return Err(RendezvousError::NotATree);
+        }
+        let max_degree = (0..nodes)
+            .filter_map(|node| graph.degree(NodeId(u32::try_from(node).ok()?)))
+            .max()
+            .unwrap_or(0);
+        Ok(Self {
+            graph,
+            store: AgentStore::new(nodes, starts)?,
+            starts: starts.to_vec(),
+            walkers: labels.iter().copied().map(Walker::new).collect(),
+            max_degree,
+            round_limit,
+            rounds: 0,
+            metrics,
+            recorder,
+            intents: Vec::with_capacity(2),
+            left_by: vec![None; 2],
+        })
+    }
+```
+
+`round` — [crates/ccm-algorithms/src/rendezvous.rs:560](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rendezvous.rs#L560-L605)
+
+```rust
+    /// One synchronous round: each agent decides from its own memory and the
+    /// degree of its node, then the moves are committed together.
+    fn round(&mut self) -> Result<(), RendezvousError> {
+        self.intents.clear();
+        for index in 0..self.walkers.len() {
+            let node = self.node(index);
+            let degree = self.graph.degree(node).unwrap_or(0);
+            let port = self.walkers[index].next_port(degree);
+            self.left_by[index] = port;
+            if let Some(port) = port {
+                self.intents.push(MoveIntent {
+                    agent: agent_id(index),
+                    from: node,
+                    port,
+                });
+            }
+        }
+        let mut moves = Vec::new();
+        if self.recorder.enabled() {
+            moves.extend(self.intents.iter().copied());
+        }
+        apply_move_intents(
+            self.graph,
+            &mut self.store,
+            &mut self.intents,
+            &mut self.metrics,
+        )?;
+        self.rounds += 1;
+        self.metrics.logical_rounds(RoundKind::Movement, 1);
+        for index in 0..self.walkers.len() {
+            let state = self.state(index);
+            let (node, arrived_by) = (state.node, state.arrival_port);
+            let degree = self.graph.degree(node).unwrap_or(0);
+            let left_by = self.left_by[index];
+            let was = self.walkers[index].stage;
+            self.walkers[index].end_round(left_by, arrived_by, degree);
+            // A block ends with the agent on its start node: checked with the
+            // simulator's node IDs, never used by the agent.
+            if was != self.walkers[index].stage && node != self.starts[index] {
+                return Err(broken(InvariantViolation::InvalidTraversal));
+            }
+        }
+        self.observe_memory();
+        self.record(moves);
+        Ok(())
+    }
+```
+
+`activity` — [crates/ccm-algorithms/src/rendezvous.rs:183](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rendezvous.rs#L183-L194)
+
+```rust
+    /// What the agent does in its next round.
+    #[must_use]
+    pub const fn activity(&self) -> Activity {
+        match self.stage {
+            Stage::Tour => Activity::Exploring,
+            Stage::Symbol { index } => match symbol(self.label, index) {
+                Some(true) => Activity::Exploring,
+                _ => Activity::Waiting,
+            },
+            Stage::Finished => Activity::Waiting,
+        }
+    }
+```
+
+`symbol` — [crates/ccm-algorithms/src/rendezvous.rs:69](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rendezvous.rs#L69-L87)
+
+```rust
+/// Symbol `index` (from 0) of the string of `label`, or `None` past its end.
+///
+/// The string is the binary form of `label`, most significant bit first, with
+/// every bit written twice, followed by `0 1`. The agent computes each symbol
+/// from its label when the block starts, so it never stores the string.
+#[must_use]
+pub const fn symbol(label: u32, index: u32) -> Option<bool> {
+    let bits = label_bits(label);
+    if index < 2 * bits {
+        let bit = bits - 1 - index / 2;
+        Some((label >> bit) & 1 == 1)
+    } else if index == 2 * bits {
+        Some(false)
+    } else if index == 2 * bits + 1 {
+        Some(true)
+    } else {
+        None
+    }
+}
+```
+
+`next_port` — [crates/ccm-algorithms/src/rendezvous.rs:196](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rendezvous.rs#L196-L210)
+
+```rust
+    /// The port the agent leaves by this round, standing on a node of
+    /// `degree`, or `None` if it stays. The next port of the basic walk is
+    /// the one after the port it came in by; a tour starts at port 0.
+    #[must_use]
+    pub fn next_port(&self, degree: u16) -> Option<PortId> {
+        if self.activity() == Activity::Waiting || degree == 0 {
+            return None;
+        }
+        let port = if self.elapsed == 0 {
+            0
+        } else {
+            self.in_port.map_or(0, |port| (port.0 + 1) % degree)
+        };
+        Some(PortId(port))
+    }
+```
+
+`end_round` — [crates/ccm-algorithms/src/rendezvous.rs:212](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rendezvous.rs#L212-L245)
+
+```rust
+    /// Updates the memory at the end of a round. `left_by` is the port the
+    /// agent left by this round, `arrived_by` the port it entered its node by
+    /// and `degree` that node's degree; both ports are `None` if it stayed.
+    pub fn end_round(&mut self, left_by: Option<PortId>, arrived_by: Option<PortId>, degree: u16) {
+        if let Some(port) = arrived_by {
+            self.in_port = Some(port);
+        }
+        self.elapsed += 1;
+        match self.stage {
+            Stage::Tour => {
+                // Going up the edge the stack records, or down a new one.
+                if left_by.is_some() && left_by == self.up_ports.last().copied() {
+                    self.up_ports.pop();
+                } else if let Some(port) = arrived_by {
+                    self.up_ports.push(port);
+                    self.peak_depth = self.peak_depth.max(self.up_ports.len());
+                }
+                // Back on the start node, entered by its last port: every
+                // port of the start node has been explored.
+                let home = self.up_ports.is_empty();
+                if home && arrived_by.is_some_and(|port| port.0 + 1 == degree) {
+                    self.block_len = Some(self.elapsed);
+                    self.up_ports = Vec::new();
+                    self.begin(0);
+                }
+            }
+            Stage::Symbol { index } => {
+                if Some(self.elapsed) == self.block_len {
+                    self.begin(index + 1);
+                }
+            }
+            Stage::Finished => {}
+        }
+    }
+```
+
+`begin` — [crates/ccm-algorithms/src/rendezvous.rs:247](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rendezvous.rs#L247-L256)
+
+```rust
+    /// Starts the block of symbol `index`, or finishes past the string's end.
+    fn begin(&mut self, index: u32) {
+        self.elapsed = 0;
+        self.in_port = None;
+        self.stage = if index < string_len(self.label) {
+            Stage::Symbol { index }
+        } else {
+            Stage::Finished
+        };
+    }
+```
+
+`run` — [crates/ccm-algorithms/src/rendezvous.rs:511](https://github.com/drdebmath/CCMModel/blob/main/crates/ccm-algorithms/src/rendezvous.rs#L511-L558)
+
+```rust
+    fn run(mut self) -> Result<(RendezvousResult, M, R), RendezvousError> {
+        self.observe_memory();
+        self.record(Vec::new());
+        let mut meeting = None;
+        let termination = loop {
+            if self.walkers.iter().all(|w| w.stage == Stage::Finished) {
+                return Err(RendezvousError::NeverMet);
+            }
+            if self.rounds >= self.round_limit {
+                break Termination::RoundLimitReached {
+                    limit: self.round_limit,
+                };
+            }
+            self.round()?;
+            let first = self.node(0);
+            if first == self.node(1) {
+                let block = (self.rounds - 1) / block_len(self.graph.node_count());
+                meeting = Some(Meeting {
+                    round: self.rounds,
+                    node: first,
+                    block,
+                });
+                break Termination::Completed;
+            }
+        };
+        let nodes = self.graph.node_count();
+        let agents = (0..self.walkers.len())
+            .map(|index| RendezvousAgent {
+                node: self.node(index),
+                start: self.starts[index],
+                memory_bits: self.walkers[index].memory_bits(nodes, self.max_degree),
+                walker: self.walkers[index].clone(),
+            })
+            .collect();
+        let labels: Vec<u32> = self.walkers.iter().map(|w| w.label).collect();
+        Ok((
+            RendezvousResult {
+                termination,
+                agents,
+                meeting,
+                rounds: self.rounds,
+                block_len: block_len(nodes),
+                bound: round_bound(nodes, &labels),
+            },
+            self.metrics,
+            self.recorder,
+        ))
+    }
+```
+
 ---
 
 ## Reading the four together
@@ -4577,3 +4955,17 @@ where these end, one agent per node, and its result is an output for every
 agent, the leader's ID, rather than a placement. Its cost is fixed by `n` and
 `Δ` alone: `(n − 1) · b · 2Δ` rounds with `b = ⌊log₂ n⌋ + 1`, whatever the port
 labels.
+## Beyond dispersion
+
+Rendezvous is not a dispersion: two agents start apart and the run ends when
+they meet. It is the first of the algorithms in which agents compute something
+together rather than spread out.
+
+| | Rendezvous |
+| --- | --- |
+| Start | two agents on two different nodes of a tree (required) |
+| Who moves | each agent alone, by its own schedule: explore on a 1, wait on a 0 |
+| What it reads | its label, its memory, and the degree and entry port of its node |
+| Port labels | as given; the walk leaves by the port after the entry port |
+| Tree | the graph itself; refused if it is not one |
+| Stops when | both agents stand on one node at the end of a round, or the round limit |

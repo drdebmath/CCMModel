@@ -17,6 +17,9 @@ pub struct RunRequest {
     pub seed: u64,
     pub round_limit: Option<u64>,
     pub scheduler: SchedulerModel,
+    /// Agent labels, for the algorithms whose agents carry one (rendezvous).
+    /// Empty means the default, 1, 2, …; dispersion ignores labels.
+    pub labels: Vec<u32>,
 }
 
 impl RunRequest {
@@ -175,25 +178,40 @@ impl SimulationRunner for BuiltinRunner {
                 .map_err(|error| RunError::Message(error.to_string()))?;
                 (result.termination, metrics, None)
             }
+            Algorithm::Rendezvous => return run_rendezvous(prepared),
             Algorithm::LeaderElection => run_leader_election(prepared, limit)?,
         };
-        Ok(RunResult {
-            algorithm: prepared.request.algorithm,
-            algorithm_version: ccm_algorithms::ALGORITHM_VERSION,
-            git_commit: option_env!("CCM_GIT_COMMIT").unwrap_or("unknown"),
-            graph_family: prepared.request.graph.label(),
-            port_assignment: port_assignment_label(prepared.request.port_assignment),
-            placement: prepared.request.placement.label(),
-            nodes: prepared.graph.node_count(),
-            edges: prepared.graph.edge_count(),
-            agents: prepared.request.agents,
-            seed: prepared.request.seed,
-            starts: prepared.starts.clone(),
-            termination,
-            metrics,
-            scheduler: request.scheduler,
-            outputs,
-        })
+        Ok(result_row(prepared, termination, metrics, outputs))
+    }
+}
+
+/// The result row of a finished run, without labels or per-agent memory;
+/// rendezvous adds those to it.
+fn result_row(
+    prepared: &PreparedRun,
+    termination: Termination,
+    metrics: ComplexityMetrics,
+    outputs: Option<Vec<AgentOutput>>,
+) -> RunResult {
+    let request = &prepared.request;
+    RunResult {
+        algorithm: request.algorithm,
+        algorithm_version: ccm_algorithms::ALGORITHM_VERSION,
+        git_commit: option_env!("CCM_GIT_COMMIT").unwrap_or("unknown"),
+        graph_family: request.graph.label(),
+        port_assignment: port_assignment_label(request.port_assignment),
+        placement: request.placement.label(),
+        nodes: prepared.graph.node_count(),
+        edges: prepared.graph.edge_count(),
+        agents: request.agents,
+        seed: request.seed,
+        starts: prepared.starts.clone(),
+        termination,
+        metrics,
+        scheduler: request.scheduler,
+        labels: Vec::new(),
+        memory_bits_per_agent: None,
+        outputs,
     }
 }
 
@@ -222,6 +240,37 @@ fn run_leader_election(
     .map_err(|error| RunError::Message(error.to_string()))?;
     let outputs = result.outputs();
     Ok((result.termination, metrics, outputs))
+}
+
+/// Runs rendezvous with the request's labels, or 1, 2, … when it names none.
+/// Without a round limit it gets twice the task's exact limit, so a run that
+/// overshoots the limit still finishes and the overshoot shows in the rounds
+/// column. Its row carries the labels and the larger agent's peak memory.
+fn run_rendezvous(prepared: &PreparedRun) -> Result<RunResult, RunError> {
+    use ccm_algorithms::rendezvous;
+    let request = &prepared.request;
+    let labels = if request.labels.is_empty() {
+        rendezvous::default_labels(request.agents)
+    } else {
+        request.labels.clone()
+    };
+    let limit = request.round_limit.unwrap_or_else(|| {
+        2 * rendezvous::round_bound(prepared.graph.node_count(), &labels).max(1)
+    });
+    let (result, metrics, _) = rendezvous::simulate(
+        &prepared.graph,
+        &prepared.starts,
+        &labels,
+        limit,
+        ComplexityMetrics::default(),
+        NoTrace,
+    )
+    .map_err(|error| RunError::Message(error.to_string()))?;
+    Ok(RunResult {
+        labels,
+        memory_bits_per_agent: result.agents.iter().map(|agent| agent.memory_bits).max(),
+        ..result_row(prepared, result.termination, metrics, None)
+    })
 }
 
 /// The schedule a request asks for, seeded from the run's own seed so a run is
@@ -261,6 +310,11 @@ pub struct RunResult {
     pub termination: Termination,
     pub metrics: ComplexityMetrics,
     pub scheduler: SchedulerModel,
+    /// The labels the agents ran with; empty for algorithms without labels.
+    pub labels: Vec<u32>,
+    /// Peak memory of the most demanding agent, in bits, for the algorithms
+    /// that count it per agent (rendezvous).
+    pub memory_bits_per_agent: Option<u64>,
     /// Each agent's output, in agent-ID order, for algorithms that compute
     /// one; `None` for the dispersion algorithms, whose result is only where
     /// the agents stand. Not written to the CSV.
@@ -285,6 +339,8 @@ impl RunResult {
             termination,
             metrics: ComplexityMetrics::default(),
             scheduler: prepared.request.scheduler,
+            labels: prepared.request.labels.clone(),
+            memory_bits_per_agent: None,
             outputs: None,
         }
     }
@@ -495,6 +551,7 @@ pub fn algorithm_label(algorithm: Algorithm) -> &'static str {
         Algorithm::RootedDisp => "rooted_disp",
         Algorithm::GeneralDisp => "general_disp",
         Algorithm::LeaderElection => "leader_election",
+        Algorithm::Rendezvous => "rendezvous",
     }
 }
 
@@ -533,7 +590,8 @@ pub fn algorithm_kind(algorithm: Algorithm) -> &'static str {
         | Algorithm::RootedAsync
         | Algorithm::RootedDisp
         | Algorithm::GeneralDisp
-        | Algorithm::LeaderElection => "paper",
+        | Algorithm::LeaderElection
+        | Algorithm::Rendezvous => "paper",
     }
 }
 
@@ -571,6 +629,7 @@ mod tests {
             seed,
             round_limit: Some(20),
             scheduler: SchedulerModel::Synchronous,
+            labels: Vec::new(),
         }
     }
 

@@ -18,6 +18,9 @@ pub enum Algorithm {
     /// al., Section 2). Not a dispersion algorithm: it needs one agent per
     /// node, dispersed or rooted, and gives every agent an output.
     LeaderElection,
+    /// Rendezvous of two labelled agents in a tree, Dessmark et al. 2006.
+    /// Not a dispersion: the run ends when the agents meet.
+    Rendezvous,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,7 +29,11 @@ pub enum GraphModel {
     Cycle,
     Star,
     Complete,
-    RandomConnected { edges: usize },
+    RandomConnected {
+        edges: usize,
+    },
+    /// A tree drawn uniformly among the labelled trees on `nodes` nodes.
+    RandomTree,
     Explicit,
 }
 

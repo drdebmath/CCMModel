@@ -10,6 +10,7 @@ description = "Rust/WASM main-thread UI for the CCM Network Lab"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+ccm-algorithms = { path = "../ccm-algorithms" }
 js-sys = "=0.3.77"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -33,6 +33,10 @@ Start here.
   MST, and Beyond*: the ID-bit schedule that simulates message passing, the
   decisions taken where the paper leaves a choice, the per-agent output it
   adds, and the problem page's example traced round by round.
+- [rendezvous.md](rendezvous.md) — rendezvous of two labelled agents in a
+  tree, after Dessmark, Fraigniaud, Kowalski and Pelc, *Deterministic Rendezvous
+  in Graphs*: the first algorithm here that is not a dispersion. The schedule,
+  the decisions, the exact round limit, the memory count and two hand traces.
 - [behavior-spec.md](behavior-spec.md) — Drop-and-Freeze and Help-by-Scouts,
   as they behaved in the Python implementation the Rust ports preserve.
   **Archival**: it cites files this repository no longer contains.

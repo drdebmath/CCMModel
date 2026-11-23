@@ -1,4 +1,5 @@
-//! Properties every algorithm must have, checked once for all six. Leader
+//! Properties every algorithm must have, checked once for all six dispersion
+//! and leader election runs, and for rendezvous where they apply. Leader
 //! election runs here in its rooted mode, `RootedDisp` first, because these
 //! tests start every agent on one node.
 
@@ -297,5 +298,47 @@ fn tracing_does_not_change_results_or_metrics() {
             let traced = summary(algorithm, &g, &starts, FullTrace::new());
             assert_eq!(plain, traced, "{algorithm}");
         }
+    }
+}
+
+/// Rendezvous is not a dispersion, so it is checked apart from the four
+/// above: the same input gives the same result, and tracing changes nothing.
+#[test]
+fn rendezvous_is_deterministic_and_unchanged_by_tracing() {
+    let trees = [
+        graph(&[(0, 1), (1, 2), (2, 3)], 4),
+        graph(&[(0, 1), (0, 2), (1, 3), (1, 4)], 5),
+    ];
+    for g in trees {
+        let starts = [NodeId(0), NodeId(3)];
+        let run = |traced: bool| {
+            let limit = 1_000;
+            let labels = [2, 9];
+            if traced {
+                let (result, metrics, _) = ccm_algorithms::rendezvous::simulate(
+                    &g,
+                    &starts,
+                    &labels,
+                    limit,
+                    ComplexityMetrics::default(),
+                    FullTrace::new(),
+                )
+                .unwrap();
+                (result, metrics)
+            } else {
+                let (result, metrics, _) = ccm_algorithms::rendezvous::simulate(
+                    &g,
+                    &starts,
+                    &labels,
+                    limit,
+                    ComplexityMetrics::default(),
+                    NoTrace,
+                )
+                .unwrap();
+                (result, metrics)
+            }
+        };
+        assert_eq!(run(false), run(false));
+        assert_eq!(run(false), run(true));
     }
 }

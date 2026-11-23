@@ -3,7 +3,7 @@ use crate::runner::{
 };
 
 /// Stable tabular schema: exactly one row per independent simulation trial.
-pub const CSV_HEADER: &str = "algorithm,algorithm_version,git_commit,graph_model,port_assignment,placement,nodes,edges,agents,seed,starts,completed,termination,rounds,macro_rounds,probe_rounds,movement_rounds,agent_moves,edge_traversals,port_probes,probe_out_traversals,probe_back_traversals,settlements,backtracks,group_moves,maximum_group_size,maximum_simultaneously_unsettled,maximum_tree_depth,peak_owned_nodes,scout_operations,vacates,chase_operations,follow_operations,retraces,peak_logical_memory_words,algorithm_kind,scheduler,time_unit\n";
+pub const CSV_HEADER: &str = "algorithm,algorithm_version,git_commit,graph_model,port_assignment,placement,nodes,edges,agents,seed,starts,completed,termination,rounds,macro_rounds,probe_rounds,movement_rounds,agent_moves,edge_traversals,port_probes,probe_out_traversals,probe_back_traversals,settlements,backtracks,group_moves,maximum_group_size,maximum_simultaneously_unsettled,maximum_tree_depth,peak_owned_nodes,scout_operations,vacates,chase_operations,follow_operations,retraces,peak_logical_memory_words,algorithm_kind,scheduler,time_unit,labels,memory_bits_per_agent\n";
 
 /// Serializes rows without adding a filesystem or CSV-library dependency.
 /// Values containing commas, quotes, or newlines are RFC-4180 escaped.
@@ -57,6 +57,15 @@ pub fn results_to_csv(results: &[RunResult]) -> String {
             algorithm_kind(result.algorithm).to_owned(),
             scheduler_label(result.scheduler),
             time_unit(result.scheduler).to_owned(),
+            result
+                .labels
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(";"),
+            result
+                .memory_bits_per_agent
+                .map_or_else(String::new, |bits| bits.to_string()),
         ];
         for (index, value) in values.iter().enumerate() {
             if index != 0 {
@@ -104,6 +113,8 @@ mod tests {
             metrics: ComplexityMetrics::default(),
             scheduler: SchedulerModel::Synchronous,
             outputs: None,
+            labels: Vec::new(),
+            memory_bits_per_agent: None,
         }
     }
 
@@ -146,6 +157,8 @@ mod tests {
         assert_eq!(column("algorithm_kind"), 35);
         assert_eq!(column("scheduler"), 36);
         assert_eq!(column("time_unit"), 37);
+        assert_eq!(column("labels"), 38);
+        assert_eq!(column("memory_bits_per_agent"), 39);
     }
 
     #[test]
@@ -158,6 +171,7 @@ mod tests {
             (Algorithm::RootedDisp, "paper"),
             (Algorithm::GeneralDisp, "paper"),
             (Algorithm::LeaderElection, "paper"),
+            (Algorithm::Rendezvous, "paper"),
         ] {
             assert_eq!(
                 cell(&result(algorithm), "algorithm_kind"),

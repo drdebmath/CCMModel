@@ -59,7 +59,9 @@ one Rust simulation core shared by native and browser consumers.
 
   Existing golden rows are unchanged.
 - Playback glides each agent from its old node to its new one over
-  `min(260, speed × 0.8)` ms instead of jumping, for every algorithm.
+  `min(260, speed × 0.8)` ms instead of jumping, for every algorithm. The
+  occupied-node highlight fades along with it, out on the node being left and
+  in on the node being reached, so it never runs ahead of the agent marker.
 
 ## Compatibility decisions
 
